@@ -1,0 +1,22 @@
+[project]
+name = "pos-platform-monorepo"
+version = "1.0.0"
+description = "Dual-Deployment Multi-Tenant POS Platform Monorepo"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[tool.pyrefly]
+search-path = [
+    ".",
+    "apps/backend",
+    "apps/control-plane",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [
+    ".",
+    "apps/backend",
+    "apps/control-plane",
+]
+testpaths = ["tests"]
+

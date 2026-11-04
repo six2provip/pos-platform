@@ -1,0 +1,56 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+**/secrets/
+!**/secrets/.gitkeep
+*.pem
+*.key
+*.crt
+*.lic
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# Flutter / Android
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+pubspec.lock
+apps/pos-mobile/build/
+
+# Databases & local data
+*.db
+*.sqlite
+*.sqlite3
+data/
+backups/
+logs/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.mov
+*.mp4
+

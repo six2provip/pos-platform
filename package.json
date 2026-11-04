@@ -1,0 +1,15 @@
+{
+  "name": "pos-platform-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/organization-web",
+    "apps/super-admin-web"
+  ],
+  "scripts": {
+    "dev:org": "npm --workspace=@pos-platform/organization-web run dev",
+    "dev:admin": "npm --workspace=@pos-platform/super-admin-web run dev"
+  }
+}
+

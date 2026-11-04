@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pos-platform-control-plane"
+version = "1.0.0"
+description = "POS Platform Cloud Control Plane API (Subscriptions, Deployments, Ed25519 Licensing, Heartbeats, Releases)"
+readme = "../../README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "sqlalchemy>=2.0.25",
+    "alembic>=1.13.0",
+    "pydantic>=2.6.0",
+    "PyJWT>=2.8.0",
+    "bcrypt>=3.2.0",
+    "PyNaCl>=1.5.0",
+    "psycopg2-binary>=2.9.9",
+]
+
+[tool.pyrefly]
+search-path = [".", "../.."]
+
+
