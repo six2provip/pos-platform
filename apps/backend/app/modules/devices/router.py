@@ -1009,6 +1009,52 @@ def post_device_heartbeat(
     )
 
 
+@router.get("/devices/check-status/{device_id}")
+def check_device_status(
+    device_id: str,
+    db: Session = Depends(get_db),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    """Lightweight polling endpoint to verify if a device has been revoked or deleted."""
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if device is None or device.deleted_at is not None:
+        return ok_response(
+            {
+                "device_id": device_id,
+                "status": "revoked",
+                "is_active": False,
+                "deleted": True,
+                "reason": "device_deleted",
+                "revoked_at": device.deleted_at.isoformat() if (device and device.deleted_at) else datetime.now(timezone.utc).isoformat(),
+                "message": "Thiết bị này đã bị xóa khỏi hệ thống chi nhánh.",
+            },
+            request_id=request_id,
+        )
+    if device.status != "active":
+        return ok_response(
+            {
+                "device_id": device_id,
+                "status": device.status,
+                "is_active": False,
+                "deleted": False,
+                "reason": "admin_revoked",
+                "revoked_at": datetime.now(timezone.utc).isoformat(),
+                "message": "Thiết bị này đã bị quản trị viên ngắt kết nối.",
+            },
+            request_id=request_id,
+        )
+    return ok_response(
+        {
+            "device_id": device_id,
+            "status": "active",
+            "is_active": True,
+            "deleted": False,
+            "store_id": device.store_id,
+        },
+        request_id=request_id,
+    )
+
+
 @router.post("/devices/me/token/rotate")
 def rotate_device_token(
     body: RotateDeviceTokenRequest,

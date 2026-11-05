@@ -2,21 +2,27 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertOctagon,
+  AlertTriangle,
+  Ban,
   Check,
   Clock,
   Copy,
   ExternalLink,
   Laptop,
+  Lock,
   Maximize2,
   Minimize2,
   Radio,
   RefreshCw,
   RotateCcw,
+  ShieldAlert,
   ShieldCheck,
   Smartphone,
   Sparkles,
   Store,
   Wifi,
+  WifiOff,
 } from "lucide-react";
 import { fireSuccessConfetti } from "@/components/ui/confetti";
 import { PosLcdSimulator } from "./pos-lcd-simulator";
@@ -78,6 +84,16 @@ export default function PosTerminalStandalone() {
   const [offlineMode, setOfflineMode] = useState(false);
   const [tenderedCash, setTenderedCash] = useState<number | null>(null);
   const [recentOrderSuccess, setRecentOrderSuccess] = useState<SimulatorOrderRecord | null>(null);
+
+  // Security Revocation & Offline Grace Period States
+  const [isRevoked, setIsRevoked] = useState(false);
+  const [revocationInfo, setRevocationInfo] = useState<{
+    reason: string;
+    revoked_at?: string;
+    message?: string;
+  } | null>(null);
+  const [offlineGraceSeconds, setOfflineGraceSeconds] = useState(7200); // 2 hours
+  const [isOfflineGraceExpired, setIsOfflineGraceExpired] = useState(false);
 
   // Digital clock
   useEffect(() => {
@@ -216,6 +232,98 @@ export default function PosTerminalStandalone() {
 
     return () => clearInterval(interval);
   }, [isPaired, session]);
+
+  // Real-time device status check (revocation / deletion by admin)
+  const verifyDeviceStatus = useCallback(async (deviceId: string) => {
+    try {
+      const res = await fetch(`/api/v1/devices/check-status/${deviceId}`);
+      if (!res.ok) return;
+      const json = await res.json();
+      const data = json.data || json;
+      if (data && data.is_active === false) {
+        setIsRevoked(true);
+        setRevocationInfo({
+          reason: data.reason || "admin_revoked",
+          revoked_at: data.revoked_at || new Date().toISOString(),
+          message: data.message || "Thiết bị này đã bị ngắt kết nối hoặc xóa khỏi hệ thống.",
+        });
+        // Clear saved pairing credentials so reload stays locked
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("pos_terminal_paired_device");
+          localStorage.removeItem("pos_terminal_token");
+        }
+      }
+    } catch {
+      // Polling network drop (will be guarded by offline grace period)
+    }
+  }, []);
+
+  // Heartbeat Polling: Every 2s when online & paired
+  useEffect(() => {
+    if (!isPaired || !pairedDevice?.id || offlineMode || isRevoked) return;
+
+    verifyDeviceStatus(pairedDevice.id);
+
+    const interval = setInterval(() => {
+      verifyDeviceStatus(pairedDevice.id);
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [isPaired, pairedDevice?.id, offlineMode, isRevoked, verifyDeviceStatus]);
+
+  // Offline Grace Period countdown timer: 2 hours (7200s)
+  useEffect(() => {
+    if (!isPaired || !offlineMode || isRevoked || isOfflineGraceExpired) return;
+
+    const timer = setInterval(() => {
+      setOfflineGraceSeconds((prev) => {
+        if (prev <= 1) {
+          setIsOfflineGraceExpired(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isPaired, offlineMode, isRevoked, isOfflineGraceExpired]);
+
+  // Reconnection catch-up: Check status immediately when reconnecting
+  const handleToggleOffline = async () => {
+    const nextMode = !offlineMode;
+    setOfflineMode(nextMode);
+
+    if (!nextMode && pairedDevice?.id) {
+      // Reconnected to network: check if admin revoked device while it was offline
+      await verifyDeviceStatus(pairedDevice.id);
+      // Reset grace period
+      setOfflineGraceSeconds(7200);
+      setIsOfflineGraceExpired(false);
+    }
+  };
+
+  // Full Reset when device is Revoked or Expired -> Return to Pairing Screen
+  const handleAcknowledgeAndReset = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("pos_terminal_paired_device");
+      localStorage.removeItem("pos_terminal_store");
+      localStorage.removeItem("pos_terminal_org");
+      localStorage.removeItem("pos_terminal_token");
+    }
+    setIsRevoked(false);
+    setRevocationInfo(null);
+    setIsOfflineGraceExpired(false);
+    setOfflineGraceSeconds(7200);
+    setIsPaired(false);
+    setPairedDevice(null);
+    setPairedStore(null);
+    setPairedOrg(null);
+    setDeviceToken(null);
+    setCart([]);
+    setOrders([]);
+    setOutboxQueue([]);
+    requestPairingSession();
+  };
 
   // Handle Unpair / Reset to test again
   const handleResetTerminal = () => {
@@ -401,6 +509,150 @@ export default function PosTerminalStandalone() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-950 text-white font-mono text-sm">
         Đang khởi động phần mềm POS Terminal...
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // VIEW 0: SECURITY LOCKOUT SCREEN (REVOKED / DELETED / EXPIRED GRACE PERIOD)
+  // =========================================================================
+  if (isRevoked || isOfflineGraceExpired) {
+    const isOfflineExpired = isOfflineGraceExpired && !isRevoked;
+
+    return (
+      <div className="flex min-h-screen flex-col bg-[#0B0F17] text-white select-none">
+        {/* Top Hardware Kiosk Security Status Bar */}
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-rose-900/50 bg-[#160B0F] px-4 text-xs font-mono text-neutral-400">
+          <div className="flex items-center gap-3">
+            <span className="flex h-2.5 w-2.5 rounded-full bg-rose-500 animate-ping" />
+            <span className="font-bold text-rose-400 tracking-wide flex items-center gap-1.5">
+              <ShieldAlert className="h-4 w-4" />
+              BẢO MẬT HỆ THỐNG • PHONG TỎA THIẾT BỊ
+            </span>
+            <span className="rounded bg-rose-950/80 border border-rose-800/60 px-2 py-0.5 text-[10px] text-rose-300">
+              {isOfflineExpired ? "OFFLINE_GRACE_TIMEOUT" : "HARDWARE_TOKEN_REVOKED"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1 text-neutral-400">
+              <Clock className="h-3.5 w-3.5" />
+              <span>{clockStr || "12:00:00"}</span>
+            </div>
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="rounded p-1 text-neutral-400 hover:bg-neutral-800 hover:text-white"
+              title="Toàn màn hình Kiosk"
+            >
+              {isFullscreen ? (
+                <Minimize2 className="h-3.5 w-3.5" />
+              ) : (
+                <Maximize2 className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
+        </header>
+
+        {/* Lockout Center Screen */}
+        <main className="flex flex-1 items-center justify-center p-4 sm:p-8">
+          <div className="relative w-full max-w-2xl rounded-3xl border-2 border-rose-600/50 bg-gradient-to-b from-[#1C0E12] via-[#120B0E] to-[#0A0708] p-6 sm:p-10 shadow-2xl backdrop-blur-xl shadow-rose-950/40">
+            {/* Header Badge & Warning Icon */}
+            <div className="text-center space-y-4">
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-rose-500/10 border-2 border-rose-500/30 text-rose-500 shadow-xl shadow-rose-500/20">
+                <AlertOctagon className="h-10 w-10 text-rose-500 animate-pulse" />
+              </div>
+
+              <div>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/20 border border-rose-500/40 px-3.5 py-1 text-xs font-bold uppercase tracking-wider text-rose-400">
+                  <span className="h-2 w-2 rounded-full bg-rose-400 animate-ping" />
+                  {isOfflineExpired ? "CẢNH BÁO HẾT HẠN OFFLINE" : "THIẾT BỊ ĐÃ BỊ THU HỒI / VÔ HIỆU HÓA"}
+                </span>
+
+                <h1 className="mt-3 text-2xl sm:text-3xl font-black tracking-tight text-white">
+                  {isOfflineExpired ? "Tạm Dừng Hoạt Động Ngoại Tuyến" : "Máy POS Đã Bị Vô Hiệu Hóa"}
+                </h1>
+
+                <p className="mt-2 text-xs sm:text-sm text-neutral-300 max-w-lg mx-auto leading-relaxed">
+                  {isOfflineExpired
+                    ? "Thiết bị này đã hoạt động không có kết nối Internet quá thời gian tối đa cho phép (2 giờ). Nhằm ngăn ngừa rủi ro sai lệch dữ liệu và thất thoát doanh thu, máy POS tạm thời bị phong tỏa cho đến khi có mạng trở lại."
+                    : (revocationInfo?.message || "Thiết bị này đã bị Quản trị viên ngắt kết nối hoặc xóa khỏi chi nhánh trên Web Quản Trị Tổ Chức (:13000). Mọi chức năng bán hàng và in hóa đơn tại máy POS này đã bị ngừng hoạt động hoàn toàn.")}
+                </p>
+              </div>
+            </div>
+
+            {/* Hardware Information Audit Card */}
+            <div className="mt-8 rounded-2xl border border-rose-900/50 bg-[#14080B] p-5 shadow-inner space-y-3 font-mono text-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-rose-950/80">
+                <span className="text-neutral-400">Mã máy POS (Hardware ID):</span>
+                <span className="font-bold text-white bg-neutral-900 px-2 py-0.5 rounded border border-neutral-700">
+                  {pairedDevice?.device_code || "POS-TERMINAL"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pb-2 border-b border-rose-950/80">
+                <span className="text-neutral-400">Tên thiết bị quầy:</span>
+                <span className="font-semibold text-neutral-200">
+                  {pairedDevice?.name || "Máy POS Quầy"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pb-2 border-b border-rose-950/80">
+                <span className="text-neutral-400">Chi nhánh trực thuộc:</span>
+                <span className="font-semibold text-neutral-200">
+                  {pairedStore?.name || "Chi nhánh"} ({pairedStore?.code || "--"})
+                </span>
+              </div>
+              <div className="flex items-center justify-between pb-2 border-b border-rose-950/80">
+                <span className="text-neutral-400">Thời điểm phong tỏa:</span>
+                <span className="text-rose-400 font-semibold">
+                  {revocationInfo?.revoked_at
+                    ? new Date(revocationInfo.revoked_at).toLocaleString("vi-VN")
+                    : clockStr}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-neutral-400">Trạng thái an toàn:</span>
+                <span className="inline-flex items-center gap-1 font-bold text-rose-400">
+                  <Lock className="h-3 w-3" />
+                  ĐÃ KHÓA TOÀN BỘ CHỨC NĂNG BÁN HÀNG
+                </span>
+              </div>
+            </div>
+
+            {/* Actions for Cashier / Admin */}
+            <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+              {isOfflineExpired && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setOfflineMode(false);
+                    if (pairedDevice?.id) {
+                      await verifyDeviceStatus(pairedDevice.id);
+                    }
+                    setOfflineGraceSeconds(7200);
+                    setIsOfflineGraceExpired(false);
+                  }}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold px-5 py-3 text-xs transition-colors shadow-lg shadow-amber-500/20"
+                >
+                  <Wifi className="h-4 w-4" />
+                  Kết Nối Lại Wi-Fi / Đám Mây Ngay
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handleAcknowledgeAndReset}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold px-6 py-3 text-xs transition-colors shadow-lg shadow-rose-600/25"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Khởi Động Lại & Ghép Nối Máy Mới (Nhận Mã 6 Số)
+              </button>
+            </div>
+
+            <div className="mt-6 text-center text-[11px] text-neutral-500">
+              Liên hệ Quản trị viên cửa hàng nếu bạn cho rằng thiết bị này bị khóa do nhầm lẫn.
+            </div>
+          </div>
+        </main>
       </div>
     );
   }
@@ -633,10 +885,49 @@ export default function PosTerminalStandalone() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2 text-neutral-400 text-[11px]">
-            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-            <span>Kích hoạt qua mã PIN 6 số an toàn</span>
-          </div>
+          {offlineMode && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] text-amber-300">
+              <Clock className="h-3.5 w-3.5 text-amber-400" />
+              <span>
+                Offline Grace:{" "}
+                <strong className="font-mono text-white">
+                  {Math.floor(offlineGraceSeconds / 60)}p {offlineGraceSeconds % 60}s
+                </strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setOfflineGraceSeconds(0);
+                  setIsOfflineGraceExpired(true);
+                }}
+                className="ml-1 rounded bg-amber-500/30 hover:bg-amber-500/50 px-1.5 py-0.5 text-[10px] text-amber-200 transition-colors"
+                title="Giả lập hết hạn 2 giờ offline ngay lập tức để kiểm tra màn hình khóa"
+              >
+                Test Hết Hạn
+              </button>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsRevoked(true);
+              setRevocationInfo({
+                reason: "admin_revoked",
+                revoked_at: new Date().toISOString(),
+                message: "Thiết bị này đã bị Quản trị viên ngắt kết nối hoặc xóa khỏi chi nhánh.",
+              });
+              if (typeof window !== "undefined") {
+                localStorage.removeItem("pos_terminal_paired_device");
+                localStorage.removeItem("pos_terminal_token");
+              }
+            }}
+            className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1 text-[11px] font-semibold text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
+            title="Giả lập tình huống Quản trị viên bấm ngắt kết nối hoặc xóa máy POS"
+          >
+            <Ban className="h-3 w-3 text-rose-400" />
+            Test Thu Hồi Máy
+          </button>
 
           <button
             type="button"
@@ -645,7 +936,7 @@ export default function PosTerminalStandalone() {
             title="Hủy ghép nối thiết bị này để kiểm tra lại luồng ban đầu"
           >
             <RotateCcw className="h-3 w-3" />
-            Reset máy POS để test lại
+            Reset máy POS
           </button>
         </div>
       </header>
@@ -672,6 +963,27 @@ export default function PosTerminalStandalone() {
           onClearCart={handleClearCart}
           onCheckoutOrder={async (tenderedCash?: number) => {
             if (cart.length === 0) return;
+
+            // Enforce Offline Limits (30 orders max, 5,000,000 VND max)
+            if (offlineMode) {
+              const currentOutboxSum = outboxQueue.reduce(
+                (sum, o) => sum + (o.total_amount || 0),
+                0
+              );
+              if (outboxQueue.length >= 30) {
+                alert(
+                  "CẢNH BÁO AN TOÀN OFFLINE: Đã đạt giới hạn tối đa 30 đơn hàng offline chưa đồng bộ. Vui lòng kết nối Internet để đồng bộ dữ liệu trước khi tiếp tục bán hàng!"
+                );
+                return;
+              }
+              if (currentOutboxSum + cartTotal > 5_000_000) {
+                alert(
+                  "CẢNH BÁO HẠN MỨC OFFLINE: Tổng doanh thu offline chưa đồng bộ vượt mức an toàn 5.000.000₫. Vui lòng kết nối Internet để đồng bộ dữ liệu trước khi tiếp tục bán hàng!"
+                );
+                return;
+              }
+            }
+
             const nowIso = new Date().toISOString();
             const orderNum = `POS-${Date.now().toString().slice(-6)}`;
             const paid = tenderedCash && tenderedCash >= cartTotal ? tenderedCash : cartTotal;
@@ -690,13 +1002,43 @@ export default function PosTerminalStandalone() {
             };
 
             setOrders((prev) => [newRecord, ...prev]);
+
+            // If offline, queue to outbox
+            if (offlineMode) {
+              const outboxItem: SimulatorOutboxOrder = {
+                event_id: `evt_${Date.now()}`,
+                idempotency_key: `idem_${Date.now()}`,
+                client_order_id: newRecord.id,
+                store_id: pairedStore?.id || "store",
+                occurred_at: nowIso,
+                total_amount: cartTotal,
+                items: cart.map((c) => ({
+                  product_variant_id: c.variantId,
+                  productName: c.productName,
+                  quantity: c.quantity.toString(),
+                  unit_price: c.unitPrice.toString(),
+                })),
+              };
+              setOutboxQueue((prev) => [outboxItem, ...prev]);
+            }
+
             setRecentOrderSuccess(newRecord);
             setCart([]);
             setTenderedCash(null);
             fireSuccessConfetti();
           }}
-          onFlushOutbox={async () => {}}
-          onToggleOffline={() => setOfflineMode((prev) => !prev)}
+          onFlushOutbox={async () => {
+            if (offlineMode) {
+              alert("Máy POS đang ở chế độ Offline. Vui lòng bật lại mạng Internet trước khi đồng bộ lên Đám Mây!");
+              return;
+            }
+            if (pairedDevice?.id) {
+              await verifyDeviceStatus(pairedDevice.id);
+              if (isRevoked) return;
+            }
+            setOutboxQueue([]);
+          }}
+          onToggleOffline={handleToggleOffline}
           onOpenCashSession={() => {}}
         />
       </div>
