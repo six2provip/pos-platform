@@ -320,6 +320,7 @@ export default function OrganizationWorkspace({
     Record<string, InventoryBalanceItem>
   >({});
   const [devices, setDevices] = useState<PosDeviceItem[]>([]);
+  const [viewingStoreDevicesId, setViewingStoreDevicesId] = useState<string | null>(null);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
 
   // POS Terminal & Cash Session State
@@ -642,6 +643,9 @@ export default function OrganizationWorkspace({
   const navigateToTab = useCallback(
     (tab: NavTab) => {
       setActiveTab(tab);
+      if (tab === "stores") {
+        setViewingStoreDevicesId(null);
+      }
       const path = TAB_PATHS[tab] || "/overview";
       if (typeof window !== "undefined") {
         if (window.location.pathname !== path) {
@@ -1546,8 +1550,11 @@ export default function OrganizationWorkspace({
   );
 
   const currentStoreObj = useMemo(
-    () => stores.find((s) => s.id === selectedStoreId) || stores[0],
-    [stores, selectedStoreId]
+    () =>
+      stores.find(
+        (s) => s.id === (viewingStoreDevicesId || selectedStoreId)
+      ) || stores[0],
+    [stores, viewingStoreDevicesId, selectedStoreId]
   );
 
   // ==========================================================================
@@ -2748,267 +2755,345 @@ export default function OrganizationWorkspace({
         {/* TAB 6: STORES & BRANCHES MANAGEMENT                              */}
         {/* ================================================================ */}
         {activeTab === "stores" && (
-          <div className="space-y-6">
-            {/* Page Header */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h1 className="text-xl font-bold tracking-tight text-neutral-900">
-                  Hệ Thống Chi Nhánh Cửa Hàng
-                </h1>
-                <p className="mt-0.5 text-sm text-neutral-500">
-                  Quản lý mạng lưới chi nhánh, cấu hình điểm bán và theo dõi các máy POS trực thuộc chuỗi.
-                </p>
-              </div>
-              <ShimmerButton onClick={() => setActiveModal("create_store")}>
-                <Plus className="h-3.5 w-3.5" />
-                + Thêm Chi Nhánh Mới
-              </ShimmerButton>
-            </div>
+          <div>
+            {viewingStoreDevicesId ? (
+              // ==============================================================
+              // VIEW A: BRANCH POS DEVICES PAGE (TRANG THIẾT BỊ CHI NHÁNH)
+              // ==============================================================
+              <div className="space-y-6">
+                <button
+                  type="button"
+                  onClick={() => setViewingStoreDevicesId(null)}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-600 hover:text-neutral-900 transition-colors"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Quay lại danh sách chi nhánh
+                </button>
 
-            {/* Summary Metric Strip */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
-                <div className="text-[11px] font-medium text-neutral-400 uppercase tracking-wider">
-                  Tổng số chi nhánh
-                </div>
-                <div className="mt-1 text-2xl font-bold text-neutral-900">
-                  {stores.length}
-                </div>
-                <div className="mt-0.5 text-[11px] text-emerald-600 font-medium">
-                  Đang hoạt động trên toàn chuỗi
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
-                <div className="text-[11px] font-medium text-neutral-400 uppercase tracking-wider">
-                  Đang chọn làm việc
-                </div>
-                <div className="mt-1 text-base font-bold text-neutral-900 truncate">
-                  {currentStoreObj?.name || "Chưa chọn"}
-                </div>
-                <div className="mt-0.5 text-[11px] text-neutral-500 font-mono">
-                  Mã: {currentStoreObj?.code || "--"}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
-                <div className="text-[11px] font-medium text-neutral-400 uppercase tracking-wider">
-                  Múi giờ vận hành
-                </div>
-                <div className="mt-1 text-sm font-bold text-neutral-900 truncate">
-                  Asia/Ho_Chi_Minh
-                </div>
-                <div className="mt-0.5 text-[11px] text-neutral-500">
-                  Giờ chuẩn Việt Nam (UTC+7)
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
-                <div className="text-[11px] font-medium text-neutral-400 uppercase tracking-wider">
-                  Đơn vị tiền tệ
-                </div>
-                <div className="mt-1 text-xl font-bold text-neutral-900">
-                  VND (₫)
-                </div>
-                <div className="mt-0.5 text-[11px] text-neutral-500">
-                  Định dạng giá chuẩn
-                </div>
-              </div>
-            </div>
-
-            {/* Branch Cards List */}
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {stores.map((st) => {
-                const isWorkingStore = st.id === selectedStoreId;
-                const storeDevices = devices.filter((d) => d.store_id === st.id);
-                return (
-                  <div
-                    key={st.id}
-                    className={`rounded-2xl border p-5 transition-all ${
-                      isWorkingStore
-                        ? "border-neutral-900 bg-white shadow-md ring-1 ring-neutral-900"
-                        : "border-neutral-200 bg-white hover:border-neutral-300 shadow-sm"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
-                      <div className="flex items-center gap-2">
-                        <span className="rounded bg-neutral-900 px-2 py-0.5 font-mono text-xs font-bold text-white">
-                          {st.code}
-                        </span>
-                        {isWorkingStore && (
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            Đang làm việc
-                          </span>
-                        )}
-                      </div>
-                      <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                        {(st.status || "active").toUpperCase()}
+                {/* Page Header */}
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="rounded bg-neutral-900 px-2 py-0.5 font-mono text-xs font-bold text-white">
+                        {currentStoreObj?.code || "DEMO-S1"}
+                      </span>
+                      <span className="text-xs font-semibold text-neutral-500">
+                        Chi nhánh: {currentStoreObj?.name}
                       </span>
                     </div>
+                    <h1 className="text-xl font-bold tracking-tight text-neutral-900">
+                      Thiết Bị & Quầy POS — {currentStoreObj?.name}
+                    </h1>
+                    <p className="mt-0.5 text-sm text-neutral-500">
+                      Quản lý danh sách máy POS Android, quầy thu ngân và ghép nối bảo mật bằng mã PIN 6 chữ số tại chi nhánh này.
+                    </p>
+                  </div>
 
-                    <div className="py-4 space-y-1">
-                      <h3 className="text-base font-bold text-neutral-900">
-                        {st.name}
-                      </h3>
-                      <div className="flex items-center gap-4 text-xs text-neutral-500">
-                        <span>Múi giờ: {st.timezone || "Asia/Ho_Chi_Minh"}</span>
-                        <span>•</span>
-                        <span>Tiền tệ: {st.currency_code || "VND"}</span>
-                      </div>
-                      <div className="mt-2 text-xs text-neutral-600">
-                        Thiết bị liên kết:{" "}
-                        <strong className="text-neutral-900">
-                          {storeDevices.length} máy POS
-                        </strong>
-                      </div>
+                  <ShimmerButton
+                    onClick={() => {
+                      if (!currentStoreObj) return;
+                      setSelectedStoreId(currentStoreObj.id);
+                      setPairingStoreId(currentStoreObj.id);
+                      const nextNum = devices.length + 1;
+                      setPairingCodeInput("");
+                      setPairingDeviceCode(`POS-TERMINAL-0${nextNum}`);
+                      setPairingDeviceName(`Máy POS Thu Ngân Quầy ${nextNum}`);
+                      setActiveModal("pair_pos_device");
+                    }}
+                  >
+                    <Radio className="h-3.5 w-3.5" />
+                    + Ghép Nối Máy POS Mới
+                  </ShimmerButton>
+                </div>
+
+                {/* Quick Guide Card */}
+                <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+                  <div className="flex items-start gap-3.5">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-900 text-white">
+                      <Radio className="h-4 w-4" />
                     </div>
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-bold text-neutral-900">
+                        Quy Trình Ghép Nối Máy POS 6 Chữ Số Vào Chi Nhánh
+                      </h3>
+                      <p className="text-xs text-neutral-600 leading-relaxed">
+                        1. Mở máy POS Android tại quầy (hoặc mở trang <strong>Máy POS Terminal :13000/terminal</strong> để giả lập thiết bị thật).<br />
+                        2. Màn hình máy POS sẽ hiển thị mã kết nối 6 chữ số ngẫu nhiên.<br />
+                        3. Bấm nút <strong>&ldquo;+ Ghép Nối Máy POS Mới&rdquo;</strong> ở trên, nhập 6 số và xác nhận. Máy POS sẽ tự động liên kết thành công vào {currentStoreObj?.name}!
+                      </p>
+                    </div>
+                  </div>
+                </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-neutral-100">
-                      <div>
-                        {isWorkingStore ? (
-                          <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
-                            <Check className="h-3.5 w-3.5" />
-                            Chi nhánh mặc định
+                {/* Devices List of This Store */}
+                <div className="space-y-3">
+                  {devices
+                    .filter((d) => d.store_id === currentStoreObj?.id)
+                    .map((d) => (
+                      <div
+                        key={d.id}
+                        className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-5 shadow-sm"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 text-neutral-800">
+                            <Smartphone className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-neutral-900">
+                                {d.name}
+                              </span>
+                              <span className="rounded bg-neutral-100 px-2 py-0.5 font-mono text-xs text-neutral-700">
+                                {d.device_code}
+                              </span>
+                            </div>
+                            <p className="mt-0.5 text-xs text-neutral-500">
+                              Nền tảng: {d.device_type} ({d.platform}) • Trạng thái:{" "}
+                              <strong className="text-neutral-900">
+                                {(d.status || "active").toUpperCase()}
+                              </strong>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2.5">
+                          <span
+                            className={`rounded-md border px-3 py-1 text-xs font-semibold ${
+                              d.status === "active"
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : "border-amber-200 bg-amber-50 text-amber-700"
+                            }`}
+                          >
+                            {(d.status || "active").toUpperCase()}
                           </span>
-                        ) : (
+                          {d.status === "active" && (
+                            <button
+                              type="button"
+                              onClick={() => void handleRevokeDevice(d.id, d.name)}
+                              title="Ngắt kết nối máy POS này"
+                              className="rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-500 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700 transition-colors"
+                            >
+                              Ngắt kết nối
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() => {
-                              setSelectedStoreId(st.id);
-                              if (typeof window !== "undefined") {
-                                localStorage.setItem("pos_selected_store_id", st.id);
-                              }
-                              notify("success", `Đã chuyển sang làm việc tại chi nhánh ${st.name}!`);
-                            }}
-                            className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-100 transition-colors"
+                            onClick={() => void handleDeleteDevice(d.id, d.name)}
+                            title="Xóa thiết bị này khỏi chi nhánh"
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/70 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-colors"
                           >
-                            Chọn làm việc
+                            <Trash2 className="h-3 w-3" />
+                            Xóa
                           </button>
-                        )}
+                        </div>
                       </div>
+                    ))}
 
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
+                  {devices.filter((d) => d.store_id === currentStoreObj?.id).length === 0 && (
+                    <div className="rounded-2xl border border-dashed border-neutral-200 bg-white p-12 text-center space-y-3">
+                      <Smartphone className="mx-auto h-8 w-8 text-neutral-400" />
+                      <div className="text-sm font-semibold text-neutral-800">
+                        Chưa có máy POS nào được ghép nối tại chi nhánh này
+                      </div>
+                      <p className="text-xs text-neutral-500 max-w-md mx-auto">
+                        Mở máy POS tại quầy (hoặc mở tab :13000/terminal) lấy mã 6 chữ số và bấm nút bên dưới để ghép nối thiết bị vào {currentStoreObj?.name}!
+                      </p>
+                      <div className="pt-2">
+                        <ShimmerButton
                           onClick={() => {
-                            setSelectedStoreId(st.id);
-                            setPairingStoreId(st.id);
+                            if (!currentStoreObj) return;
+                            setSelectedStoreId(currentStoreObj.id);
+                            setPairingStoreId(currentStoreObj.id);
                             const nextNum = devices.length + 1;
                             setPairingCodeInput("");
                             setPairingDeviceCode(`POS-TERMINAL-0${nextNum}`);
                             setPairingDeviceName(`Máy POS Thu Ngân Quầy ${nextNum}`);
                             setActiveModal("pair_pos_device");
                           }}
-                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 transition-colors shadow-sm"
                         >
-                          <Radio className="h-3 w-3" />
-                          + Ghép Nối Máy POS
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedStoreId(st.id);
-                            if (typeof window !== "undefined") {
-                              localStorage.setItem("pos_selected_store_id", st.id);
-                            }
-                            navigateToTab("pos");
-                          }}
-                          className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 transition-colors"
-                        >
-                          Mở POS →
-                        </button>
+                          <Radio className="h-3.5 w-3.5" />
+                          + Ghép Nối Máy POS Ngay
+                        </ShimmerButton>
                       </div>
                     </div>
-
-                    {/* Danh Sách Quầy & Thiết Bị POS Trực Thuộc Chi Nhánh Này */}
-                    <div className="mt-4 pt-3 border-t border-neutral-100">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="text-xs font-bold text-neutral-900 flex items-center gap-1.5">
-                          <Smartphone className="h-3.5 w-3.5 text-neutral-600" />
-                          <span>Thiết bị POS tại quầy ({storeDevices.length})</span>
-                        </div>
-                      </div>
-
-                      {storeDevices.length > 0 ? (
-                        <div className="space-y-2">
-                          {storeDevices.map((d) => (
-                            <div
-                              key={d.id}
-                              className="flex items-center justify-between rounded-xl border border-neutral-200 bg-neutral-50/70 p-2.5 text-xs"
-                            >
-                              <div className="flex items-center gap-2.5">
-                                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white border border-neutral-200 text-neutral-700">
-                                  <Smartphone className="h-3.5 w-3.5" />
-                                </div>
-                                <div>
-                                  <div className="flex items-center gap-1.5 font-bold text-neutral-900">
-                                    <span>{d.name}</span>
-                                    <span className="font-mono text-[10px] bg-neutral-200/80 px-1.5 py-0.2 rounded text-neutral-700">
-                                      {d.device_code}
-                                    </span>
-                                  </div>
-                                  <div className="text-[10px] text-neutral-500">
-                                    Nền tảng: {d.device_type} ({d.platform})
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-1.5">
-                                <span
-                                  className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                                    d.status === "active"
-                                      ? "bg-emerald-100 text-emerald-800"
-                                      : "bg-amber-100 text-amber-800"
-                                  }`}
-                                >
-                                  {(d.status || "active").toUpperCase()}
-                                </span>
-                                {d.status === "active" && (
-                                  <button
-                                    type="button"
-                                    onClick={() => void handleRevokeDevice(d.id, d.name)}
-                                    title="Ngắt kết nối máy POS này"
-                                    className="rounded border border-neutral-300 bg-white px-2 py-0.5 text-[10px] font-medium text-neutral-600 hover:text-amber-700 hover:bg-amber-50 transition-colors"
-                                  >
-                                    Ngắt
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => void handleDeleteDevice(d.id, d.name)}
-                                  title="Xóa máy POS này"
-                                  className="inline-flex items-center gap-0.5 rounded border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-600 hover:bg-rose-100 transition-colors"
-                                >
-                                  <Trash2 className="h-2.5 w-2.5" />
-                                  Xóa
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="rounded-xl border border-dashed border-neutral-200 bg-neutral-50/40 p-3 text-center text-[11px] text-neutral-500">
-                          Chưa có máy POS nào tại chi nhánh này. Bấm &ldquo;+ Ghép Nối Máy POS&rdquo; để ghép mã 6 số từ thiết bị tại quầy.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {stores.length === 0 && (
-                <div className="col-span-2 rounded-2xl border border-dashed border-neutral-200 p-12 text-center space-y-3">
-                  <StoreIcon className="mx-auto h-8 w-8 text-neutral-400" />
-                  <div className="text-sm font-semibold text-neutral-800">
-                    Chưa có chi nhánh nào được tạo
-                  </div>
-                  <p className="text-xs text-neutral-500">
-                    Bấm nút &ldquo;+ Thêm Chi Nhánh Mới&rdquo; ở góc trên để tạo chi nhánh đầu tiên của chuỗi.
-                  </p>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              // ==============================================================
+              // VIEW B: STORES GRID (DANH SÁCH CHI NHÁNH TỔNG QUAN)
+              // ==============================================================
+              <div className="space-y-6">
+                {/* Page Header */}
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h1 className="text-xl font-bold tracking-tight text-neutral-900">
+                      Hệ Thống Chi Nhánh Cửa Hàng
+                    </h1>
+                    <p className="mt-0.5 text-sm text-neutral-500">
+                      Quản lý mạng lưới chi nhánh, cấu hình điểm bán và theo dõi các máy POS trực thuộc chuỗi.
+                    </p>
+                  </div>
+                  <ShimmerButton onClick={() => setActiveModal("create_store")}>
+                    <Plus className="h-3.5 w-3.5" />
+                    + Thêm Chi Nhánh Mới
+                  </ShimmerButton>
+                </div>
+
+                {/* Summary Metric Strip */}
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
+                    <div className="text-[11px] font-medium text-neutral-400 uppercase tracking-wider">
+                      Tổng số chi nhánh
+                    </div>
+                    <div className="mt-1 text-2xl font-bold text-neutral-900">
+                      {stores.length}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-emerald-600 font-medium">
+                      Đang hoạt động trên toàn chuỗi
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
+                    <div className="text-[11px] font-medium text-neutral-400 uppercase tracking-wider">
+                      Đang chọn làm việc
+                    </div>
+                    <div className="mt-1 text-base font-bold text-neutral-900 truncate">
+                      {currentStoreObj?.name || "Chưa chọn"}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-neutral-500 font-mono">
+                      Mã: {currentStoreObj?.code || "--"}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
+                    <div className="text-[11px] font-medium text-neutral-400 uppercase tracking-wider">
+                      Múi giờ vận hành
+                    </div>
+                    <div className="mt-1 text-sm font-bold text-neutral-900 truncate">
+                      Asia/Ho_Chi_Minh
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-neutral-500">
+                      Giờ chuẩn Việt Nam (UTC+7)
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
+                    <div className="text-[11px] font-medium text-neutral-400 uppercase tracking-wider">
+                      Đơn vị tiền tệ
+                    </div>
+                    <div className="mt-1 text-xl font-bold text-neutral-900">
+                      VND (₫)
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-neutral-500">
+                      Định dạng giá chuẩn
+                    </div>
+                  </div>
+                </div>
+
+                {/* Branch Cards List */}
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {stores.map((st) => {
+                    const isWorkingStore = st.id === selectedStoreId;
+                    const storeDevices = devices.filter((d) => d.store_id === st.id);
+                    return (
+                      <div
+                        key={st.id}
+                        className={`rounded-2xl border p-5 transition-all ${
+                          isWorkingStore
+                            ? "border-neutral-900 bg-white shadow-md ring-1 ring-neutral-900"
+                            : "border-neutral-200 bg-white hover:border-neutral-300 shadow-sm"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+                          <div className="flex items-center gap-2">
+                            <span className="rounded bg-neutral-900 px-2 py-0.5 font-mono text-xs font-bold text-white">
+                              {st.code}
+                            </span>
+                            {isWorkingStore && (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                Đang làm việc
+                              </span>
+                            )}
+                          </div>
+                          <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                            {(st.status || "active").toUpperCase()}
+                          </span>
+                        </div>
+
+                        <div className="py-4 space-y-1">
+                          <h3 className="text-base font-bold text-neutral-900">
+                            {st.name}
+                          </h3>
+                          <div className="flex items-center gap-4 text-xs text-neutral-500">
+                            <span>Múi giờ: {st.timezone || "Asia/Ho_Chi_Minh"}</span>
+                            <span>•</span>
+                            <span>Tiền tệ: {st.currency_code || "VND"}</span>
+                          </div>
+                          <div className="mt-2 text-xs text-neutral-600">
+                            Thiết bị liên kết:{" "}
+                            <strong className="text-neutral-900">
+                              {storeDevices.length} máy POS
+                            </strong>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-neutral-100">
+                          <div>
+                            {isWorkingStore ? (
+                              <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
+                                <Check className="h-3.5 w-3.5" />
+                                Chi nhánh mặc định
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedStoreId(st.id);
+                                  if (typeof window !== "undefined") {
+                                    localStorage.setItem("pos_selected_store_id", st.id);
+                                  }
+                                  notify("success", `Đã chuyển sang làm việc tại chi nhánh ${st.name}!`);
+                                }}
+                                className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-100 transition-colors"
+                              >
+                                Chọn làm việc
+                              </button>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedStoreId(st.id);
+                              setViewingStoreDevicesId(st.id);
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-50 hover:border-neutral-400 transition-colors shadow-sm"
+                          >
+                            <Smartphone className="h-3.5 w-3.5 text-neutral-600" />
+                            <span>Xem thiết bị ({storeDevices.length} thiết bị)</span>
+                            <ChevronRight className="h-3.5 w-3.5 text-neutral-400" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {stores.length === 0 && (
+                    <div className="col-span-2 rounded-2xl border border-dashed border-neutral-200 p-12 text-center space-y-3">
+                      <StoreIcon className="mx-auto h-8 w-8 text-neutral-400" />
+                      <div className="text-sm font-semibold text-neutral-800">
+                        Chưa có chi nhánh nào được tạo
+                      </div>
+                      <p className="text-xs text-neutral-500">
+                        Bấm nút &ldquo;+ Thêm Chi Nhánh Mới&rdquo; ở góc trên để tạo chi nhánh đầu tiên của chuỗi.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
