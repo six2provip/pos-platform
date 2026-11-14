@@ -139,7 +139,7 @@ export function PosViewOrders({
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-extrabold text-neutral-900">{item.client_order_id}</span>
                         <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
-                          PENDING OUTBOX
+                          CHỜ ĐỒNG BỘ
                         </span>
                       </div>
                       <div className="mt-0.5 text-[11px] text-neutral-500">

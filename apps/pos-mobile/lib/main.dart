@@ -38,7 +38,7 @@ class PosApkApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'POS.com Android Terminal',
+      title: 'Máy POS Android',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -459,14 +459,14 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
       );
       if (_outboxQueue.length >= _maxOfflineOrders) {
         _showSnack(
-          'Đạt giới hạn tối đa $_maxOfflineOrders đơn offline! Vui lòng đồng bộ trước.',
+          'Đạt giới hạn tối đa $_maxOfflineOrders đơn ngoại tuyến! Vui lòng đồng bộ trước.',
           isError: true,
         );
         return;
       }
       if (outboxTotal + _cartTotal > _maxOfflineAmount) {
         _showSnack(
-          'Vượt hạn mức offline ${formatVnd(_maxOfflineAmount)}! Vui lòng kết nối mạng đồng bộ.',
+          'Vượt hạn mức ngoại tuyến ${formatVnd(_maxOfflineAmount)}! Vui lòng kết nối mạng đồng bộ.',
           isError: true,
         );
         return;
@@ -517,7 +517,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
         });
         _cart.clear();
       });
-      _showSnack(customNotice ?? 'Đã lưu đơn $clientOrderId vào SQLite Offline Outbox!');
+      _showSnack(customNotice ?? 'Đã lưu đơn $clientOrderId vào hàng đợi ngoại tuyến!');
     }
 
     if (_offlineMode) {
@@ -558,7 +558,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
           _offlineMode = true;
           _busy = false;
         });
-        await saveToOfflineOutbox('Mất mạng! Đã tự chuyển đơn sang SQLite Offline Outbox.');
+        await saveToOfflineOutbox('Mất mạng! Đã tự chuyển đơn vào hàng đợi ngoại tuyến.');
       } else {
         setState(() => _busy = false);
         _showSnack(e.message, isError: true);
@@ -571,7 +571,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
 
   Future<void> _flushOutbox() async {
     if (_offlineMode) {
-      _showSnack('Đang ở chế độ Offline. Vui lòng bật mạng trước khi đồng bộ.', isError: true);
+      _showSnack('Đang ở chế độ ngoại tuyến. Vui lòng bật mạng trước khi đồng bộ.', isError: true);
       return;
     }
     if (_outboxQueue.isEmpty || _store == null || _device == null) return;
@@ -685,7 +685,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
               controller: ctrl,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                labelText: 'Server Base URL',
+                labelText: 'Địa chỉ máy chủ (URL)',
               ),
             ),
           ],
@@ -889,7 +889,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
         backgroundColor: kDarkPanelBg,
         foregroundColor: Colors.white,
         title: const Text(
-          'POS.com Android Terminal',
+          'Máy POS Android',
           style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
         ),
         actions: [
@@ -1035,7 +1035,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
               onPressed: _busy ? null : _flushOutbox,
               icon: const Icon(Icons.cloud_upload, color: Colors.amber, size: 18),
               label: Text(
-                'Sync (${_outboxQueue.length})',
+                'Đồng bộ (${_outboxQueue.length})',
                 style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
               ),
             ),
@@ -1045,7 +1045,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
               _offlineMode ? Icons.wifi_off : Icons.wifi,
               color: _offlineMode ? Colors.amber : const Color(0xFF34D399),
             ),
-            tooltip: _offlineMode ? 'Đang Offline (Bấm để Online)' : 'Đang Online',
+            tooltip: _offlineMode ? 'Đang ngoại tuyến (Bấm để kết nối lại)' : 'Đang trực tuyến',
           ),
           TextButton(
             onPressed: _activeCashSession != null ? null : _openCashSession,
@@ -1064,8 +1064,8 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
               if (val == 'reset') _resetAndRepair();
             },
             itemBuilder: (_) => const [
-              PopupMenuItem(value: 'refresh', child: Text('Tải lại menu & tồn kho')),
-              PopupMenuItem(value: 'server', child: Text('Đổi IP Server')),
+              PopupMenuItem(value: 'refresh', child: Text('Tải lại thực đơn & tồn kho')),
+              PopupMenuItem(value: 'server', child: Text('Đổi địa chỉ máy chủ')),
               PopupMenuItem(value: 'reset', child: Text('Hủy ghép nối máy POS')),
             ],
           ),
@@ -1084,7 +1084,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'CHẾ ĐỘ OFFLINE • Thời hạn còn ${_offlineGraceSeconds ~/ 60}p ${_offlineGraceSeconds % 60}s • Hàng đợi: ${_outboxQueue.length} đơn',
+                      'CHẾ ĐỘ NGOẠI TUYẾN • Thời hạn còn ${_offlineGraceSeconds ~/ 60}p ${_offlineGraceSeconds % 60}s • Hàng đợi: ${_outboxQueue.length} đơn',
                       style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -1117,7 +1117,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
               selectedIndex: _mobileTabIndex,
               onDestinationSelected: (i) => setState(() => _mobileTabIndex = i),
               destinations: [
-                const NavigationDestination(icon: Icon(Icons.grid_view), label: 'Menu'),
+                const NavigationDestination(icon: Icon(Icons.grid_view), label: 'Thực đơn'),
                 NavigationDestination(
                   icon: Badge(
                     isLabelVisible: _cart.isNotEmpty,
@@ -1334,9 +1334,9 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                     isDense: true,
                   ),
                   items: const [
-                    DropdownMenuItem(value: 'CASH', child: Text('Tiền mặt (CASH)')),
+                    DropdownMenuItem(value: 'CASH', child: Text('Tiền mặt')),
                     DropdownMenuItem(value: 'BANK_TRANSFER', child: Text('Chuyển khoản / QR')),
-                    DropdownMenuItem(value: 'CARD', child: Text('Thẻ ngân hàng (POS)')),
+                    DropdownMenuItem(value: 'CARD', child: Text('Thẻ ngân hàng')),
                   ],
                   onChanged: (v) {
                     if (v != null) setState(() => _paymentMethod = v);
@@ -1377,7 +1377,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                           )
                         : Text(
                             _offlineMode
-                                ? 'Lưu đơn Offline (${formatVnd(_cartTotal)})'
+                                ? 'Lưu đơn ngoại tuyến (${formatVnd(_cartTotal)})'
                                 : 'Thanh toán (${formatVnd(_cartTotal)})',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,

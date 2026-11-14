@@ -738,7 +738,7 @@ export default function PosTerminalStandalone() {
               BẢO MẬT HỆ THỐNG • PHONG TỎA THIẾT BỊ
             </span>
             <span className="rounded bg-rose-950/80 border border-rose-800/60 px-2 py-0.5 text-[10px] text-rose-300">
-              {isOfflineExpired ? "OFFLINE_GRACE_TIMEOUT" : "HARDWARE_TOKEN_REVOKED"}
+              {isOfflineExpired ? "HẾT HẠN NGOẠI TUYẾN" : "ĐÃ THU HỒI QUYỀN THIẾT BỊ"}
             </span>
           </div>
 
@@ -792,7 +792,7 @@ export default function PosTerminalStandalone() {
             {/* Hardware Information Audit Card */}
             <div className="mt-8 rounded-2xl border border-rose-900/50 bg-[#14080B] p-5 shadow-inner space-y-3 font-mono text-xs">
               <div className="flex items-center justify-between pb-2 border-b border-rose-950/80">
-                <span className="text-neutral-400">Mã máy POS (Hardware ID):</span>
+                <span className="text-neutral-400">Mã định danh máy POS:</span>
                 <span className="font-bold text-white bg-neutral-900 px-2 py-0.5 rounded border border-neutral-700">
                   {pairedDevice?.device_code || "POS-TERMINAL"}
                 </span>
@@ -884,10 +884,10 @@ export default function PosTerminalStandalone() {
           <div className="flex items-center gap-3">
             <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
             <span className="font-bold text-white tracking-wide">
-              POS.com Hardware Terminal
+              Thiết Bị Bán Hàng POS
             </span>
             <span className="rounded bg-neutral-800 px-2 py-0.5 text-[10px] text-neutral-300">
-              Android 13 AOSP • Sunmi/Pax Kiosk Mode
+              Chế độ Quầy Kiosk • Máy POS Android
             </span>
           </div>
 
@@ -1097,7 +1097,7 @@ export default function PosTerminalStandalone() {
             <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] text-amber-300">
               <Clock className="h-3.5 w-3.5 text-amber-400" />
               <span>
-                Offline Grace:{" "}
+                Thời hạn ngoại tuyến:{" "}
                 <strong className="font-mono text-white">
                   {Math.floor(offlineGraceSeconds / 60)}p {offlineGraceSeconds % 60}s
                 </strong>
@@ -1109,9 +1109,9 @@ export default function PosTerminalStandalone() {
                   setIsOfflineGraceExpired(true);
                 }}
                 className="ml-1 rounded bg-amber-500/30 hover:bg-amber-500/50 px-1.5 py-0.5 text-[10px] text-amber-200 transition-colors"
-                title="Giả lập hết hạn 2 giờ offline ngay lập tức để kiểm tra màn hình khóa"
+                title="Giả lập hết hạn 2 giờ ngoại tuyến ngay lập tức để kiểm tra màn hình khóa"
               >
-                Test Hết Hạn
+                Thử hết hạn
               </button>
             </div>
           )}
@@ -1134,7 +1134,7 @@ export default function PosTerminalStandalone() {
             title="Giả lập tình huống Quản trị viên bấm ngắt kết nối hoặc xóa máy POS"
           >
             <Ban className="h-3 w-3 text-rose-400" />
-            Test Thu Hồi Máy
+            Thử thu hồi máy
           </button>
 
           <button
@@ -1144,7 +1144,7 @@ export default function PosTerminalStandalone() {
             title="Hủy ghép nối thiết bị này để kiểm tra lại luồng ban đầu"
           >
             <RotateCcw className="h-3 w-3" />
-            Reset máy POS
+            Đặt lại máy POS
           </button>
         </div>
       </header>

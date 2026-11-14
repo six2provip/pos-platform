@@ -2038,7 +2038,7 @@ export default function OrganizationWorkspace({
                   suppressHydrationWarning
                   className="truncate text-xs font-semibold text-neutral-900"
                 >
-                  {currentUser?.full_name || "Organization Admin"}
+                  {currentUser?.full_name || "Quản trị viên Tổ chức"}
                 </div>
                 <div
                   suppressHydrationWarning
@@ -2555,7 +2555,7 @@ export default function OrganizationWorkspace({
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                            PENDING SYNC
+                            CHỜ ĐỒNG BỘ
                           </span>
                           <span className="text-sm font-bold text-neutral-900">
                             {formatMoneyVND(ev.total_amount)}

@@ -1016,7 +1016,7 @@ export function PosLcdSimulator({
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h1 className="text-lg font-extrabold tracking-tight text-neutral-900">
-                  Time to Order!{" "}
+                  Sẵn sàng bán hàng!{" "}
                   <span className="ml-1.5 rounded-lg bg-[#E6F6F0] px-2 py-0.5 text-xs font-bold text-[#059669]">
                     {storeCode}
                   </span>
@@ -1273,12 +1273,12 @@ export function PosLcdSimulator({
             {offlineMode ? (
               <>
                 <WifiOff className="h-3.5 w-3.5" />
-                Đang Rút Mạng (Offline: {outboxQueue.length})
+                Ngoại tuyến (Chờ đồng bộ: {outboxQueue.length})
               </>
             ) : (
               <>
                 <Wifi className="h-3.5 w-3.5" />
-                Online (Cloud Sync)
+                Trực tuyến (Đồng bộ)
               </>
             )}
           </motion.button>
@@ -1309,7 +1309,7 @@ export function PosLcdSimulator({
             ) : (
               <>
                 <Maximize2 className="h-3.5 w-3.5" />
-                Full Kiosk
+                Toàn màn hình
               </>
             )}
           </button>
@@ -1446,7 +1446,7 @@ export function PosLcdSimulator({
                       <div className="flex items-center gap-1.5">
                         <span className="text-sm font-extrabold text-neutral-900">
                           {activeMenuTab === "pos"
-                            ? "Time to Order!"
+                            ? "Sẵn sàng bán hàng!"
                             : activeMenuTab === "home"
                             ? "Sơ Đồ Bàn"
                             : activeMenuTab === "orders"
