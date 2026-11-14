@@ -1,5 +1,5 @@
 name: pos_mobile
-description: Offline-First Android POS Mobile Application (Flutter + Drift SQLite + Outbox Sync)
+description: Offline-First Android POS Mobile Application (Flutter + SQLite Outbox Sync)
 version: 1.0.0+1
 publish_to: "none"
 
@@ -9,9 +9,16 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  drift: ^2.16.0
-  sqlite3_flutter_libs: ^0.5.20
-  flutter_secure_storage: ^9.0.0
-  dio: ^5.4.1
-  uuid: ^4.3.3
+  http: ^1.2.1
+  sqflite: ^2.3.3
+  path: ^1.9.0
+  shared_preferences: ^2.2.3
+  uuid: ^4.4.0
 
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

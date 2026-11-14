@@ -78,6 +78,17 @@ export default function PosTerminalStandalone() {
   const [deviceToken, setDeviceToken] = useState<string | null>(null);
 
   // Cashier state when paired
+  const [variants, setVariants] = useState<SimulatorVariantItem[]>([]);
+  const [activeCashSession, setActiveCashSession] = useState<{
+    id: string;
+    opening_amount: string;
+    status: string;
+  } | null>(null);
+  const [posLoading, setPosLoading] = useState(false);
+  const [terminalNotice, setTerminalNotice] = useState<{
+    type: "success" | "error" | "info";
+    text: string;
+  } | null>(null);
   const [cart, setCart] = useState<SimulatorCartItem[]>([]);
   const [orders, setOrders] = useState<SimulatorOrderRecord[]>([]);
   const [outboxQueue, setOutboxQueue] = useState<SimulatorOutboxOrder[]>([]);
@@ -114,7 +125,7 @@ export default function PosTerminalStandalone() {
     return () => clearInterval(interval);
   }, []);
 
-  // Restore existing pairing from localStorage
+  // Restore existing pairing & offline-first cache from localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -122,6 +133,13 @@ export default function PosTerminalStandalone() {
       const savedStoreStr = localStorage.getItem("pos_terminal_store");
       const savedOrgStr = localStorage.getItem("pos_terminal_org");
       const savedToken = localStorage.getItem("pos_terminal_token");
+      const savedCatalog = localStorage.getItem("pos_terminal_catalog_cache");
+      const savedOutbox = localStorage.getItem("pos_terminal_outbox_queue");
+      const savedOrders = localStorage.getItem("pos_terminal_orders_cache");
+
+      if (savedCatalog) setVariants(JSON.parse(savedCatalog));
+      if (savedOutbox) setOutboxQueue(JSON.parse(savedOutbox));
+      if (savedOrders) setOrders(JSON.parse(savedOrders));
 
       if (savedDevStr && savedStoreStr && savedToken) {
         setPairedDevice(JSON.parse(savedDevStr));
@@ -134,6 +152,189 @@ export default function PosTerminalStandalone() {
       // ignore JSON parse errors
     }
   }, []);
+
+  // Persist outbox & orders to localStorage so offline data survives reload
+  useEffect(() => {
+    if (!mounted || typeof window === "undefined") return;
+    try {
+      localStorage.setItem("pos_terminal_outbox_queue", JSON.stringify(outboxQueue));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [outboxQueue, mounted]);
+
+  useEffect(() => {
+    if (!mounted || typeof window === "undefined") return;
+    try {
+      localStorage.setItem("pos_terminal_orders_cache", JSON.stringify(orders.slice(0, 50)));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [orders, mounted]);
+
+  const showNotice = useCallback((type: "success" | "error" | "info", text: string) => {
+    setTerminalNotice({ type, text });
+    setTimeout(() => {
+      setTerminalNotice((prev) => (prev?.text === text ? null : prev));
+    }, 5000);
+  }, []);
+
+  // Authenticated API helper using Device Bearer Token
+  const terminalApiFetch = useCallback(
+    async (path: string, options: RequestInit = {}) => {
+      if (!deviceToken) throw new Error("Thiết bị chưa có token xác thực.");
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${deviceToken}`,
+        ...(options.headers as Record<string, string> | undefined),
+      };
+      if (pairedOrg?.id) headers["X-Organization-Id"] = pairedOrg.id;
+      if (pairedStore?.id) headers["X-Store-ID"] = pairedStore.id;
+
+      const res = await fetch(path, { ...options, headers });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.success === false) {
+        const msg = json.message || json.detail || `Lỗi API (${res.status})`;
+        throw new Error(msg);
+      }
+      return json.data !== undefined ? json.data : json;
+    },
+    [deviceToken, pairedOrg?.id, pairedStore?.id]
+  );
+
+  // Fetch real catalog, inventory, active cash session, and recent orders
+  const refreshTerminalData = useCallback(async () => {
+    if (!isPaired || !deviceToken || !pairedStore?.id || offlineMode || isRevoked) return;
+    try {
+      const [bootstrapData, inventoryData, ordersData] = await Promise.all([
+        terminalApiFetch(`/api/v1/pos/bootstrap?store_id=${encodeURIComponent(pairedStore.id)}`),
+        terminalApiFetch(`/api/v1/inventory?store_id=${encodeURIComponent(pairedStore.id)}`).catch(() => []),
+        terminalApiFetch(`/api/v1/orders?store_id=${encodeURIComponent(pairedStore.id)}`).catch(() => []),
+      ]);
+
+      const invList: any[] = Array.isArray(inventoryData) ? inventoryData : inventoryData?.items || [];
+      const invMap = new Map<string, number>();
+      invList.forEach((row: any) => {
+        invMap.set(row.product_variant_id, Math.floor(Number(row.on_hand_quantity ?? row.quantity ?? 0)));
+      });
+
+      const prodMap = new Map<string, any>();
+      (bootstrapData?.products || []).forEach((p: any) => prodMap.set(p.id, p));
+
+      const barcodeMap = new Map<string, string>();
+      (bootstrapData?.barcodes || []).forEach((b: any) => {
+        if (!barcodeMap.has(b.product_variant_id) || b.is_primary) {
+          barcodeMap.set(b.product_variant_id, b.barcode);
+        }
+      });
+
+      const mappedVariants: SimulatorVariantItem[] = (bootstrapData?.variants || [])
+        .filter((v: any) => {
+          const prod = prodMap.get(v.product_id);
+          return v.status === "active" && (!prod || prod.status === "active");
+        })
+        .map((v: any) => {
+          const prod = prodMap.get(v.product_id);
+          return {
+            productId: v.product_id,
+            productCode: prod?.product_code || v.variant_code || "SKU",
+            productName: prod?.name || v.variant_name || "Sản phẩm",
+            variantId: v.id,
+            variantName: v.variant_name || "Tiêu chuẩn",
+            sku: v.sku || v.variant_code || "",
+            barcode: barcodeMap.get(v.id) || v.sku || "",
+            price: Number(v.default_price || 0),
+            onHand: invMap.has(v.id) ? (invMap.get(v.id) as number) : 0,
+          };
+        });
+
+      setVariants(mappedVariants);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("pos_terminal_catalog_cache", JSON.stringify(mappedVariants));
+      }
+
+      if (bootstrapData?.current_cash_session) {
+        setActiveCashSession({
+          id: bootstrapData.current_cash_session.id,
+          opening_amount: String(bootstrapData.current_cash_session.opening_amount || "0"),
+          status: bootstrapData.current_cash_session.status,
+        });
+      } else {
+        setActiveCashSession(null);
+      }
+
+      const ordList: any[] = Array.isArray(ordersData) ? ordersData : ordersData?.items || [];
+      if (ordList.length > 0) {
+        const mappedOrders: SimulatorOrderRecord[] = ordList.slice(0, 50).map((o: any) => ({
+          id: o.id,
+          order_number: o.order_number,
+          store_id: o.store_id,
+          status: o.status,
+          payment_status: o.payment_status,
+          total_amount: String(o.total_amount || "0"),
+          paid_amount: String(o.paid_amount || o.total_amount || "0"),
+          change_amount: String(o.change_amount || "0"),
+          occurred_at: o.occurred_at || o.created_at,
+        }));
+        setOrders(mappedOrders);
+      }
+    } catch (err) {
+      console.warn("Không thể tải dữ liệu POS bootstrap:", err);
+    }
+  }, [isPaired, deviceToken, pairedStore?.id, offlineMode, isRevoked, terminalApiFetch]);
+
+  useEffect(() => {
+    if (isPaired && deviceToken && pairedStore?.id && !offlineMode && !isRevoked) {
+      refreshTerminalData();
+    }
+  }, [isPaired, deviceToken, pairedStore?.id, offlineMode, isRevoked, refreshTerminalData]);
+
+  // Open real cash session on backend
+  const handleOpenCashSession = useCallback(async () => {
+    if (!pairedStore?.id) return;
+    if (offlineMode) {
+      showNotice("error", "Cần kết nối mạng để mở ca thu ngân mới trên hệ thống.");
+      return;
+    }
+    setPosLoading(true);
+    try {
+      const drawers = await terminalApiFetch(
+        `/api/v1/cash-drawers?store_id=${encodeURIComponent(pairedStore.id)}`
+      ).catch(() => []);
+      const drawerList = Array.isArray(drawers) ? drawers : drawers?.items || [];
+      let drawerId = drawerList[0]?.id;
+      if (!drawerId) {
+        const createdDrawer = await terminalApiFetch("/api/v1/cash-drawers", {
+          method: "POST",
+          body: JSON.stringify({
+            store_id: pairedStore.id,
+            code: `DRW-${Date.now().toString().slice(-4)}`,
+            name: "Ngăn kéo thu ngân chính",
+          }),
+        });
+        drawerId = createdDrawer.id;
+      }
+
+      const opened = await terminalApiFetch("/api/v1/cash-sessions/open", {
+        method: "POST",
+        body: JSON.stringify({
+          store_id: pairedStore.id,
+          cash_drawer_id: drawerId,
+          opening_amount: "1000000.0000",
+        }),
+      });
+      setActiveCashSession({
+        id: opened.id,
+        opening_amount: String(opened.opening_amount || "1000000"),
+        status: opened.status || "open",
+      });
+      showNotice("success", "Đã mở ca thu ngân thành công (1.000.000₫ đầu ca)!");
+    } catch (err: any) {
+      showNotice("error", err?.message || "Không thể mở ca thu ngân.");
+    } finally {
+      setPosLoading(false);
+    }
+  }, [pairedStore?.id, offlineMode, terminalApiFetch, showNotice]);
 
   // Create a new pairing session from backend
   const requestPairingSession = useCallback(async () => {
@@ -288,6 +489,17 @@ export default function PosTerminalStandalone() {
     return () => clearInterval(timer);
   }, [isPaired, offlineMode, isRevoked, isOfflineGraceExpired]);
 
+  const clearTerminalStorage = () => {
+    if (typeof window === "undefined") return;
+    localStorage.removeItem("pos_terminal_paired_device");
+    localStorage.removeItem("pos_terminal_store");
+    localStorage.removeItem("pos_terminal_org");
+    localStorage.removeItem("pos_terminal_token");
+    localStorage.removeItem("pos_terminal_catalog_cache");
+    localStorage.removeItem("pos_terminal_outbox_queue");
+    localStorage.removeItem("pos_terminal_orders_cache");
+  };
+
   // Reconnection catch-up: Check status immediately when reconnecting
   const handleToggleOffline = async () => {
     const nextMode = !offlineMode;
@@ -304,12 +516,7 @@ export default function PosTerminalStandalone() {
 
   // Full Reset when device is Revoked or Expired -> Return to Pairing Screen
   const handleAcknowledgeAndReset = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("pos_terminal_paired_device");
-      localStorage.removeItem("pos_terminal_store");
-      localStorage.removeItem("pos_terminal_org");
-      localStorage.removeItem("pos_terminal_token");
-    }
+    clearTerminalStorage();
     setIsRevoked(false);
     setRevocationInfo(null);
     setIsOfflineGraceExpired(false);
@@ -319,6 +526,8 @@ export default function PosTerminalStandalone() {
     setPairedStore(null);
     setPairedOrg(null);
     setDeviceToken(null);
+    setVariants([]);
+    setActiveCashSession(null);
     setCart([]);
     setOrders([]);
     setOutboxQueue([]);
@@ -333,18 +542,17 @@ export default function PosTerminalStandalone() {
     ) {
       return;
     }
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("pos_terminal_paired_device");
-      localStorage.removeItem("pos_terminal_store");
-      localStorage.removeItem("pos_terminal_org");
-      localStorage.removeItem("pos_terminal_token");
-    }
+    clearTerminalStorage();
     setIsPaired(false);
     setPairedDevice(null);
     setPairedStore(null);
     setPairedOrg(null);
     setDeviceToken(null);
+    setVariants([]);
+    setActiveCashSession(null);
     setCart([]);
+    setOrders([]);
+    setOutboxQueue([]);
     requestPairingSession();
   };
 
@@ -941,31 +1149,48 @@ export default function PosTerminalStandalone() {
         </div>
       </header>
 
+      {/* Status Toast Banner */}
+      {terminalNotice && (
+        <div
+          className={`mx-4 mt-3 flex items-center justify-between rounded-xl border px-4 py-2.5 text-xs font-semibold ${
+            terminalNotice.type === "error"
+              ? "border-rose-500/40 bg-rose-500/15 text-rose-200"
+              : terminalNotice.type === "info"
+                ? "border-amber-500/40 bg-amber-500/15 text-amber-200"
+                : "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"
+          }`}
+        >
+          <span>{terminalNotice.text}</span>
+          <button
+            type="button"
+            onClick={() => setTerminalNotice(null)}
+            className="ml-4 text-xs opacity-70 hover:opacity-100"
+          >
+            Đóng
+          </button>
+        </div>
+      )}
+
       {/* Embedded LCD Cashier POS Simulator */}
       <div className="flex-1 overflow-auto bg-neutral-950 p-2 sm:p-4">
         <PosLcdSimulator
           storeCode={pairedStore?.code || "DEMO-S1"}
           storeName={pairedStore?.name || "Chi nhánh chính"}
           orgName={pairedOrg?.name || "POS Organization"}
-          variants={sampleVariants}
+          variants={variants}
           cart={cart}
           orders={orders}
           outboxQueue={outboxQueue}
           offlineMode={offlineMode}
-          loading={false}
-          activeCashSession={{
-            id: "cs_active",
-            opening_amount: "1000000",
-            status: "opened",
-          }}
+          loading={posLoading}
+          activeCashSession={activeCashSession}
           onAddToCart={handleAddToCart}
           onUpdateCartQty={handleUpdateCartQty}
           onClearCart={handleClearCart}
-          onCheckoutOrder={async (tenderedCash?: number) => {
-            if (cart.length === 0) return;
+          onCheckoutOrder={async (tenderedCash?: number, paymentMethod: string = "CASH") => {
+            if (cart.length === 0 || !pairedStore?.id) return;
 
-            // Enforce Offline Limits (30 orders max, 5,000,000 VND max)
-            if (offlineMode) {
+            const queueOfflineOrder = (reasonNotice?: string) => {
               const currentOutboxSum = outboxQueue.reduce(
                 (sum, o) => sum + (o.total_amount || 0),
                 0
@@ -974,72 +1199,202 @@ export default function PosTerminalStandalone() {
                 alert(
                   "CẢNH BÁO AN TOÀN OFFLINE: Đã đạt giới hạn tối đa 30 đơn hàng offline chưa đồng bộ. Vui lòng kết nối Internet để đồng bộ dữ liệu trước khi tiếp tục bán hàng!"
                 );
-                return;
+                return false;
               }
               if (currentOutboxSum + cartTotal > 5_000_000) {
                 alert(
                   "CẢNH BÁO HẠN MỨC OFFLINE: Tổng doanh thu offline chưa đồng bộ vượt mức an toàn 5.000.000₫. Vui lòng kết nối Internet để đồng bộ dữ liệu trước khi tiếp tục bán hàng!"
                 );
-                return;
+                return false;
               }
-            }
 
-            const nowIso = new Date().toISOString();
-            const orderNum = `POS-${Date.now().toString().slice(-6)}`;
-            const paid = tenderedCash && tenderedCash >= cartTotal ? tenderedCash : cartTotal;
-            const change = paid - cartTotal;
+              const nowIso = new Date().toISOString();
+              const clientOrderId = `POS-OFF-${Date.now().toString().slice(-6)}`;
+              const idemKey = `${pairedOrg?.id || "org"}:pos:${clientOrderId}`;
+              const paid = tenderedCash && tenderedCash >= cartTotal ? tenderedCash : cartTotal;
+              const change = paid - cartTotal;
 
-            const newRecord: SimulatorOrderRecord = {
-              id: `ord_${Date.now()}`,
-              order_number: orderNum,
-              store_id: pairedStore?.id || "store",
-              status: "completed",
-              payment_status: "paid",
-              total_amount: cartTotal.toString(),
-              paid_amount: paid.toString(),
-              change_amount: change.toString(),
-              occurred_at: nowIso,
-            };
-
-            setOrders((prev) => [newRecord, ...prev]);
-
-            // If offline, queue to outbox
-            if (offlineMode) {
               const outboxItem: SimulatorOutboxOrder = {
-                event_id: `evt_${Date.now()}`,
-                idempotency_key: `idem_${Date.now()}`,
-                client_order_id: newRecord.id,
-                store_id: pairedStore?.id || "store",
+                event_id: `ev_${Date.now()}`,
+                idempotency_key: idemKey,
+                client_order_id: clientOrderId,
+                store_id: pairedStore.id,
                 occurred_at: nowIso,
                 total_amount: cartTotal,
                 items: cart.map((c) => ({
                   product_variant_id: c.variantId,
                   productName: c.productName,
-                  quantity: c.quantity.toString(),
-                  unit_price: c.unitPrice.toString(),
+                  quantity: `${c.quantity}.0000`,
+                  unit_price: `${c.unitPrice}.0000`,
                 })),
               };
+
+              const localRecord: SimulatorOrderRecord = {
+                id: outboxItem.event_id,
+                order_number: clientOrderId,
+                store_id: pairedStore.id,
+                status: "offline_pending",
+                payment_status: "paid",
+                total_amount: cartTotal.toString(),
+                paid_amount: paid.toString(),
+                change_amount: change.toString(),
+                occurred_at: nowIso,
+              };
+
+              // Optimistic local inventory deduction
+              setVariants((prev) =>
+                prev.map((v) => {
+                  const inCart = cart.find((c) => c.variantId === v.variantId);
+                  return inCart ? { ...v, onHand: Math.max(0, v.onHand - inCart.quantity) } : v;
+                })
+              );
               setOutboxQueue((prev) => [outboxItem, ...prev]);
+              setOrders((prev) => [localRecord, ...prev]);
+              setRecentOrderSuccess(localRecord);
+              setCart([]);
+              setTenderedCash(null);
+              fireSuccessConfetti();
+              showNotice(
+                "info",
+                reasonNotice || `Đã lưu đơn ${clientOrderId} vào hàng đợi Offline Outbox!`
+              );
+              return true;
+            };
+
+            if (offlineMode) {
+              queueOfflineOrder();
+              return;
             }
 
-            setRecentOrderSuccess(newRecord);
-            setCart([]);
-            setTenderedCash(null);
-            fireSuccessConfetti();
+            setPosLoading(true);
+            try {
+              const clientOrderId = `POS-${Date.now()}`;
+              const idemKey = `${pairedOrg?.id || "org"}:pos:${clientOrderId}`;
+              const paid = tenderedCash && tenderedCash >= cartTotal ? tenderedCash : cartTotal;
+
+              const orderData = await terminalApiFetch("/api/v1/orders", {
+                method: "POST",
+                headers: {
+                  "Idempotency-Key": idemKey,
+                },
+                body: JSON.stringify({
+                  store_id: pairedStore.id,
+                  client_order_id: clientOrderId,
+                  items: cart.map((c) => ({
+                    product_variant_id: c.variantId,
+                    quantity: `${c.quantity}.0000`,
+                  })),
+                  payments: [
+                    {
+                      payment_method_code: paymentMethod,
+                      amount: `${paid}.0000`,
+                    },
+                  ],
+                }),
+              });
+
+              const createdRecord: SimulatorOrderRecord = {
+                id: orderData.id,
+                order_number: orderData.order_number,
+                store_id: orderData.store_id,
+                status: orderData.status,
+                payment_status: orderData.payment_status,
+                total_amount: String(orderData.total_amount || cartTotal),
+                paid_amount: String(orderData.paid_amount || paid),
+                change_amount: String(orderData.change_amount || Math.max(0, paid - cartTotal)),
+                occurred_at: orderData.occurred_at || new Date().toISOString(),
+              };
+
+              setRecentOrderSuccess(createdRecord);
+              setCart([]);
+              setTenderedCash(null);
+              fireSuccessConfetti();
+              await refreshTerminalData();
+              showNotice(
+                "success",
+                `Đã thanh toán hóa đơn ${orderData.order_number} — Dữ liệu & tồn kho đã đồng bộ!`
+              );
+            } catch (err: any) {
+              // Network drop mid-checkout -> seamlessly save to offline outbox
+              if (err instanceof TypeError || /Failed to fetch|NetworkError/i.test(err?.message || "")) {
+                setOfflineMode(true);
+                queueOfflineOrder("Mất kết nối mạng đột ngột! Đơn hàng đã được tự động chuyển sang Offline Outbox.");
+              } else {
+                showNotice("error", err?.message || "Lỗi thanh toán đơn hàng");
+              }
+            } finally {
+              setPosLoading(false);
+            }
           }}
           onFlushOutbox={async () => {
             if (offlineMode) {
-              alert("Máy POS đang ở chế độ Offline. Vui lòng bật lại mạng Internet trước khi đồng bộ lên Đám Mây!");
+              showNotice("error", "Máy POS đang ở chế độ Offline. Vui lòng bật lại mạng Internet trước khi đồng bộ!");
               return;
             }
+            if (outboxQueue.length === 0 || !pairedStore?.id) return;
+
             if (pairedDevice?.id) {
               await verifyDeviceStatus(pairedDevice.id);
               if (isRevoked) return;
             }
-            setOutboxQueue([]);
+
+            setPosLoading(true);
+            try {
+              const batchId = `batch_${Date.now()}`;
+              const pushData = await terminalApiFetch("/api/v1/sync/push", {
+                method: "POST",
+                body: JSON.stringify({
+                  device_id: pairedDevice?.id || undefined,
+                  store_id: pairedStore.id,
+                  batch_id: batchId,
+                  events: outboxQueue.map((ev) => ({
+                    event_id: ev.event_id,
+                    event_type: "order.created",
+                    idempotency_key: ev.idempotency_key,
+                    occurred_at: ev.occurred_at,
+                    payload: {
+                      client_order_id: ev.client_order_id,
+                      currency_code: "VND",
+                      items: ev.items.map((it) => ({
+                        product_variant_id: it.product_variant_id,
+                        quantity: it.quantity,
+                        unit_price: it.unit_price,
+                      })),
+                      payments: [
+                        {
+                          payment_method_code: "CASH",
+                          amount: `${ev.total_amount}.0000`,
+                        },
+                      ],
+                    },
+                  })),
+                }),
+              });
+
+              const results: any[] = pushData?.results || [];
+              const acceptedIds = new Set(
+                results
+                  .filter((r) => r.status === "accepted" || r.status === "duplicate")
+                  .map((r) => r.event_id)
+              );
+              const remaining = outboxQueue.filter((ev) => !acceptedIds.has(ev.event_id));
+              setOutboxQueue(remaining);
+              fireSuccessConfetti();
+              await refreshTerminalData();
+              showNotice(
+                remaining.length === 0 ? "success" : "info",
+                `Đã đồng bộ ${acceptedIds.size} đơn Offline lên hệ thống!${
+                  remaining.length > 0 ? ` (${remaining.length} đơn lỗi cần kiểm tra)` : ""
+                }`
+              );
+            } catch (err: any) {
+              showNotice("error", err?.message || "Lỗi đồng bộ Outbox lên máy chủ.");
+            } finally {
+              setPosLoading(false);
+            }
           }}
           onToggleOffline={handleToggleOffline}
-          onOpenCashSession={() => {}}
+          onOpenCashSession={handleOpenCashSession}
         />
       </div>
     </div>
