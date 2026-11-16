@@ -1,9 +1,18 @@
 "use client";
-// Adapted from beui.dev/components/motion/multi-select
+// Adapted from beui.dev/components/motion/multi-select (with createPortal)
 
 import { Check, ChevronsUpDown, Search, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 
 export interface BeMultiSelectOption {
   value: string;
@@ -48,14 +57,49 @@ export function BeMultiSelect({
   const reduce = useReducedMotion() ?? false;
   const baseId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [coords, setCoords] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    openUpward: boolean;
+  } | null>(null);
+
+  const updateCoords = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUpward = spaceBelow < 240 && rect.top > spaceBelow;
+    setCoords({
+      left: rect.left,
+      top: openUpward ? rect.top - 6 : rect.bottom + 6,
+      width: rect.width,
+      openUpward,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updateCoords();
+    window.addEventListener("resize", updateCoords);
+    window.addEventListener("scroll", updateCoords, true);
+    return () => {
+      window.removeEventListener("resize", updateCoords);
+      window.removeEventListener("scroll", updateCoords, true);
+    };
+  }, [open, values.length, updateCoords]);
 
   useEffect(() => {
     if (!open) return;
+    const isInside = (target: Node) =>
+      rootRef.current?.contains(target) || contentRef.current?.contains(target);
     const onPointerDown = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+      if (!isInside(e.target as Node)) {
         setOpen(false);
         setQuery("");
       }
@@ -121,6 +165,7 @@ export function BeMultiSelect({
 
       {/* Multi-Select Token Trigger */}
       <div
+        ref={triggerRef}
         onPointerDown={(e) => {
           const target = e.target as HTMLElement;
           if (target.closest("[data-token-remove]")) return;
@@ -207,59 +252,83 @@ export function BeMultiSelect({
         <ChevronsUpDown className="h-4 w-4 shrink-0 text-neutral-400" />
       </div>
 
-      {/* Morphing Searchable Dropdown List */}
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={
-              reduce
-                ? { opacity: 0 }
-                : { opacity: 0, y: -6, scale: 0.98, filter: "blur(3px)" }
-            }
-            animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-            exit={
-              reduce
-                ? { opacity: 0 }
-                : { opacity: 0, y: -4, scale: 0.98, filter: "blur(3px)" }
-            }
-            transition={{
-              type: "spring",
-              duration: 0.32,
-              bounce: 0.16,
-            }}
-            className="absolute left-0 right-0 top-full z-30 mt-1.5 max-h-56 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
-          >
-            {filteredOptions.length === 0 ? (
-              <div className="py-5 text-center text-xs text-neutral-400">
-                {emptyText}
-              </div>
-            ) : (
-              <div className="space-y-0.5">
-                {filteredOptions.map((opt) => {
-                  const selected = values.includes(opt.value);
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => toggleValue(opt.value)}
-                      className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
-                        selected
-                          ? "bg-neutral-100 font-semibold text-neutral-900 dark:bg-neutral-800 dark:text-white"
-                          : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800/60 dark:hover:text-white"
-                      }`}
-                    >
-                      <span className="truncate">{opt.label}</span>
-                      {selected && (
-                        <Check className="h-3.5 w-3.5 shrink-0 text-blue-600" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+      {/* Portal Searchable Dropdown List (Never clipped by overflow containers) */}
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {open && coords && (
+              <motion.div
+                ref={contentRef}
+                initial={
+                  reduce
+                    ? { opacity: 0 }
+                    : {
+                        opacity: 0,
+                        y: coords.openUpward ? 6 : -6,
+                        scale: 0.98,
+                        filter: "blur(3px)",
+                      }
+                }
+                animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+                exit={
+                  reduce
+                    ? { opacity: 0 }
+                    : {
+                        opacity: 0,
+                        y: coords.openUpward ? 4 : -4,
+                        scale: 0.98,
+                        filter: "blur(3px)",
+                      }
+                }
+                transition={{
+                  type: "spring",
+                  duration: 0.28,
+                  bounce: 0.14,
+                }}
+                style={{
+                  position: "fixed",
+                  left: coords.left,
+                  width: coords.width,
+                  top: coords.openUpward ? undefined : coords.top,
+                  bottom: coords.openUpward
+                    ? window.innerHeight - coords.top
+                    : undefined,
+                }}
+                className="z-[9999] max-h-60 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-2xl dark:border-neutral-700 dark:bg-neutral-900"
+              >
+                {filteredOptions.length === 0 ? (
+                  <div className="py-5 text-center text-xs text-neutral-400">
+                    {emptyText}
+                  </div>
+                ) : (
+                  <div className="space-y-0.5">
+                    {filteredOptions.map((opt) => {
+                      const selected = values.includes(opt.value);
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => toggleValue(opt.value)}
+                          className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
+                            selected
+                              ? "bg-neutral-100 font-semibold text-neutral-900 dark:bg-neutral-800 dark:text-white"
+                              : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800/60 dark:hover:text-white"
+                          }`}
+                        >
+                          <span className="truncate">{opt.label}</span>
+                          {selected && (
+                            <Check className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </motion.div>
             )}
-          </motion.div>
+          </AnimatePresence>,
+          document.body
         )}
-      </AnimatePresence>
     </div>
   );
 }
