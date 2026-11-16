@@ -9,7 +9,9 @@ import {
   useTransform,
 } from "motion/react";
 import {
+  AlertCircle,
   ArrowLeft,
+  ArrowRight,
   Check,
   Edit3,
   Image as ImageIcon,
@@ -257,9 +259,19 @@ export function CatalogProductsView({
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // Horizontal Detail / Editor state
+  // Horizontal Stepper Wizard state
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorTab, setEditorTab] = useState<EditorTab>("general");
+  const [touchedSteps, setTouchedSteps] = useState<Record<EditorTab, boolean>>({
+    general: false,
+    images: false,
+    variants: false,
+  });
+  const [completedSteps, setCompletedSteps] = useState<Record<EditorTab, boolean>>({
+    general: false,
+    images: false,
+    variants: false,
+  });
   const [editingProd, setEditingProd] = useState<ProductRecord | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploadingImg, setUploadingImg] = useState(false);
@@ -439,6 +451,8 @@ export function CatalogProductsView({
     const ts = Date.now().toString().slice(-4);
     setEditingProd(null);
     setEditorTab("general");
+    setTouchedSteps({ general: false, images: false, variants: false });
+    setCompletedSteps({ general: false, images: false, variants: false });
     setProdCode(`SP-${ts}`);
     setProdName("");
     setProdDesc("");
@@ -503,6 +517,18 @@ export function CatalogProductsView({
         isNew: false,
       }))
     );
+    setTouchedSteps({ general: false, images: false, variants: false });
+    setCompletedSteps({
+      general: Boolean(p.name?.trim() && p.product_code?.trim()),
+      images: Boolean((p.images && p.images.length > 0) || p.image_url),
+      variants:
+        (p.variants || []).length > 0 &&
+        (p.variants || []).every(
+          (v) =>
+            Boolean(v.variant_name?.trim()) &&
+            String(v.default_price ?? "").trim() !== ""
+        ),
+    });
     setEditorOpen(true);
   };
 
@@ -615,11 +641,94 @@ export function CatalogProductsView({
     setVariants((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const getStepValidation = (step: EditorTab) => {
+    if (step === "general") {
+      const nameErr = !prodName.trim() ? "Vui lòng nhập tên sản phẩm." : "";
+      const codeErr = !prodCode.trim() ? "Vui lòng nhập mã sản phẩm." : "";
+      return {
+        valid: !nameErr && !codeErr,
+        errors: { nameErr, codeErr },
+      };
+    }
+    if (step === "images") {
+      return { valid: true, errors: {} };
+    }
+    const invalidVariants = variants.map((v) => ({
+      nameErr: !v.variant_name.trim() ? "Nhập tên biến thể" : "",
+      priceErr:
+        v.default_price.trim() === "" ||
+        Number.isNaN(Number(v.default_price)) ||
+        Number(v.default_price) < 0
+          ? "Nhập giá bán hợp lệ"
+          : "",
+    }));
+    const valid =
+      variants.length > 0 &&
+      invalidVariants.every((iv) => !iv.nameErr && !iv.priceErr);
+    return { valid, errors: { invalidVariants } };
+  };
+
+  const getStepVisualStatus = (
+    step: EditorTab
+  ): "active" | "completed" | "error" | "pending" => {
+    const { valid } = getStepValidation(step);
+    if (editorTab === step) return "active";
+    if (touchedSteps[step] && !valid) return "error";
+    if (completedSteps[step] && valid) return "completed";
+    return "pending";
+  };
+
+  const goToStep = (target: EditorTab) => {
+    if (target === editorTab) return;
+    const { valid } = getStepValidation(editorTab);
+    setTouchedSteps((prev) => ({ ...prev, [editorTab]: true }));
+    setCompletedSteps((prev) => ({ ...prev, [editorTab]: valid }));
+    setEditorTab(target);
+  };
+
+  const handleNextStep = () => {
+    const order: EditorTab[] = ["general", "images", "variants"];
+    const idx = order.indexOf(editorTab);
+    const { valid } = getStepValidation(editorTab);
+    setTouchedSteps((prev) => ({ ...prev, [editorTab]: true }));
+    if (!valid) {
+      setCompletedSteps((prev) => ({ ...prev, [editorTab]: false }));
+      notify("error", "Vui lòng điền đầy đủ các trường bắt buộc trước khi sang bước tiếp theo.");
+      return;
+    }
+    setCompletedSteps((prev) => ({ ...prev, [editorTab]: true }));
+    if (idx < order.length - 1) {
+      setEditorTab(order[idx + 1]);
+    }
+  };
+
+  const handlePrevStep = () => {
+    const order: EditorTab[] = ["general", "images", "variants"];
+    const idx = order.indexOf(editorTab);
+    if (idx > 0) {
+      goToStep(order[idx - 1]);
+    }
+  };
+
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prodName.trim() || !prodCode.trim() || variants.length === 0) {
+    setTouchedSteps({ general: true, images: true, variants: true });
+    const genVal = getStepValidation("general");
+    const varVal = getStepValidation("variants");
+    setCompletedSteps({
+      general: genVal.valid,
+      images: true,
+      variants: varVal.valid,
+    });
+
+    if (!genVal.valid) {
       setEditorTab("general");
-      notify("error", "Vui lòng nhập đầy đủ tên, mã sản phẩm và ít nhất 1 biến thể.");
+      notify("error", "Vui lòng điền đầy đủ Tên sản phẩm và Mã sản phẩm.");
+      return;
+    }
+    if (!varVal.valid) {
+      setEditorTab("variants");
+      notify("error", "Vui lòng kiểm tra lại Tên biến thể và Giá bán ở bước Biến thể.");
       return;
     }
 
@@ -770,65 +879,120 @@ export function CatalogProductsView({
   };
 
   // ===========================================================================
-  // HORIZONTAL FORM VIEW (WHEN CREATING OR EDITING A PRODUCT)
+  // 3-STEP PROCESS WIZARD VIEW (WHEN CREATING OR EDITING A PRODUCT)
   // ===========================================================================
   if (editorOpen) {
+    const genValidation = getStepValidation("general");
+    const varValidation = getStepValidation("variants");
+    const stepsMeta: { id: EditorTab; num: number; title: string; subtitle: string }[] = [
+      {
+        id: "general",
+        num: 1,
+        title: "Thông tin & Danh mục",
+        subtitle: `${selectedCatIds.length} danh mục`,
+      },
+      {
+        id: "images",
+        num: 2,
+        title: "Hình ảnh",
+        subtitle: `${images.length} ảnh`,
+      },
+      {
+        id: "variants",
+        num: 3,
+        title: "Biến thể & Giá bán",
+        subtitle: `${variants.length} biến thể`,
+      },
+    ];
+    const currentStepIdx = stepsMeta.findIndex((s) => s.id === editorTab);
+
     return (
       <motion.form
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2 }}
+        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
         onSubmit={handleSaveProduct}
-        className="flex h-full flex-col justify-between gap-4"
+        noValidate
+        className="flex h-full flex-1 min-h-0 flex-col gap-3"
       >
-        {/* Top Horizontal Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-white px-5 py-3.5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+        {/* Top Bar + 4-Color Process Stepper */}
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-white px-5 py-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
               onClick={() => setEditorOpen(false)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-neutral-200 text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-neutral-200 text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div className="min-w-0">
-              <h2 className="truncate text-base font-bold text-neutral-900 dark:text-white">
+              <h2 className="truncate text-sm font-bold text-neutral-900 dark:text-white">
                 {editingProd ? `Chi tiết sản phẩm: ${editingProd.name}` : "Thêm Sản Phẩm Mới"}
               </h2>
               <p className="text-[11px] text-neutral-500">
-                Chọn từng mục bên dưới để chỉnh sửa theo chiều ngang gọn gàng.
+                Hoàn thành lần lượt 3 bước tiến trình hoặc bấm trực tiếp để chuyển bước.
               </p>
             </div>
           </div>
 
-          {/* Horizontal Section Switcher (Animated Pills) */}
-          <div className="flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-100 p-1 dark:border-neutral-700 dark:bg-neutral-800">
-            {[
-              { id: "general", label: `1. Thông tin & Danh mục (${selectedCatIds.length})` },
-              { id: "images", label: `2. Hình ảnh (${images.length})` },
-              { id: "variants", label: `3. Biến thể (${variants.length})` },
-            ].map((t) => {
-              const active = editorTab === t.id;
+          {/* 3-Step Visual Stepper (Blue=Active, Green=Done, Gray=Pending, Red=Error) */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {stepsMeta.map((step, idx) => {
+              const status = getStepVisualStatus(step.id);
+              const badgeCls =
+                status === "active"
+                  ? "bg-blue-600 text-white ring-4 ring-blue-600/15"
+                  : status === "completed"
+                    ? "bg-emerald-600 text-white"
+                    : status === "error"
+                      ? "bg-rose-600 text-white ring-4 ring-rose-600/15"
+                      : "bg-neutral-200 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400";
+              const pillCls =
+                status === "active"
+                  ? "border-blue-500/50 bg-blue-50/80 text-blue-700 dark:border-blue-500/40 dark:bg-blue-950/40 dark:text-blue-300"
+                  : status === "completed"
+                    ? "border-emerald-500/40 bg-emerald-50/70 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-300"
+                    : status === "error"
+                      ? "border-rose-500/50 bg-rose-50/80 text-rose-700 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-300"
+                      : "border-neutral-200 bg-neutral-50/60 text-neutral-500 hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-800/40 dark:text-neutral-400";
+
               return (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setEditorTab(t.id as EditorTab)}
-                  className={`relative rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-                    active
-                      ? "text-white dark:text-neutral-900"
-                      : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white"
-                  }`}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="product-editor-tab-pill"
-                      transition={{ type: "spring", stiffness: 380, damping: 32 }}
-                      className="absolute inset-0 rounded-full bg-neutral-900 shadow-sm dark:bg-white"
+                <React.Fragment key={step.id}>
+                  <button
+                    type="button"
+                    onClick={() => goToStep(step.id)}
+                    className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-left transition-all ${pillCls}`}
+                  >
+                    <span
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-colors ${badgeCls}`}
+                    >
+                      {status === "completed" ? (
+                        <Check className="h-3 w-3" />
+                      ) : status === "error" ? (
+                        <AlertCircle className="h-3 w-3" />
+                      ) : (
+                        step.num
+                      )}
+                    </span>
+                    <div className="leading-tight">
+                      <div className="text-[11px] font-bold">{step.title}</div>
+                      <div className="text-[10px] opacity-75">{step.subtitle}</div>
+                    </div>
+                  </button>
+                  {idx < stepsMeta.length - 1 && (
+                    <div
+                      className={`hidden h-[2px] w-5 rounded-full sm:block transition-colors ${
+                        status === "completed"
+                          ? "bg-emerald-500"
+                          : status === "error"
+                            ? "bg-rose-400"
+                            : status === "active"
+                              ? "bg-blue-400"
+                              : "bg-neutral-200 dark:bg-neutral-700"
+                      }`}
                     />
                   )}
-                  <span className="relative">{t.label}</span>
-                </button>
+                </React.Fragment>
               );
             })}
           </div>
@@ -837,62 +1001,79 @@ export function CatalogProductsView({
             <button
               type="button"
               onClick={() => setEditorOpen(false)}
-              className="rounded-full border border-neutral-200 px-4 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"
+              className="rounded-full border border-neutral-200 px-3.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"
             >
               Hủy
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="rounded-full bg-neutral-900 px-5 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+              className="rounded-full bg-neutral-900 px-4 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
             >
               {saving ? "Đang lưu..." : editingProd ? "Lưu Thay Đổi" : "Tạo Sản Phẩm"}
             </button>
           </div>
         </div>
 
-        {/* Horizontal Tab Content */}
-        <div className="flex-1 overflow-y-auto rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-          <AnimatePresence mode="wait">
-            {editorTab === "general" && (
-              <motion.div
-                key="tab-general"
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 8 }}
-                transition={{ duration: 0.16 }}
-                className="grid grid-cols-1 gap-6 lg:grid-cols-12"
-              >
-                {/* Left 7 cols: General Fields */}
-                <div className="space-y-4 lg:col-span-7">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                        Tên sản phẩm *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={prodName}
-                        onChange={(e) => setProdName(e.target.value)}
-                        placeholder="VD: Trà Đào Cam Sả Đặc Biệt"
-                        className="w-full rounded-xl border border-neutral-300 px-3.5 py-2 text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                      />
+        {/* Full-Height Step Card + Pinned Wizard Action Footer */}
+        <div className="flex flex-1 min-h-0 flex-col justify-between overflow-hidden rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            <AnimatePresence mode="wait">
+              {editorTab === "general" && (
+                <motion.div
+                  key="tab-general"
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 8 }}
+                  transition={{ duration: 0.16 }}
+                  className="grid grid-cols-1 gap-6 lg:grid-cols-12"
+                >
+                  {/* Left 7 cols: General Fields */}
+                  <div className="space-y-4 lg:col-span-7">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div className="sm:col-span-2">
+                        <label className="mb-1 block text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                          Tên sản phẩm *
+                        </label>
+                        <input
+                          type="text"
+                          value={prodName}
+                          onChange={(e) => setProdName(e.target.value)}
+                          placeholder="VD: Trà Đào Cam Sả Đặc Biệt"
+                          className={`w-full rounded-xl border px-3.5 py-2 text-xs text-neutral-900 focus:outline-none dark:bg-neutral-800 dark:text-white ${
+                            touchedSteps.general && genValidation.errors.nameErr
+                              ? "border-rose-500 ring-2 ring-rose-500/15 focus:border-rose-500"
+                              : "border-neutral-300 focus:border-blue-600 dark:border-neutral-700"
+                          }`}
+                        />
+                        {touchedSteps.general && genValidation.errors.nameErr && (
+                          <p className="mt-1 text-[11px] font-medium text-rose-600">
+                            {genValidation.errors.nameErr}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                          Mã sản phẩm *
+                        </label>
+                        <input
+                          type="text"
+                          disabled={Boolean(editingProd)}
+                          value={prodCode}
+                          onChange={(e) => setProdCode(e.target.value)}
+                          className={`w-full rounded-xl border px-3.5 py-2 text-xs text-neutral-900 disabled:bg-neutral-100 focus:outline-none dark:bg-neutral-800 dark:text-white ${
+                            touchedSteps.general && genValidation.errors.codeErr
+                              ? "border-rose-500 ring-2 ring-rose-500/15 focus:border-rose-500"
+                              : "border-neutral-300 focus:border-blue-600 dark:border-neutral-700"
+                          }`}
+                        />
+                        {touchedSteps.general && genValidation.errors.codeErr && (
+                          <p className="mt-1 text-[11px] font-medium text-rose-600">
+                            {genValidation.errors.codeErr}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                        Mã sản phẩm *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        disabled={Boolean(editingProd)}
-                        value={prodCode}
-                        onChange={(e) => setProdCode(e.target.value)}
-                        className="w-full rounded-xl border border-neutral-300 px-3.5 py-2 text-xs text-neutral-900 disabled:bg-neutral-100 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                      />
-                    </div>
-                  </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
@@ -1151,20 +1332,32 @@ export function CatalogProductsView({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                      {variants.map((v, idx) => (
+                      {variants.map((v, idx) => {
+                        const vErr = varValidation.errors.invalidVariants?.[idx];
+                        const showNameErr = Boolean(touchedSteps.variants && vErr?.nameErr);
+                        const showPriceErr = Boolean(touchedSteps.variants && vErr?.priceErr);
+                        return (
                         <tr key={v.id || `draft-${idx}`}>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 align-top">
                             <input
                               type="text"
-                              required
                               value={v.variant_name}
                               onChange={(e) =>
                                 updateDraftVariant(idx, { variant_name: e.target.value })
                               }
-                              className="w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                              className={`w-full rounded-lg border bg-white px-2.5 py-1.5 text-xs focus:outline-none dark:bg-neutral-800 dark:text-white ${
+                                showNameErr
+                                  ? "border-rose-500 ring-2 ring-rose-500/15"
+                                  : "border-neutral-300 focus:border-blue-600 dark:border-neutral-700"
+                              }`}
                             />
+                            {showNameErr && (
+                              <p className="mt-1 text-[10px] font-medium text-rose-600">
+                                {vErr?.nameErr}
+                              </p>
+                            )}
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 align-top">
                             <input
                               type="text"
                               value={v.sku}
@@ -1174,7 +1367,7 @@ export function CatalogProductsView({
                               className="w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
                             />
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 align-top">
                             <input
                               type="text"
                               value={v.unit_name}
@@ -1184,7 +1377,7 @@ export function CatalogProductsView({
                               className="w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
                             />
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 align-top">
                             <input
                               type="number"
                               value={v.default_cost}
@@ -1194,18 +1387,26 @@ export function CatalogProductsView({
                               className="w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
                             />
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 align-top">
                             <input
                               type="number"
-                              required
                               value={v.default_price}
                               onChange={(e) =>
                                 updateDraftVariant(idx, { default_price: e.target.value })
                               }
-                              className="w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-bold dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                              className={`w-full rounded-lg border bg-white px-2.5 py-1.5 text-xs font-bold focus:outline-none dark:bg-neutral-800 dark:text-white ${
+                                showPriceErr
+                                  ? "border-rose-500 ring-2 ring-rose-500/15"
+                                  : "border-neutral-300 focus:border-blue-600 dark:border-neutral-700"
+                              }`}
                             />
+                            {showPriceErr && (
+                              <p className="mt-1 text-[10px] font-medium text-rose-600">
+                                {vErr?.priceErr}
+                              </p>
+                            )}
                           </td>
-                          <td className="px-3 py-2 text-right">
+                          <td className="px-3 py-2 text-right align-top">
                             {v.isNew && variants.length > 1 && (
                               <button
                                 type="button"
@@ -1217,13 +1418,63 @@ export function CatalogProductsView({
                             )}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
+          </div>
+
+          {/* Pinned Bottom Process Navigation Footer */}
+          <div className="mt-4 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-200/80 pt-4 dark:border-neutral-800">
+            <div className="flex items-center gap-3 text-[11px] text-neutral-500">
+              <span className="rounded-full bg-blue-50 px-2.5 py-1 font-bold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+                Bước {currentStepIdx + 1} / {stepsMeta.length}
+              </span>
+              <span className="hidden sm:inline-flex items-center gap-3">
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-600" /> Đang làm</span>
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-600" /> Hoàn thành</span>
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-neutral-300 dark:bg-neutral-600" /> Chưa làm</span>
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-rose-600" /> Thiếu thông tin</span>
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {currentStepIdx > 0 && (
+                <button
+                  type="button"
+                  onClick={handlePrevStep}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-4 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Quay lại
+                </button>
+              )}
+
+              {currentStepIdx < stepsMeta.length - 1 ? (
+                <button
+                  type="button"
+                  onClick={handleNextStep}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700"
+                >
+                  Tiếp theo
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  {saving ? "Đang lưu..." : editingProd ? "Hoàn tất & Lưu" : "Hoàn tất & Tạo"}
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </motion.form>
     );
