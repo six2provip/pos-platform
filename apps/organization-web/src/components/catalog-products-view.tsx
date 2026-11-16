@@ -1271,8 +1271,8 @@ export function CatalogProductsView({
                   </div>
                 </div>
 
-                {/* Right 9 cols: Detail Form for Active Variant (clean flat surface) */}
-                <div className="lg:col-span-9 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pl-1 lg:pr-1">
+                {/* Right 9 cols: Detail Form for Active Variant (fixed header/inputs, only Option Groups list scrolls) */}
+                <div className="lg:col-span-9 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:pl-1">
                   {activeVar && (
                     <AnimatePresence mode="wait">
                       <motion.div
@@ -1281,9 +1281,9 @@ export function CatalogProductsView({
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -6 }}
                         transition={{ duration: 0.16 }}
-                        className="space-y-5"
+                        className="flex flex-col gap-3.5 lg:h-full lg:min-h-0"
                       >
-                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 pb-3 dark:border-neutral-800">
+                        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-neutral-100 pb-3 dark:border-neutral-800">
                           <div>
                             <h4 className="text-sm font-bold text-neutral-900 dark:text-white">
                               Chi tiết: {activeVar.variant_name.trim() || `Biến thể #${safeVarIdx + 1}`}
@@ -1305,7 +1305,7 @@ export function CatalogProductsView({
                         </div>
 
                         {/* Row 1: Name, SKU, Unit */}
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                        <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-3">
                           <BeInput
                             label="Tên biến thể *"
                             value={activeVar.variant_name}
@@ -1337,7 +1337,7 @@ export function CatalogProductsView({
                         </div>
 
                         {/* Row 2: Barcode, Cost, Price */}
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                        <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-3">
                           <BeInput
                             label="Mã vạch (Barcode)"
                             value={activeVar.barcode}
@@ -1373,7 +1373,7 @@ export function CatalogProductsView({
                         </div>
 
                         {/* Row 3: Default Variant Switch */}
-                        <div className="flex items-center justify-between rounded-xl bg-neutral-50/90 px-4 py-3 dark:bg-neutral-800/50">
+                        <div className="flex shrink-0 items-center justify-between rounded-xl bg-neutral-50/90 px-4 py-3 dark:bg-neutral-800/50">
                           <div>
                             <div className="text-xs font-bold text-neutral-900 dark:text-white">
                               Đặt làm biến thể mặc định
@@ -1393,8 +1393,8 @@ export function CatalogProductsView({
                         </div>
 
                         {/* Row 4: Option Groups / Toppings attached to this variant */}
-                        <div className="space-y-2 pt-1">
-                          <div className="flex items-center justify-between gap-2">
+                        <div className="flex flex-col gap-2 pt-1 lg:flex-1 lg:min-h-0">
+                          <div className="flex shrink-0 items-center justify-between gap-2">
                             <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
                               Nhóm tùy chọn đi kèm ({activeVar.option_group_ids.length} đã gắn)
                             </span>
@@ -1414,35 +1414,37 @@ export function CatalogProductsView({
                               </button>
                             )}
                           </div>
-                          <BeMultiSelect
-                            options={optionGroups.map((og) => {
-                              const previewItems = og.items
-                                .slice(0, 3)
-                                .map((it) =>
-                                  Number(it.price_delta) > 0
-                                    ? `${it.name} (+${formatPriceNumber(it.price_delta)})`
-                                    : it.name
-                                )
-                                .join(", ");
-                              const extra =
-                                og.items.length > 3 ? ` +${og.items.length - 3}` : "";
-                              return {
-                                value: og.id,
-                                label: `${og.name} (${
-                                  og.selection_mode === "single" ? "Chọn 1" : "Chọn nhiều"
-                                }${og.is_required ? " · Bắt buộc" : ""})`,
-                                description: previewItems
-                                  ? `${previewItems}${extra}`
-                                  : "Chưa có lựa chọn con",
-                              };
-                            })}
-                            values={activeVar.option_group_ids}
-                            onChange={(next) =>
-                              updateDraftVariant(safeVarIdx, { option_group_ids: next })
-                            }
-                            placeholder="Chọn nhóm Topping, Mức đường, Đồ ăn kèm..."
-                            emptyText="Chưa có nhóm tùy chọn nào. Tạo tại mục Quản lý Tùy chọn."
-                          />
+                          <div className="shrink-0">
+                            <BeMultiSelect
+                              options={optionGroups.map((og) => {
+                                const previewItems = og.items
+                                  .slice(0, 3)
+                                  .map((it) =>
+                                    Number(it.price_delta) > 0
+                                      ? `${it.name} (+${formatPriceNumber(it.price_delta)})`
+                                      : it.name
+                                  )
+                                  .join(", ");
+                                const extra =
+                                  og.items.length > 3 ? ` +${og.items.length - 3}` : "";
+                                return {
+                                  value: og.id,
+                                  label: `${og.name} (${
+                                    og.selection_mode === "single" ? "Chọn 1" : "Chọn nhiều"
+                                  }${og.is_required ? " · Bắt buộc" : ""})`,
+                                  description: previewItems
+                                    ? `${previewItems}${extra}`
+                                    : "Chưa có lựa chọn con",
+                                };
+                              })}
+                              values={activeVar.option_group_ids}
+                              onChange={(next) =>
+                                updateDraftVariant(safeVarIdx, { option_group_ids: next })
+                              }
+                              placeholder="Chọn nhóm Topping, Mức đường, Đồ ăn kèm..."
+                              emptyText="Chưa có nhóm tùy chọn nào. Tạo tại mục Quản lý Tùy chọn."
+                            />
+                          </div>
 
                           {/* Compact Collapsible Accordion Preview of Attached Option Groups */}
                           <AnimatePresence initial={false}>
@@ -1452,9 +1454,9 @@ export function CatalogProductsView({
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: 4 }}
                                 transition={{ duration: 0.18 }}
-                                className="space-y-1.5 pt-1"
+                                className="flex flex-col gap-1.5 pt-1 lg:flex-1 lg:min-h-0"
                               >
-                                <div className="flex items-center justify-between text-[11px] text-neutral-400">
+                                <div className="flex shrink-0 items-center justify-between text-[11px] text-neutral-400">
                                   <span>
                                     Nhấn vào từng nhóm để xem nhanh các lựa chọn bên trong ({activeVar.option_group_ids.length} nhóm)
                                   </span>
@@ -1480,7 +1482,7 @@ export function CatalogProductsView({
                                   )}
                                 </div>
 
-                                <div className="max-h-[210px] space-y-1.5 overflow-y-auto pr-1">
+                                <div className="max-h-[210px] lg:max-h-none lg:flex-1 lg:min-h-0 space-y-1.5 overflow-y-auto pr-1">
                                   {activeVar.option_group_ids.map((gid) => {
                                     const grp = optionGroups.find((g) => g.id === gid);
                                     if (!grp) return null;
