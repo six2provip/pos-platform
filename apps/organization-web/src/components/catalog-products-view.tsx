@@ -1413,12 +1413,27 @@ export function CatalogProductsView({
                             )}
                           </div>
                           <BeMultiSelect
-                            options={optionGroups.map((og) => ({
-                              value: og.id,
-                              label: `${og.name} (${
-                                og.selection_mode === "single" ? "Chọn 1" : "Chọn nhiều"
-                              }${og.is_required ? " · Bắt buộc" : ""})`,
-                            }))}
+                            options={optionGroups.map((og) => {
+                              const previewItems = og.items
+                                .slice(0, 3)
+                                .map((it) =>
+                                  Number(it.price_delta) > 0
+                                    ? `${it.name} (+${formatPriceNumber(it.price_delta)})`
+                                    : it.name
+                                )
+                                .join(", ");
+                              const extra =
+                                og.items.length > 3 ? ` +${og.items.length - 3}` : "";
+                              return {
+                                value: og.id,
+                                label: `${og.name} (${
+                                  og.selection_mode === "single" ? "Chọn 1" : "Chọn nhiều"
+                                }${og.is_required ? " · Bắt buộc" : ""})`,
+                                description: previewItems
+                                  ? `${previewItems}${extra}`
+                                  : "Chưa có lựa chọn con",
+                              };
+                            })}
                             values={activeVar.option_group_ids}
                             onChange={(next) =>
                               updateDraftVariant(safeVarIdx, { option_group_ids: next })
@@ -1426,6 +1441,106 @@ export function CatalogProductsView({
                             placeholder="Chọn nhóm Topping, Mức đường, Đồ ăn kèm..."
                             emptyText="Chưa có nhóm tùy chọn nào. Tạo tại mục Quản lý Tùy chọn."
                           />
+
+                          {/* Live Preview of Attached Option Groups & Their Items */}
+                          <AnimatePresence initial={false}>
+                            {activeVar.option_group_ids.length > 0 && (
+                              <motion.div
+                                initial={{ opacity: 0, y: 6 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 4 }}
+                                transition={{ duration: 0.18 }}
+                                className="space-y-2 pt-1"
+                              >
+                                <div className="text-[11px] font-medium text-neutral-400">
+                                  Xem trước chi tiết các tùy chọn sẽ hiển thị trên POS:
+                                </div>
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                  {activeVar.option_group_ids.map((gid) => {
+                                    const grp = optionGroups.find((g) => g.id === gid);
+                                    if (!grp) return null;
+                                    return (
+                                      <motion.div
+                                        key={gid}
+                                        layout
+                                        initial={{ opacity: 0, scale: 0.97 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 0.97 }}
+                                        className="rounded-xl bg-neutral-50/90 p-3 dark:bg-neutral-800/50"
+                                      >
+                                        <div className="mb-2 flex items-start justify-between gap-2">
+                                          <div className="min-w-0">
+                                            <div className="truncate text-xs font-bold text-neutral-900 dark:text-white">
+                                              {grp.name}
+                                            </div>
+                                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px]">
+                                              <span
+                                                className={`font-semibold ${
+                                                  grp.is_required
+                                                    ? "text-rose-600 dark:text-rose-400"
+                                                    : "text-neutral-500"
+                                                }`}
+                                              >
+                                                {grp.is_required ? "Bắt buộc" : "Tùy chọn"}
+                                              </span>
+                                              <span className="text-neutral-300 dark:text-neutral-600">•</span>
+                                              <span className="text-neutral-500 dark:text-neutral-400">
+                                                {grp.selection_mode === "single"
+                                                  ? "Chọn 1"
+                                                  : `Chọn nhiều (${grp.min_selections}–${
+                                                      grp.max_selections ?? "∞"
+                                                    })`}
+                                              </span>
+                                            </div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              updateDraftVariant(safeVarIdx, {
+                                                option_group_ids:
+                                                  activeVar.option_group_ids.filter(
+                                                    (id) => id !== gid
+                                                  ),
+                                              })
+                                            }
+                                            title="Gỡ nhóm tùy chọn này"
+                                            className="rounded-full p-1 text-neutral-400 hover:bg-neutral-200/70 hover:text-rose-600 dark:hover:bg-neutral-700"
+                                          >
+                                            <X className="h-3.5 w-3.5" />
+                                          </button>
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {grp.items.map((it, i) => (
+                                            <span
+                                              key={it.id || i}
+                                              className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium ${
+                                                it.is_default
+                                                  ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
+                                                  : "bg-white text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                                              }`}
+                                            >
+                                              <span className="max-w-[130px] truncate">
+                                                {it.name}
+                                              </span>
+                                              {Number(it.price_delta) > 0 && (
+                                                <span className="tabular-nums font-bold text-emerald-600 dark:text-emerald-400">
+                                                  +{formatPriceNumber(it.price_delta)}
+                                                </span>
+                                              )}
+                                              {it.is_default && (
+                                                <Check className="h-2.5 w-2.5 shrink-0" />
+                                              )}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </motion.div>
+                                    );
+                                  })}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
                       </motion.div>
                     </AnimatePresence>

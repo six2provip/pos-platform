@@ -17,6 +17,7 @@ import { createPortal } from "react-dom";
 export interface BeMultiSelectOption {
   value: string;
   label: string;
+  description?: string;
 }
 
 export interface BeMultiSelectProps {
@@ -126,7 +127,11 @@ export function BeMultiSelect({
   const filteredOptions = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return options;
-    return options.filter((o) => o.label.toLowerCase().includes(q));
+    return options.filter(
+      (o) =>
+        o.label.toLowerCase().includes(q) ||
+        (o.description || "").toLowerCase().includes(q)
+    );
   }, [options, query]);
 
   const toggleValue = (val: string) => {
@@ -315,7 +320,14 @@ export function BeMultiSelect({
                               : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800/60 dark:hover:text-white"
                           }`}
                         >
-                          <span className="truncate">{opt.label}</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate">{opt.label}</div>
+                            {opt.description && (
+                              <div className="mt-0.5 truncate text-[10px] font-normal text-neutral-400">
+                                {opt.description}
+                              </div>
+                            )}
+                          </div>
                           {selected && (
                             <Check className="h-3.5 w-3.5 shrink-0 text-blue-600" />
                           )}
