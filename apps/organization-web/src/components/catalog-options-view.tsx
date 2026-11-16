@@ -485,7 +485,7 @@ export function CatalogOptionsView({
                   damping: 38,
                   mass: 0.55,
                 }}
-                className="pointer-events-auto flex max-h-[86vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-neutral-200/80 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950"
+                className="pointer-events-auto flex h-[82vh] max-h-[760px] w-[92vw] max-w-6xl flex-col overflow-hidden rounded-3xl border border-neutral-200/80 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950"
               >
                 {/* Clean Single-Card Modal Header */}
                 <div className="flex shrink-0 items-center justify-between border-b border-neutral-200/80 px-6 py-4 dark:border-neutral-800">
@@ -510,9 +510,9 @@ export function CatalogOptionsView({
 
                 {/* Horizontal 2-Column Body */}
                 <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
-                  <div className="grid flex-1 min-h-0 grid-cols-1 gap-6 overflow-y-auto p-6 lg:grid-cols-12">
+                  <div className="grid flex-1 min-h-0 grid-cols-1 gap-8 overflow-y-auto p-7 lg:grid-cols-12">
                     {/* Left 5 cols: Group Info & Rules */}
-                    <div className="space-y-4 lg:col-span-5 lg:border-r lg:border-neutral-200/70 lg:pr-6 dark:lg:border-neutral-800">
+                    <div className="space-y-5 lg:col-span-5 lg:border-r lg:border-neutral-200/70 lg:pr-8 dark:lg:border-neutral-800">
                       <div>
                         <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
                           Thông tin & Quy tắc
@@ -663,7 +663,7 @@ export function CatalogOptionsView({
                         <span className="col-span-1 text-right">Xóa</span>
                       </div>
 
-                      <div className="flex-1 space-y-2 overflow-y-auto pr-1 max-h-[320px]">
+                      <div className="flex-1 min-h-0 space-y-2.5 overflow-y-auto pr-1.5">
                         <AnimatePresence initial={false}>
                           {items.map((it, idx) => (
                             <motion.div
