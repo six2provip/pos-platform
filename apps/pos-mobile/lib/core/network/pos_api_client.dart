@@ -101,18 +101,20 @@ class PosApiClient {
     return decoded.containsKey('data') ? decoded['data'] : decoded;
   }
 
-  Future<Map<String, dynamic>> createPairingSession() async {
+  Future<Map<String, dynamic>> createPairingSession({String? ipAddress}) async {
+    final info = <String, dynamic>{
+      'device_model': 'Android POS Smart Terminal (Flutter APK)',
+      'os': 'Android',
+      'app_version': '1.0.0',
+    };
+    if (ipAddress != null && ipAddress.isNotEmpty) {
+      info['ip_address'] = ipAddress;
+    }
     final data = await _request(
       'POST',
       '/api/v1/devices/pairing-session',
       auth: false,
-      body: {
-        'device_info': {
-          'device_model': 'Android POS Smart Terminal (Flutter APK)',
-          'os': 'Android',
-          'app_version': '1.0.0',
-        },
-      },
+      body: {'device_info': info},
     );
     return Map<String, dynamic>.from(data as Map);
   }
@@ -250,3 +252,4 @@ class PosApiClient {
     return Map<String, dynamic>.from(data as Map);
   }
 }
+

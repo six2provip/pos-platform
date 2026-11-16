@@ -37,6 +37,7 @@ interface PairingSessionData {
   session_id: string;
   pairing_code: string;
   formatted_code: string;
+  ip_address?: string;
   expires_in_seconds: number;
   expires_at: string;
 }
@@ -558,7 +559,7 @@ export default function PosTerminalStandalone() {
 
   const handleCopyCode = () => {
     if (!session) return;
-    navigator.clipboard.writeText(session.pairing_code);
+    navigator.clipboard.writeText(session.ip_address || session.pairing_code);
     setCopySuccess(true);
     setTimeout(() => setCopySuccess(false), 2000);
   };
@@ -938,48 +939,26 @@ export default function PosTerminalStandalone() {
                     Web Quản Trị Tổ Chức (:13000)
                   </strong>{" "}
                   → vào mục <strong className="text-emerald-400">Chi nhánh</strong>{" "}
-                  → bấm <strong className="text-white">+ Ghép Nối Máy POS</strong> và
-                  nhập mã 6 chữ số dưới đây:
+                  → bấm <strong className="text-white">+ Ghép Nối Máy POS Mới</strong> và
+                  chọn hoặc nhập địa chỉ IP dưới đây:
                 </p>
               </div>
             </div>
 
-            {/* 6-DIGIT PIN DISPLAY IN ILLUMINATED HARDWARE SLOTS */}
+            {/* DEVICE IP DISPLAY IN ILLUMINATED HARDWARE SLOT */}
             <div className="mt-8 rounded-2xl border border-neutral-800 bg-[#090D14] p-6 text-center shadow-inner">
               <div className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400 mb-4">
-                MÃ GHÉP NỐI THIẾT BỊ NÀY
+                ĐỊA CHỈ IP THIẾT BỊ NÀY
               </div>
 
               {loading ? (
                 <div className="py-6 font-mono text-lg text-neutral-400 flex items-center justify-center gap-2">
                   <RefreshCw className="h-4 w-4 animate-spin text-emerald-400" />
-                  Đang tạo phiên ghép nối mới...
+                  Đang phát tín hiệu kết nối...
                 </div>
               ) : (
-                <div className="flex items-center justify-center gap-2 sm:gap-3.5">
-                  {/* First 3 digits */}
-                  {digits.slice(0, 3).map((d, i) => (
-                    <div
-                      key={`d1-${i}`}
-                      className="flex h-16 w-12 sm:h-20 sm:w-16 items-center justify-center rounded-xl border-2 border-emerald-500/50 bg-emerald-950/20 text-3xl sm:text-4xl font-mono font-black text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)] transition-transform transform hover:scale-105"
-                    >
-                      {d}
-                    </div>
-                  ))}
-
-                  <div className="text-2xl font-bold text-neutral-600 px-1 select-none">
-                    –
-                  </div>
-
-                  {/* Last 3 digits */}
-                  {digits.slice(3, 6).map((d, i) => (
-                    <div
-                      key={`d2-${i}`}
-                      className="flex h-16 w-12 sm:h-20 sm:w-16 items-center justify-center rounded-xl border-2 border-emerald-500/50 bg-emerald-950/20 text-3xl sm:text-4xl font-mono font-black text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)] transition-transform transform hover:scale-105"
-                    >
-                      {d}
-                    </div>
-                  ))}
+                <div className="inline-flex items-center justify-center rounded-2xl border-2 border-emerald-500/50 bg-emerald-950/20 px-8 py-4 text-3xl sm:text-4xl font-mono font-black tracking-wider text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.18)]">
+                  {session?.ip_address || "127.0.0.1"}
                 </div>
               )}
 
@@ -987,7 +966,7 @@ export default function PosTerminalStandalone() {
               <div className="mt-5 flex flex-wrap items-center justify-center gap-3 text-xs text-neutral-400">
                 <div className="flex items-center gap-1.5 text-emerald-400 font-medium">
                   <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
-                  Đang chờ Quản trị viên nhập mã xác nhận...
+                  Đang chờ Quản trị viên chọn hoặc nhập IP để kết nối...
                 </div>
                 <span>•</span>
                 <div className="text-neutral-500">
@@ -1009,12 +988,12 @@ export default function PosTerminalStandalone() {
                 {copySuccess ? (
                   <>
                     <Check className="h-3.5 w-3.5 text-emerald-400" />
-                    Đã chép mã {session?.pairing_code}
+                    Đã chép IP {session?.ip_address || "127.0.0.1"}
                   </>
                 ) : (
                   <>
                     <Copy className="h-3.5 w-3.5" />
-                    Sao chép mã 6 số
+                    Sao chép IP
                   </>
                 )}
               </button>

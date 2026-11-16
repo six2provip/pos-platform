@@ -358,6 +358,18 @@ export default function OrganizationWorkspace({
     "Chi nhánh Quận 1 - Lê Lợi"
   );
   const [pairingCodeInput, setPairingCodeInput] = useState("");
+  const [pairingIpInput, setPairingIpInput] = useState("");
+  const [selectedPairingSessionId, setSelectedPairingSessionId] = useState<string | null>(null);
+  const [pendingPairingDevices, setPendingPairingDevices] = useState<
+    {
+      session_id: string;
+      ip_address: string;
+      device_model: string;
+      os: string;
+      app_version: string;
+      created_at: string;
+    }[]
+  >([]);
   const [pairingStoreId, setPairingStoreId] = useState("");
   const [pairingDeviceName, setPairingDeviceName] = useState("Máy POS Thu Ngân Quầy 2");
   const [pairingDeviceCode, setPairingDeviceCode] = useState("POS-TERMINAL-02");
@@ -1388,13 +1400,36 @@ export default function OrganizationWorkspace({
     }
   };
 
-  const handlePairDeviceByCode = async (e: React.FormEvent) => {
+  const fetchPendingPairingDevices = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      const list = await apiFetch(
+        "/api/v1/devices/pairing-sessions/pending",
+        {},
+        accessToken
+      );
+      if (Array.isArray(list)) {
+        setPendingPairingDevices(list);
+      }
+    } catch {
+      // ignore transient error
+    }
+  }, [accessToken, apiFetch]);
+
+  useEffect(() => {
+    if (activeModal !== "pair_pos_device") return;
+    fetchPendingPairingDevices();
+    const timer = setInterval(fetchPendingPairingDevices, 2500);
+    return () => clearInterval(timer);
+  }, [activeModal, fetchPendingPairingDevices]);
+
+  const handlePairDeviceByIp = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanPin = pairingCodeInput.replace(/\D/g, "");
-    if (cleanPin.length !== 6) {
+    const cleanIp = pairingIpInput.trim();
+    if (!cleanIp && !selectedPairingSessionId) {
       notify(
         "error",
-        "Vui lòng nhập đúng 6 chữ số ghép nối hiển thị trên màn hình máy POS"
+        "Vui lòng chọn máy POS đang chờ hoặc nhập địa chỉ IP của máy POS"
       );
       return;
     }
@@ -1406,11 +1441,12 @@ export default function OrganizationWorkspace({
     setLoading(true);
     try {
       const res = await apiFetch(
-        "/api/v1/devices/pair-by-code",
+        "/api/v1/devices/pair-by-ip",
         {
           method: "POST",
           body: JSON.stringify({
-            pairing_code: cleanPin,
+            ip_address: cleanIp || undefined,
+            session_id: selectedPairingSessionId || undefined,
             store_id: targetStore,
             name:
               pairingDeviceName.trim() ||
@@ -1424,6 +1460,8 @@ export default function OrganizationWorkspace({
       );
 
       setActiveModal(null);
+      setPairingIpInput("");
+      setSelectedPairingSessionId(null);
       setPairingCodeInput("");
       await refreshWorkspaceData(accessToken || undefined, targetStore);
       fireSuccessConfetti();
@@ -1432,7 +1470,7 @@ export default function OrganizationWorkspace({
       notify(
         "error",
         err.message ||
-          "Không thể ghép nối thiết bị. Vui lòng kiểm tra mã trên máy POS."
+          "Không tìm thấy máy POS tại IP này. Hãy kiểm tra màn hình chờ trên máy POS."
       );
     } finally {
       setLoading(false);
@@ -2796,6 +2834,8 @@ export default function OrganizationWorkspace({
                       setPairingStoreId(currentStoreObj.id);
                       const nextNum = devices.length + 1;
                       setPairingCodeInput("");
+                      setPairingIpInput("");
+                      setSelectedPairingSessionId(null);
                       setPairingDeviceCode(`POS-TERMINAL-0${nextNum}`);
                       setPairingDeviceName(`Máy POS Thu Ngân Quầy ${nextNum}`);
                       setActiveModal("pair_pos_device");
@@ -2814,12 +2854,12 @@ export default function OrganizationWorkspace({
                     </div>
                     <div className="space-y-1">
                       <h3 className="text-sm font-bold text-neutral-900">
-                        Quy Trình Ghép Nối Máy POS 6 Chữ Số Vào Chi Nhánh
+                        Quy Trình Ghép Nối Máy POS Theo Địa Chỉ IP Vào Chi Nhánh
                       </h3>
                       <p className="text-xs text-neutral-600 leading-relaxed">
-                        1. Mở máy POS Android tại quầy (hoặc mở trang <strong>Máy POS Terminal :13000/terminal</strong> để giả lập thiết bị thật).<br />
-                        2. Màn hình máy POS sẽ hiển thị mã kết nối 6 chữ số ngẫu nhiên.<br />
-                        3. Bấm nút <strong>&ldquo;+ Ghép Nối Máy POS Mới&rdquo;</strong> ở trên, nhập 6 số và xác nhận. Máy POS sẽ tự động liên kết thành công vào {currentStoreObj?.name}!
+                        1. Mở app <strong>Máy POS Android</strong> (hoặc trang <strong>:13000/terminal</strong>) tại quầy.<br />
+                        2. Màn hình máy POS sẽ tự phát tín hiệu kèm <strong>Địa chỉ IP</strong> của thiết bị.<br />
+                        3. Bấm <strong>&ldquo;+ Ghép Nối Máy POS Mới&rdquo;</strong> ở trên, chọn máy đang chờ (hoặc nhập trực tiếp địa chỉ IP) rồi xác nhận để liên kết vào {currentStoreObj?.name}!
                       </p>
                     </div>
                   </div>
@@ -3305,7 +3345,7 @@ export default function OrganizationWorkspace({
                     {activeModal === "create_store" &&
                       "Thêm Chi Nhánh Cửa Hàng"}
                     {activeModal === "pair_pos_device" &&
-                      "Ghép Nối Máy POS Mới (Mã 6 Chữ Số)"}
+                      "Ghép Nối Máy POS Theo Địa Chỉ IP"}
                   </h3>
                   {activeModal !== "pair_pos_device" && (
                     <p className="text-xs text-neutral-500">
@@ -3517,18 +3557,84 @@ export default function OrganizationWorkspace({
 
             {activeModal === "pair_pos_device" && (
               <form
-                onSubmit={handlePairDeviceByCode}
+                onSubmit={handlePairDeviceByIp}
                 className="mt-5 space-y-4"
               >
-                {/* 6-Digit PIN Video UI & Animation */}
+                {/* Live Pending POS Terminals Discovery */}
                 <div>
-                  <p className="mb-2 text-center text-xs text-neutral-500">
-                    Nhập mã 6 chữ số đang hiển thị trên màn hình máy POS của chi nhánh
-                  </p>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-neutral-700">
+                      Máy POS đang chờ kết nối ({pendingPairingDevices.length})
+                    </label>
+                    <button
+                      type="button"
+                      onClick={fetchPendingPairingDevices}
+                      className="text-[11px] font-semibold text-emerald-700 hover:underline"
+                    >
+                      Quét lại
+                    </button>
+                  </div>
 
-                  <SixDigitPinInput
-                    value={pairingCodeInput}
-                    onChange={(val) => setPairingCodeInput(val)}
+                  {pendingPairingDevices.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 px-3 py-3 text-center text-xs text-neutral-500">
+                      Chưa phát hiện máy POS nào đang mở màn hình chờ kết nối. Bạn vẫn có thể nhập trực tiếp IP bên dưới.
+                    </div>
+                  ) : (
+                    <div className="max-h-36 overflow-y-auto space-y-1.5 rounded-xl border border-neutral-200 bg-neutral-50 p-2">
+                      {pendingPairingDevices.map((dev) => {
+                        const isSelected = selectedPairingSessionId === dev.session_id;
+                        return (
+                          <button
+                            key={dev.session_id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedPairingSessionId(dev.session_id);
+                              setPairingIpInput(dev.ip_address);
+                            }}
+                            className={`w-full flex items-center justify-between rounded-lg border px-3 py-2 text-left transition-all ${
+                              isSelected
+                                ? "border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600"
+                                : "border-neutral-200 bg-white hover:border-neutral-400"
+                            }`}
+                          >
+                            <div>
+                              <div className="text-xs font-bold text-neutral-900">
+                                {dev.device_model}
+                              </div>
+                              <div className="text-[11px] text-neutral-500">
+                                {dev.os} • v{dev.app_version}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className="inline-block rounded bg-neutral-900 px-2 py-0.5 font-mono text-xs font-bold text-emerald-400">
+                                {dev.ip_address}
+                              </span>
+                              <div className="text-[10px] text-neutral-400 mt-0.5">
+                                {isSelected ? "Đã chọn" : "Bấm để chọn"}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Direct IP Address Input */}
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                    Địa chỉ IP Máy POS
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="VD: 192.168.1.25 hoặc 127.0.0.1"
+                    value={pairingIpInput}
+                    onChange={(e) => {
+                      setPairingIpInput(e.target.value);
+                      setSelectedPairingSessionId(null);
+                    }}
+                    className="w-full rounded-xl border border-neutral-300 px-3.5 py-2.5 font-mono text-sm font-bold text-neutral-900 focus:border-neutral-900 focus:outline-none"
                   />
                 </div>
 
@@ -3596,18 +3702,18 @@ export default function OrganizationWorkspace({
                     type="submit"
                     disabled={
                       loading ||
-                      pairingCodeInput.replace(/\D/g, "").length !== 6
+                      (!pairingIpInput.trim() && !selectedPairingSessionId)
                     }
                     className={`rounded-xl px-5 py-2.5 text-xs font-bold transition-all duration-200 ${
-                      pairingCodeInput.replace(/\D/g, "").length === 6 &&
+                      (pairingIpInput.trim() || selectedPairingSessionId) &&
                       !loading
                         ? "bg-neutral-900 text-white hover:bg-neutral-800 shadow-md cursor-pointer"
                         : "bg-neutral-200 text-neutral-400 cursor-not-allowed"
                     }`}
                   >
                     {loading
-                      ? "Đang ghép nối..."
-                      : "Xác Nhận Ghép Nối Thiết Bị"}
+                      ? "Đang kết nối..."
+                      : "Kết Nối Máy POS Ngay"}
                   </button>
                 </div>
               </form>

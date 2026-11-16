@@ -11,8 +11,8 @@ from __future__ import annotations
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
-from fastapi import APIRouter, Depends, status
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
@@ -78,6 +78,7 @@ class DeviceInfoPayload(BaseModel):
     android_version: Optional[str] = None
     manufacturer: Optional[str] = None
     model: Optional[str] = None
+    ip_address: Optional[str] = None
 
 
 class ExchangeActivationRequest(BaseModel):
@@ -125,8 +126,38 @@ class PairByCodeRequest(BaseModel):
     platform: str = Field(default="android", max_length=30)
 
 
+class PairByIpRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ip_address: Optional[str] = Field(default=None, max_length=80)
+    session_id: Optional[str] = Field(default=None, max_length=80)
+    store_id: str
+    name: str = Field(min_length=1, max_length=160)
+    device_code: Optional[str] = Field(default=None, max_length=80)
+    device_type: str = Field(default="android_pos", max_length=30)
+    platform: str = Field(default="android", max_length=30)
+
+
 _PAIRING_SESSIONS: Dict[str, Dict[str, Any]] = {}
 _PAIRING_BY_CODE: Dict[str, str] = {}
+_PAIRING_BY_IP: Dict[str, str] = {}
+
+
+def _resolve_client_ip(
+    request: Request, body: Optional[RequestPairingSessionBody]
+) -> str:
+    """Resolve POS terminal IP, preferring explicit LAN IP reported by the device."""
+    if body and body.device_info and body.device_info.ip_address:
+        ip = body.device_info.ip_address.strip()
+        if ip:
+            return ip
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        first = forwarded.split(",")[0].strip()
+        if first:
+            return first
+    if request.client and request.client.host:
+        return request.client.host
+    return "127.0.0.1"
 
 
 def _serialize_device(device: Device) -> Dict[str, Any]:
@@ -148,6 +179,7 @@ def _serialize_device(device: Device) -> Dict[str, Any]:
 
 @router.post("/devices/pairing-session")
 def request_pairing_session(
+    request: Request,
     body: Optional[RequestPairingSessionBody] = None,
     settings: Settings = Depends(get_settings),
     request_id: str = Depends(get_request_id),
@@ -156,10 +188,12 @@ def request_pairing_session(
     session_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(minutes=15)
+    ip_address = _resolve_client_ip(request, body)
 
     session_data = {
         "session_id": session_id,
         "pairing_code": code,
+        "ip_address": ip_address,
         "status": "pending",
         "created_at": now.isoformat(),
         "expires_at": expires_at.isoformat(),
@@ -167,17 +201,51 @@ def request_pairing_session(
     }
     _PAIRING_SESSIONS[session_id] = session_data
     _PAIRING_BY_CODE[code] = session_id
+    _PAIRING_BY_IP[ip_address] = session_id
 
     return ok_response(
         {
             "session_id": session_id,
             "pairing_code": code,
             "formatted_code": f"{code[:3]} {code[3:]}",
+            "ip_address": ip_address,
             "expires_in_seconds": 900,
             "expires_at": expires_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         },
         request_id=request_id,
     )
+
+
+@router.get("/devices/pairing-sessions/pending")
+def list_pending_pairing_sessions(
+    principal: UserPrincipal = Depends(require_permission("devices.create")),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    """List all active POS terminals waiting to be paired (with their IP & device info)."""
+    now = datetime.now(timezone.utc)
+    pending: List[Dict[str, Any]] = []
+    for sess in list(_PAIRING_SESSIONS.values()):
+        if sess.get("status") != "pending":
+            continue
+        exp = datetime.fromisoformat(sess["expires_at"])
+        if now > exp:
+            sess["status"] = "expired"
+            _PAIRING_BY_CODE.pop(sess.get("pairing_code", ""), None)
+            continue
+        info = sess.get("device_info") or {}
+        pending.append(
+            {
+                "session_id": sess["session_id"],
+                "ip_address": sess.get("ip_address") or "127.0.0.1",
+                "device_model": info.get("device_model") or info.get("model") or "Máy POS Android",
+                "os": info.get("os") or "Android",
+                "app_version": info.get("app_version") or "1.0.0",
+                "created_at": sess["created_at"],
+                "expires_in_seconds": max(0, int((exp - now).total_seconds())),
+            }
+        )
+    pending.sort(key=lambda x: x["created_at"], reverse=True)
+    return ok_response(pending, request_id=request_id)
 
 
 @router.get("/devices/pairing-session/{session_id}")
@@ -198,38 +266,34 @@ def get_pairing_session_status(
     return ok_response(sess, request_id=request_id)
 
 
-@router.post("/devices/pair-by-code", status_code=status.HTTP_201_CREATED)
-def pair_device_by_code(
-    body: PairByCodeRequest,
-    principal: UserPrincipal = Depends(require_permission("devices.create")),
-    db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
-    request_id: str = Depends(get_request_id),
+def _complete_pairing_session(
+    *,
+    sess: Dict[str, Any],
+    store_id: str,
+    name: str,
+    device_code: Optional[str],
+    device_type: str,
+    platform: str,
+    pairing_method: str,
+    principal: UserPrincipal,
+    db: Session,
+    settings: Settings,
+    request_id: str,
 ) -> JSONResponse:
-    cleaned_code = body.pairing_code.replace(" ", "").replace("-", "").strip()
-    session_id = _PAIRING_BY_CODE.get(cleaned_code)
-    if not session_id or session_id not in _PAIRING_SESSIONS:
-        raise NotFoundError(
-            code="PAIRING_CODE_NOT_FOUND",
-            message=f"Mã ghép nối '{body.pairing_code}' không tồn tại hoặc đã hết hạn. Vui lòng kiểm tra màn hình máy POS.",
-        )
-
-    sess = _PAIRING_SESSIONS[session_id]
     if sess.get("status") != "pending":
         raise ConflictError(
-            code="PAIRING_CODE_ALREADY_USED",
-            message="Mã ghép nối này đã được sử dụng trước đó.",
+            code="PAIRING_SESSION_ALREADY_USED",
+            message="Thiết bị này đã được ghép nối trước đó.",
         )
 
-    store = verify_store_access(db, principal, requested_store_id=body.store_id)
+    store = verify_store_access(db, principal, requested_store_id=store_id)
     assert store is not None
     org = principal.organization
 
     enforce_device_limit(db, settings, org)
 
     now = datetime.now(timezone.utc)
-
-    raw_code = (body.device_code or "").strip().upper()
+    raw_code = (device_code or "").strip().upper()
     if not raw_code:
         count = db.query(Device).filter(Device.organization_id == org.id).count()
         raw_code = f"POS-TERMINAL-{count + 1:02d}"
@@ -244,7 +308,7 @@ def pair_device_by_code(
             device = existing
             device.status = "active"
             device.store_id = store.id
-            device.name = body.name.strip()
+            device.name = name.strip()
         else:
             count = db.query(Device).filter(Device.organization_id == org.id).count()
             raw_code = f"POS-TERMINAL-{count + 1:02d}"
@@ -252,9 +316,9 @@ def pair_device_by_code(
                 organization_id=org.id,
                 store_id=store.id,
                 device_code=raw_code,
-                name=body.name.strip(),
-                device_type=body.device_type,
-                platform=body.platform,
+                name=name.strip(),
+                device_type=device_type,
+                platform=platform,
                 status="active",
                 created_by=principal.user.id,
             )
@@ -264,9 +328,9 @@ def pair_device_by_code(
             organization_id=org.id,
             store_id=store.id,
             device_code=raw_code,
-            name=body.name.strip(),
-            device_type=body.device_type,
-            platform=body.platform,
+            name=name.strip(),
+            device_type=device_type,
+            platform=platform,
             status="active",
             created_by=principal.user.id,
         )
@@ -312,20 +376,25 @@ def pair_device_by_code(
     device.last_seen_at = now
     device.app_version = sess.get("device_info", {}).get("app_version", "1.0.0")
 
+    ip_addr = sess.get("ip_address", "")
     db.add(
         DeviceEvent(
             organization_id=org.id,
             device_id=device.id,
-            event_type="paired_by_code",
+            event_type=pairing_method,
             occurred_at=now,
             received_at=now,
-            metadata={"pairing_code": cleaned_code, "paired_by_user": principal.user.id},
+            metadata={
+                "ip_address": ip_addr,
+                "pairing_code": sess.get("pairing_code"),
+                "paired_by_user": principal.user.id,
+            },
         )
     )
 
     record_audit_event(
         db,
-        action="device.paired_by_code",
+        action=f"device.{pairing_method}",
         entity_type="device",
         actor_type="user",
         actor_id=principal.user.id,
@@ -333,7 +402,7 @@ def pair_device_by_code(
         store_id=store.id,
         entity_id=device.id,
         request_id=request_id,
-        metadata={"device_code": device.device_code, "pairing_code": cleaned_code},
+        metadata={"device_code": device.device_code, "ip_address": ip_addr},
     )
 
     db.commit()
@@ -345,7 +414,9 @@ def pair_device_by_code(
     sess["device"] = _serialize_device(device)
     sess["store"] = {"id": store.id, "code": store.code, "name": store.name}
     sess["organization"] = {"id": org.id, "code": org.code, "name": org.name}
-    _PAIRING_BY_CODE.pop(cleaned_code, None)
+    _PAIRING_BY_CODE.pop(sess.get("pairing_code", ""), None)
+    if ip_addr and _PAIRING_BY_IP.get(ip_addr) == sess["session_id"]:
+        _PAIRING_BY_IP.pop(ip_addr, None)
 
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,
@@ -357,6 +428,77 @@ def pair_device_by_code(
             },
             request_id=request_id,
         ),
+    )
+
+
+@router.post("/devices/pair-by-code", status_code=status.HTTP_201_CREATED)
+def pair_device_by_code(
+    body: PairByCodeRequest,
+    principal: UserPrincipal = Depends(require_permission("devices.create")),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    request_id: str = Depends(get_request_id),
+) -> JSONResponse:
+    cleaned_code = body.pairing_code.replace(" ", "").replace("-", "").strip()
+    session_id = _PAIRING_BY_CODE.get(cleaned_code)
+    if not session_id or session_id not in _PAIRING_SESSIONS:
+        raise NotFoundError(
+            code="PAIRING_CODE_NOT_FOUND",
+            message=f"Mã ghép nối '{body.pairing_code}' không tồn tại hoặc đã hết hạn. Vui lòng kiểm tra màn hình máy POS.",
+        )
+
+    return _complete_pairing_session(
+        sess=_PAIRING_SESSIONS[session_id],
+        store_id=body.store_id,
+        name=body.name,
+        device_code=body.device_code,
+        device_type=body.device_type,
+        platform=body.platform,
+        pairing_method="paired_by_code",
+        principal=principal,
+        db=db,
+        settings=settings,
+        request_id=request_id,
+    )
+
+
+@router.post("/devices/pair-by-ip", status_code=status.HTTP_201_CREATED)
+def pair_device_by_ip(
+    body: PairByIpRequest,
+    principal: UserPrincipal = Depends(require_permission("devices.create")),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    request_id: str = Depends(get_request_id),
+) -> JSONResponse:
+    session_id = (body.session_id or "").strip() or None
+    if not session_id and body.ip_address:
+        cleaned_ip = body.ip_address.strip()
+        session_id = _PAIRING_BY_IP.get(cleaned_ip)
+        if not session_id:
+            # Fallback scan for newest pending session matching this IP
+            for sid, s in reversed(list(_PAIRING_SESSIONS.items())):
+                if s.get("status") == "pending" and s.get("ip_address") == cleaned_ip:
+                    session_id = sid
+                    break
+
+    if not session_id or session_id not in _PAIRING_SESSIONS:
+        raise NotFoundError(
+            code="PAIRING_IP_NOT_FOUND",
+            message=f"Không tìm thấy máy POS nào đang chờ kết nối tại IP '{body.ip_address or ''}'. Hãy đảm bảo app POS đang mở màn hình chờ kết nối.",
+        )
+
+    return _complete_pairing_session(
+        sess=_PAIRING_SESSIONS[session_id],
+        store_id=body.store_id,
+        name=body.name,
+        device_code=body.device_code,
+        device_type=body.device_type,
+        platform=body.platform,
+        pairing_method="paired_by_ip",
+        principal=principal,
+        db=db,
+        settings=settings,
+        request_id=request_id,
     )
 
 

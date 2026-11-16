@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import 'core/network/local_ip_helper.dart';
 import 'core/network/pos_api_client.dart';
 import 'core/storage/local_pos_db.dart';
 
@@ -97,7 +98,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   // Pairing state
   bool _isPaired = false;
   String? _sessionId;
-  String _pairingCode = '------';
+  String _deviceIp = 'Đang lấy IP...';
   int _pairingSecondsLeft = 900;
 
   // Bound device state
@@ -186,15 +187,16 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
     _pairingCountdownTimer?.cancel();
     setState(() {
       _busy = true;
-      _pairingCode = '------';
+      _deviceIp = 'Đang lấy IP...';
     });
 
     try {
-      final data = await _api.createPairingSession();
+      final localIp = await detectLocalLanIp();
+      final data = await _api.createPairingSession(ipAddress: localIp);
       if (!mounted) return;
       setState(() {
         _sessionId = data['session_id']?.toString();
-        _pairingCode = data['pairing_code']?.toString() ?? '------';
+        _deviceIp = data['ip_address']?.toString() ?? localIp ?? '127.0.0.1';
         _pairingSecondsLeft =
             int.tryParse(data['expires_in_seconds']?.toString() ?? '900') ?? 900;
         _busy = false;
@@ -877,7 +879,6 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   }
 
   Widget _buildPairingScreen() {
-    final digits = _pairingCode.padRight(6, '-').split('');
     final min = (_pairingSecondsLeft ~/ 60).toString().padLeft(2, '0');
     final sec = (_pairingSecondsLeft % 60).toString().padLeft(2, '0');
 
@@ -924,7 +925,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Mở Web Quản Trị → Chi nhánh → Xem thiết bị → "+ Ghép Nối Máy POS Mới" và nhập mã 6 số dưới đây:',
+                  'Mở Web Quản Trị → Chi nhánh → Xem thiết bị → "+ Ghép Nối Máy POS Mới" rồi chọn hoặc nhập địa chỉ IP dưới đây:',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
                 ),
@@ -935,41 +936,46 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                     child: CircularProgressIndicator(color: kEmeraldPrimary),
                   )
                 else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      for (var i = 0; i < 6; i++)
-                        Container(
-                          width: 44,
-                          height: 58,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: kEmeraldPrimary.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: kEmeraldPrimary, width: 1.5),
-                          ),
-                          child: Text(
-                            digits[i],
-                            style: const TextStyle(
-                              color: Color(0xFF34D399),
-                              fontSize: 26,
-                              fontWeight: FontWeight.w900,
-                              fontFamily: 'monospace',
-                            ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 18),
+                    decoration: BoxDecoration(
+                      color: kEmeraldPrimary.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: kEmeraldPrimary, width: 1.5),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'ĐỊA CHỈ IP MÁY POS NÀY',
+                          style: TextStyle(
+                            color: Colors.white60,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.2,
                           ),
                         ),
-                    ],
+                        const SizedBox(height: 8),
+                        SelectableText(
+                          _deviceIp,
+                          style: const TextStyle(
+                            color: Color(0xFF34D399),
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            fontFamily: 'monospace',
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 const SizedBox(height: 18),
                 Text(
-                  'Hiệu lực còn $min:$sec • Đang chờ phê duyệt...',
+                  'Hiệu lực còn $min:$sec • Đang chờ Quản trị viên kết nối...',
                   style: const TextStyle(color: Colors.white60, fontSize: 12),
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Server: $_serverUrl',
+                  'Máy chủ: $_serverUrl',
                   style: const TextStyle(color: Colors.white38, fontSize: 11),
                 ),
                 const SizedBox(height: 16),
@@ -980,7 +986,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                       style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
                       onPressed: _requestPairingSession,
                       icon: const Icon(Icons.refresh, size: 18),
-                      label: const Text('Làm mới mã'),
+                      label: const Text('Phát lại tín hiệu'),
                     ),
                     const SizedBox(width: 12),
                     OutlinedButton.icon(
