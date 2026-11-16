@@ -7,12 +7,16 @@ Reference:
 
 from __future__ import annotations
 
+import base64
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Query, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -41,12 +45,16 @@ from app.infrastructure.models import (
     PriceListItem,
     Product,
     ProductBarcode,
+    ProductCategory,
+    ProductImage,
     ProductVariant,
     StorePriceListAssignment,
 )
 from app.modules.audit.service import record_audit_event
 
 router = APIRouter(tags=["Catalog & Pricing"])
+UPLOAD_DIR = Path(__file__).resolve().parents[3] / "uploads" / "products"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def normalize_barcode(raw: str) -> str:
@@ -74,8 +82,19 @@ class CreateCategoryRequest(BaseModel):
 class UpdateCategoryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    parent_category_id: Optional[str] = None
+    code: Optional[str] = Field(default=None, max_length=60)
     name: Optional[str] = Field(default=None, min_length=1, max_length=160)
     sort_order: Optional[int] = None
+    status: Optional[str] = None
+
+
+class ProductImageInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image_url: str = Field(min_length=1, max_length=2000)
+    sort_order: int = 0
+    is_primary: bool = False
 
 
 class BarcodeInput(BaseModel):
@@ -104,11 +123,13 @@ class CreateProductRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     category_id: Optional[str] = None
+    category_ids: List[str] = Field(default_factory=list)
     product_code: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=1, max_length=240)
     description: Optional[str] = None
     product_type: str = Field(default="stocked")
     track_inventory: bool = True
+    images: List[ProductImageInput] = Field(default_factory=list)
     variants: List[VariantInput] = Field(min_length=1)
 
 
@@ -116,9 +137,13 @@ class UpdateProductRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     category_id: Optional[str] = None
+    category_ids: Optional[List[str]] = None
     name: Optional[str] = Field(default=None, min_length=1, max_length=240)
     description: Optional[str] = None
+    product_type: Optional[str] = None
     track_inventory: Optional[bool] = None
+    status: Optional[str] = None
+    images: Optional[List[ProductImageInput]] = None
 
 
 class UpdateVariantRequest(BaseModel):
@@ -127,6 +152,7 @@ class UpdateVariantRequest(BaseModel):
     variant_name: Optional[str] = Field(default=None, min_length=1, max_length=160)
     sku: Optional[str] = Field(default=None, max_length=100)
     unit_name: Optional[str] = Field(default=None, min_length=1, max_length=40)
+    default_cost: Optional[str] = None
     default_price: Optional[str] = None
     status: Optional[str] = None
 
@@ -159,8 +185,10 @@ class AssignStorePriceListRequest(BaseModel):
     price_list_id: str
 
 
-def _serialize_category(cat: Category) -> Dict[str, Any]:
-    return {
+def _serialize_category(
+    cat: Category, product_count: Optional[int] = None
+) -> Dict[str, Any]:
+    data = {
         "id": cat.id,
         "organization_id": cat.organization_id,
         "parent_category_id": cat.parent_category_id,
@@ -169,6 +197,168 @@ def _serialize_category(cat: Category) -> Dict[str, Any]:
         "sort_order": cat.sort_order,
         "status": cat.status,
     }
+    if product_count is not None:
+        data["product_count"] = product_count
+    return data
+
+
+def _sync_product_categories(
+    db: Session, org_id: str, product: Product, category_ids: List[str]
+) -> None:
+    """Validate and sync many-to-many product_categories plus primary category_id."""
+    deduped = list(dict.fromkeys([c.strip() for c in category_ids if c and c.strip()]))
+    if deduped:
+        found = (
+            db.query(Category)
+            .filter(
+                Category.organization_id == org_id,
+                Category.id.in_(deduped),
+                Category.deleted_at.is_(None),
+            )
+            .all()
+        )
+        if len(found) != len(deduped):
+            raise NotFoundError(
+                code="CATEGORY_NOT_FOUND",
+                message="One or more categories not found in this organization.",
+            )
+
+    db.query(ProductCategory).filter(
+        ProductCategory.organization_id == org_id,
+        ProductCategory.product_id == product.id,
+    ).delete(synchronize_session=False)
+
+    for cid in deduped:
+        db.add(
+            ProductCategory(
+                organization_id=org_id,
+                product_id=product.id,
+                category_id=cid,
+            )
+        )
+    product.category_id = deduped[0] if deduped else None
+
+
+def _sync_product_images(
+    db: Session, org_id: str, product: Product, images: List[ProductImageInput]
+) -> None:
+    """Replace product_images and keep Product.image_key aligned with primary image."""
+    db.query(ProductImage).filter(
+        ProductImage.organization_id == org_id,
+        ProductImage.product_id == product.id,
+    ).delete(synchronize_session=False)
+
+    if not images:
+        product.image_key = None
+        return
+
+    has_primary = any(img.is_primary for img in images)
+    primary_url: Optional[str] = None
+    for idx, img in enumerate(images):
+        is_prim = img.is_primary if has_primary else (idx == 0)
+        if is_prim and primary_url is None:
+            primary_url = img.image_url.strip()
+        db.add(
+            ProductImage(
+                organization_id=org_id,
+                product_id=product.id,
+                image_url=img.image_url.strip(),
+                sort_order=img.sort_order if img.sort_order else idx,
+                is_primary=is_prim,
+            )
+        )
+    product.image_key = primary_url or images[0].image_url.strip()
+
+
+def _create_variant_row(
+    db: Session, org_id: str, product_id: str, v_in: VariantInput
+) -> ProductVariant:
+    """Validate uniqueness and insert a ProductVariant + its ProductBarcodes."""
+    norm_vcode = v_in.variant_code.strip().upper()
+    if (
+        db.query(ProductVariant)
+        .filter(
+            ProductVariant.organization_id == org_id,
+            ProductVariant.variant_code == norm_vcode,
+        )
+        .first()
+    ):
+        raise ConflictError(
+            code="VARIANT_CODE_EXISTS",
+            message=f"Variant code '{norm_vcode}' already exists.",
+        )
+
+    norm_sku = v_in.sku.strip().upper() if v_in.sku else None
+    if norm_sku:
+        if (
+            db.query(ProductVariant)
+            .filter(
+                ProductVariant.organization_id == org_id,
+                ProductVariant.sku == norm_sku,
+            )
+            .first()
+        ):
+            raise ConflictError(
+                code="SKU_EXISTS",
+                message=f"SKU '{norm_sku}' already exists.",
+            )
+
+    price_dec = to_decimal(v_in.default_price, "default_price")
+    cost_dec = (
+        to_decimal(v_in.default_cost, "default_cost")
+        if v_in.default_cost is not None and str(v_in.default_cost).strip() != ""
+        else None
+    )
+    if price_dec < Decimal("0"):
+        raise ValidationAppError(
+            code="NEGATIVE_PRICE", message="default_price must be non-negative."
+        )
+
+    variant = ProductVariant(
+        organization_id=org_id,
+        product_id=product_id,
+        variant_code=norm_vcode,
+        variant_name=v_in.variant_name.strip(),
+        sku=norm_sku,
+        unit_name=v_in.unit_name.strip(),
+        default_cost=cost_dec,
+        default_price=price_dec,
+        currency_code=v_in.currency_code.upper(),
+        is_default=v_in.is_default,
+        status="active",
+        version=1,
+    )
+    db.add(variant)
+    db.flush()
+
+    for b_in in v_in.barcodes:
+        norm_bc = normalize_barcode(b_in.barcode)
+        if not norm_bc:
+            continue
+        if (
+            db.query(ProductBarcode)
+            .filter(
+                ProductBarcode.organization_id == org_id,
+                ProductBarcode.barcode == norm_bc,
+            )
+            .first()
+        ):
+            raise ConflictError(
+                code="BARCODE_EXISTS",
+                message=f"Barcode '{norm_bc}' is already assigned in this organization.",
+            )
+        db.add(
+            ProductBarcode(
+                organization_id=org_id,
+                product_variant_id=variant.id,
+                barcode=norm_bc,
+                barcode_type=b_in.barcode_type,
+                is_primary=b_in.is_primary,
+            )
+        )
+
+    db.flush()
+    return variant
 
 
 def _serialize_variant(db: Session, v: ProductVariant) -> Dict[str, Any]:
@@ -216,10 +406,58 @@ def _serialize_product(db: Session, p: Product) -> Dict[str, Any]:
         .order_by(ProductVariant.is_default.desc(), ProductVariant.variant_code.asc())
         .all()
     )
+    cat_links = (
+        db.query(ProductCategory)
+        .filter(
+            ProductCategory.organization_id == p.organization_id,
+            ProductCategory.product_id == p.id,
+        )
+        .all()
+    )
+    cat_ids = [cl.category_id for cl in cat_links]
+    if p.category_id and p.category_id not in cat_ids:
+        cat_ids.insert(0, p.category_id)
+    cats = (
+        db.query(Category)
+        .filter(
+            Category.organization_id == p.organization_id,
+            Category.id.in_(cat_ids),
+            Category.deleted_at.is_(None),
+        )
+        .all()
+        if cat_ids
+        else []
+    )
+    imgs = (
+        db.query(ProductImage)
+        .filter(
+            ProductImage.organization_id == p.organization_id,
+            ProductImage.product_id == p.id,
+        )
+        .order_by(ProductImage.is_primary.desc(), ProductImage.sort_order.asc())
+        .all()
+    )
+    primary_img = next((im.image_url for im in imgs if im.is_primary), None) or (
+        imgs[0].image_url if imgs else p.image_key
+    )
     return {
         "id": p.id,
         "organization_id": p.organization_id,
         "category_id": p.category_id,
+        "category_ids": cat_ids,
+        "categories": [
+            {"id": c.id, "code": c.code, "name": c.name} for c in cats
+        ],
+        "image_url": primary_img,
+        "images": [
+            {
+                "id": im.id,
+                "image_url": im.image_url,
+                "sort_order": im.sort_order,
+                "is_primary": im.is_primary,
+            }
+            for im in imgs
+        ],
         "product_code": p.product_code,
         "name": p.name,
         "description": p.description,
@@ -240,19 +478,38 @@ def list_categories(
     request_id: str = Depends(get_request_id),
 ) -> Dict[str, Any]:
     _check_catalog_read(principal)
+    org_id = principal.organization.id
     cats = (
         db.query(Category)
         .filter(
-            Category.organization_id == principal.organization.id,
+            Category.organization_id == org_id,
             Category.deleted_at.is_(None),
         )
         .order_by(Category.sort_order.asc(), Category.name.asc())
         .all()
     )
+    # Count active products per category across both legacy category_id and product_categories
+    prods = (
+        db.query(Product.id, Product.category_id)
+        .filter(Product.organization_id == org_id, Product.deleted_at.is_(None))
+        .all()
+    )
+    links = (
+        db.query(ProductCategory.product_id, ProductCategory.category_id)
+        .filter(ProductCategory.organization_id == org_id)
+        .all()
+    )
+    cat_prod_sets: Dict[str, set] = {}
+    for pid, cid in prods:
+        if cid:
+            cat_prod_sets.setdefault(cid, set()).add(pid)
+    for pid, cid in links:
+        cat_prod_sets.setdefault(cid, set()).add(pid)
+
     return ok_response(
-        [_serialize_category(c) for c in cats],
+        [_serialize_category(c, product_count=len(cat_prod_sets.get(c.id, set()))) for c in cats],
         request_id=request_id,
-        meta=PaginationMeta(page_size=50, next_cursor=None, has_more=False),
+        meta=PaginationMeta(page_size=100, next_cursor=None, has_more=False),
     )
 
 
@@ -322,6 +579,71 @@ def create_category(
     )
 
 
+@router.patch("/categories/{category_id}")
+def update_category(
+    category_id: str,
+    body: UpdateCategoryRequest,
+    principal: UserPrincipal = Depends(require_permission("products.update")),
+    db: Session = Depends(get_db),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    org_id = principal.organization.id
+    cat = (
+        db.query(Category)
+        .filter(
+            Category.organization_id == org_id,
+            Category.id == category_id,
+            Category.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if cat is None:
+        raise NotFoundError(code="CATEGORY_NOT_FOUND", message="Category not found.")
+
+    if body.name is not None:
+        cat.name = body.name.strip()
+    if body.code is not None:
+        norm_code = body.code.strip().upper() or None
+        if norm_code and norm_code != cat.code:
+            exists = (
+                db.query(Category)
+                .filter(Category.organization_id == org_id, Category.code == norm_code)
+                .first()
+            )
+            if exists:
+                raise ConflictError(
+                    code="CATEGORY_CODE_EXISTS",
+                    message=f"Category code '{norm_code}' already exists.",
+                )
+        cat.code = norm_code
+    if body.parent_category_id is not None:
+        if body.parent_category_id == cat.id:
+            raise ValidationAppError(
+                code="INVALID_PARENT",
+                message="Category cannot be its own parent.",
+            )
+        cat.parent_category_id = body.parent_category_id or None
+    if body.sort_order is not None:
+        cat.sort_order = body.sort_order
+    if body.status is not None and body.status in ("active", "inactive"):
+        cat.status = body.status
+
+    serialized = _serialize_category(cat)
+    db.add(
+        CatalogChangeLog(
+            organization_id=org_id,
+            stream_name="catalog",
+            entity_type="category",
+            change_type="upsert" if cat.status == "active" else "tombstone",
+            entity_id=cat.id,
+            version=2,
+            payload=serialized,
+        )
+    )
+    db.commit()
+    return ok_response(serialized, request_id=request_id)
+
+
 @router.post("/categories/{category_id}/deactivate")
 def deactivate_category(
     category_id: str,
@@ -359,6 +681,55 @@ def deactivate_category(
     return ok_response(serialized, request_id=request_id)
 
 
+class UploadProductImageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str = Field(default="image.png", max_length=240)
+    content_base64: str = Field(min_length=10)
+
+
+@router.post("/products/upload-image")
+def upload_product_image(
+    body: UploadProductImageRequest,
+    principal: UserPrincipal = Depends(require_permission("products.create")),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    """Upload a base64 product image and return its accessible media URL."""
+    raw_b64 = body.content_base64.strip()
+    if "," in raw_b64 and raw_b64.startswith("data:image/"):
+        header, raw_b64 = raw_b64.split(",", 1)
+    try:
+        raw = base64.b64decode(raw_b64, validate=True)
+    except Exception:
+        raise ValidationAppError(
+            code="INVALID_IMAGE", message="Dữ liệu ảnh base64 không hợp lệ."
+        )
+    if len(raw) > 5 * 1024 * 1024:
+        raise ValidationAppError(
+            code="IMAGE_TOO_LARGE", message="Kích thước ảnh tối đa 5MB."
+        )
+    ext = Path(body.filename or "img.png").suffix.lower()
+    if ext not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+        ext = ".png"
+    filename = f"{uuid.uuid4().hex}{ext}"
+    dest = UPLOAD_DIR / filename
+    dest.write_bytes(raw)
+    return ok_response(
+        {"image_url": f"/api/v1/products/media/{filename}", "filename": filename},
+        request_id=request_id,
+    )
+
+
+@router.get("/products/media/{filename}")
+def get_product_media(filename: str):
+    """Serve uploaded product images for Web Admin, Terminal, and Flutter APK."""
+    safe_name = Path(filename).name
+    target = UPLOAD_DIR / safe_name
+    if not target.is_file():
+        raise NotFoundError(code="IMAGE_NOT_FOUND", message="Image not found.")
+    return FileResponse(target)
+
+
 @router.get("/products")
 def list_products(
     status_filter: Optional[str] = Query(default=None, alias="status"),
@@ -368,20 +739,32 @@ def list_products(
     request_id: str = Depends(get_request_id),
 ) -> Dict[str, Any]:
     _check_catalog_read(principal)
+    org_id = principal.organization.id
     query = db.query(Product).filter(
-        Product.organization_id == principal.organization.id,
+        Product.organization_id == org_id,
         Product.deleted_at.is_(None),
     )
     if status_filter:
         query = query.filter(Product.status == status_filter)
     if category_id:
-        query = query.filter(Product.category_id == category_id)
+        linked_pids = [
+            r[0]
+            for r in db.query(ProductCategory.product_id)
+            .filter(
+                ProductCategory.organization_id == org_id,
+                ProductCategory.category_id == category_id,
+            )
+            .all()
+        ]
+        query = query.filter(
+            or_(Product.category_id == category_id, Product.id.in_(linked_pids))
+        )
 
     products = query.order_by(Product.created_at.desc(), Product.id.desc()).all()
     return ok_response(
         [_serialize_product(db, p) for p in products],
         request_id=request_id,
-        meta=PaginationMeta(page_size=50, next_cursor=None, has_more=False),
+        meta=PaginationMeta(page_size=100, next_cursor=None, has_more=False),
     )
 
 
@@ -393,21 +776,9 @@ def create_product(
     request_id: str = Depends(get_request_id),
 ) -> JSONResponse:
     org_id = principal.organization.id
-    if body.category_id:
-        cat = (
-            db.query(Category)
-            .filter(
-                Category.organization_id == org_id,
-                Category.id == body.category_id,
-                Category.deleted_at.is_(None),
-            )
-            .first()
-        )
-        if cat is None:
-            raise NotFoundError(
-                code="CATEGORY_NOT_FOUND",
-                message="Category not found in this organization.",
-            )
+    cat_ids = list(body.category_ids or [])
+    if body.category_id and body.category_id not in cat_ids:
+        cat_ids.insert(0, body.category_id)
 
     norm_pcode = body.product_code.strip().upper()
     if (
@@ -431,7 +802,7 @@ def create_product(
 
     product = Product(
         organization_id=org_id,
-        category_id=body.category_id,
+        category_id=cat_ids[0] if cat_ids else None,
         product_code=norm_pcode,
         name=body.name.strip(),
         description=body.description,
@@ -445,90 +816,14 @@ def create_product(
     db.add(product)
     db.flush()
 
-    created_variants: List[ProductVariant] = []
-    for v_in in body.variants:
-        norm_vcode = v_in.variant_code.strip().upper()
-        if (
-            db.query(ProductVariant)
-            .filter(
-                ProductVariant.organization_id == org_id,
-                ProductVariant.variant_code == norm_vcode,
-            )
-            .first()
-        ):
-            raise ConflictError(
-                code="VARIANT_CODE_EXISTS",
-                message=f"Variant code '{norm_vcode}' already exists.",
-            )
+    if cat_ids:
+        _sync_product_categories(db, org_id, product, cat_ids)
+    if body.images:
+        _sync_product_images(db, org_id, product, body.images)
 
-        norm_sku = v_in.sku.strip().upper() if v_in.sku else None
-        if norm_sku:
-            if (
-                db.query(ProductVariant)
-                .filter(
-                    ProductVariant.organization_id == org_id,
-                    ProductVariant.sku == norm_sku,
-                )
-                .first()
-            ):
-                raise ConflictError(
-                    code="SKU_EXISTS",
-                    message=f"SKU '{norm_sku}' already exists.",
-                )
-
-        price_dec = to_decimal(v_in.default_price, "default_price")
-        cost_dec = (
-            to_decimal(v_in.default_cost, "default_cost")
-            if v_in.default_cost is not None
-            else None
-        )
-        if price_dec < Decimal("0"):
-            raise ValidationAppError(
-                code="NEGATIVE_PRICE", message="default_price must be non-negative."
-            )
-
-        variant = ProductVariant(
-            organization_id=org_id,
-            product_id=product.id,
-            variant_code=norm_vcode,
-            variant_name=v_in.variant_name.strip(),
-            sku=norm_sku,
-            unit_name=v_in.unit_name.strip(),
-            default_cost=cost_dec,
-            default_price=price_dec,
-            currency_code=v_in.currency_code.upper(),
-            is_default=v_in.is_default,
-            status="active",
-            version=1,
-        )
-        db.add(variant)
-        db.flush()
-
-        for b_in in v_in.barcodes:
-            norm_bc = normalize_barcode(b_in.barcode)
-            if (
-                db.query(ProductBarcode)
-                .filter(
-                    ProductBarcode.organization_id == org_id,
-                    ProductBarcode.barcode == norm_bc,
-                )
-                .first()
-            ):
-                raise ConflictError(
-                    code="BARCODE_EXISTS",
-                    message=f"Barcode '{norm_bc}' is already assigned in this organization.",
-                )
-            bc_row = ProductBarcode(
-                organization_id=org_id,
-                product_variant_id=variant.id,
-                barcode=norm_bc,
-                barcode_type=b_in.barcode_type,
-                is_primary=b_in.is_primary,
-            )
-            db.add(bc_row)
-
-        db.flush()
-        created_variants.append(variant)
+    created_variants: List[ProductVariant] = [
+        _create_variant_row(db, org_id, product.id, v_in) for v_in in body.variants
+    ]
 
     serialized_product = _serialize_product(db, product)
     db.add(
@@ -700,9 +995,27 @@ def update_product(
     if product is None:
         raise NotFoundError(code="PRODUCT_NOT_FOUND", message="Product not found.")
 
-    changes = body.model_dump(exclude_unset=True)
-    for k, v in changes.items():
-        setattr(product, k, v)
+    if body.name is not None:
+        product.name = body.name.strip()
+    if body.description is not None:
+        product.description = body.description
+    if body.product_type is not None:
+        product.product_type = body.product_type
+    if body.track_inventory is not None:
+        product.track_inventory = body.track_inventory
+    if body.status is not None and body.status in ("active", "inactive", "archived"):
+        product.status = body.status
+
+    if body.category_ids is not None:
+        _sync_product_categories(db, org_id, product, body.category_ids)
+    elif body.category_id is not None:
+        _sync_product_categories(
+            db, org_id, product, [body.category_id] if body.category_id else []
+        )
+
+    if body.images is not None:
+        _sync_product_images(db, org_id, product, body.images)
+
     product.version += 1
     product.updated_by = principal.user.id
     db.flush()
@@ -721,6 +1034,47 @@ def update_product(
     )
     db.commit()
     return ok_response(serialized, request_id=request_id)
+
+
+@router.post("/products/{product_id}/variants", status_code=status.HTTP_201_CREATED)
+def add_product_variant(
+    product_id: str,
+    body: VariantInput,
+    principal: UserPrincipal = Depends(require_permission("products.update")),
+    db: Session = Depends(get_db),
+    request_id: str = Depends(get_request_id),
+) -> JSONResponse:
+    org_id = principal.organization.id
+    product = (
+        db.query(Product)
+        .filter(
+            Product.organization_id == org_id,
+            Product.id == product_id,
+            Product.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if product is None:
+        raise NotFoundError(code="PRODUCT_NOT_FOUND", message="Product not found.")
+
+    variant = _create_variant_row(db, org_id, product.id, body)
+    serialized = _serialize_variant(db, variant)
+    db.add(
+        CatalogChangeLog(
+            organization_id=org_id,
+            stream_name="catalog",
+            entity_type="product_variant",
+            change_type="upsert",
+            entity_id=variant.id,
+            version=variant.version,
+            payload=serialized,
+        )
+    )
+    db.commit()
+    return JSONResponse(
+        status_code=status.HTTP_201_CREATED,
+        content=ok_response(serialized, request_id=request_id),
+    )
 
 
 @router.patch("/products/{product_id}/variants/{variant_id}")
@@ -752,6 +1106,12 @@ def update_variant(
         variant.sku = body.sku.strip().upper()
     if body.unit_name is not None:
         variant.unit_name = body.unit_name.strip()
+    if body.default_cost is not None:
+        variant.default_cost = (
+            to_decimal(body.default_cost, "default_cost")
+            if str(body.default_cost).strip() != ""
+            else None
+        )
     if body.default_price is not None:
         variant.default_price = to_decimal(body.default_price, "default_price")
     if body.status is not None:

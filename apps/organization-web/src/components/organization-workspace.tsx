@@ -21,6 +21,7 @@ import {
   Database,
   DollarSign,
   ExternalLink,
+  FolderTree,
   Layers,
   Link2,
   LogOut,
@@ -63,6 +64,14 @@ import { Terminal } from "@/components/ui/terminal";
 import { PosLcdSimulator } from "@/components/pos-lcd-simulator";
 import { SixDigitPinInput } from "@/components/ui/six-digit-pin-input";
 import { ThemeSegmentedToggle, ThemeToggle } from "@/components/motion/theme-toggle";
+import {
+  CatalogCategoriesView,
+  type CategoryRecord,
+} from "@/components/catalog-categories-view";
+import {
+  CatalogProductsView,
+  type ProductRecord,
+} from "@/components/catalog-products-view";
 import {
   Skeleton,
   OverviewSkeleton,
@@ -163,6 +172,7 @@ type NavTab =
   | "overview"
   | "pos"
   | "orders"
+  | "categories"
   | "products"
   | "inventory"
   | "stores"
@@ -173,6 +183,7 @@ const TAB_PATHS: Record<NavTab, string> = {
   overview: "/overview",
   pos: "/pos",
   orders: "/orders",
+  categories: "/categories",
   products: "/products",
   inventory: "/inventory",
   stores: "/stores",
@@ -185,6 +196,7 @@ function getTabFromPathname(pathname: string): NavTab | null {
   if (!clean || clean === "overview") return "overview";
   if (clean === "pos") return "pos";
   if (clean === "orders") return "orders";
+  if (clean === "categories") return "categories";
   if (clean === "products" || clean === "catalog") return "products";
   if (clean === "inventory" || clean === "stock") return "inventory";
   if (
@@ -321,6 +333,7 @@ export default function OrganizationWorkspace({
     Record<string, InventoryBalanceItem>
   >({});
   const [devices, setDevices] = useState<PosDeviceItem[]>([]);
+  const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [viewingStoreDevicesId, setViewingStoreDevicesId] = useState<string | null>(null);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
 
@@ -435,14 +448,19 @@ export default function OrganizationWorkspace({
       const tk = token || accessTokenRef.current;
       if (!tk) return;
       try {
-        const [capData, storeList, prodList, orderList] = await Promise.all([
+        const [capData, storeList, prodList, orderList, catList] = await Promise.all([
           apiFetch("/api/v1/system/capabilities", {}, tk).catch(() => null),
           apiFetch("/api/v1/stores", {}, tk).catch(() => []),
           apiFetch("/api/v1/products", {}, tk).catch(() => []),
           apiFetch("/api/v1/orders", {}, tk).catch(() => []),
+          apiFetch("/api/v1/categories", {}, tk).catch(() => []),
         ]);
 
         if (capData) setCapabilities(capData);
+        const normalizedCats: CategoryRecord[] = Array.isArray(catList)
+          ? catList
+          : catList?.items || [];
+        setCategories(normalizedCats);
         const normalizedStores: StoreItem[] = Array.isArray(storeList)
           ? storeList
           : storeList?.items || [];
@@ -1937,7 +1955,14 @@ export default function OrganizationWorkspace({
                     ? `${outboxQueue.length} chờ`
                     : undefined,
               },
-              { id: "products", label: "Danh mục Món", icon: Link2, path: "/products" },
+              {
+                id: "categories",
+                label: "Quản lý Danh mục",
+                icon: FolderTree,
+                path: "/categories",
+                badge: categories.length > 0 ? `${categories.length}` : undefined,
+              },
+              { id: "products", label: "Quản lý Sản phẩm", icon: Link2, path: "/products" },
               { id: "inventory", label: "Tồn kho & Sổ cái", icon: Boxes, path: "/inventory" },
               {
                 id: "stores",
@@ -2670,72 +2695,31 @@ export default function OrganizationWorkspace({
         )}
 
         {/* ================================================================ */}
-        {/* TAB 4: PRODUCTS & CATALOG                                        */}
+        {/* TAB 3.5: CATEGORIES MANAGEMENT                                   */}
+        {/* ================================================================ */}
+        {activeTab === "categories" && (
+          <CatalogCategoriesView
+            categories={categories}
+            accessToken={accessToken}
+            apiFetch={apiFetch}
+            onRefresh={() => refreshWorkspaceData(accessToken || undefined)}
+            notify={notify}
+          />
+        )}
+
+        {/* ================================================================ */}
+        {/* TAB 4: PRODUCTS & VARIANTS & MULTI-IMAGE CATALOG                 */}
         {/* ================================================================ */}
         {activeTab === "products" && (
-          <div className="space-y-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <h1 className="text-xl font-bold tracking-tight text-neutral-900">
-                  Danh Mục Sản Phẩm & Bảng Giá
-                </h1>
-                <p className="mt-0.5 text-sm text-neutral-500">
-                  Quản lý danh mục món, mã SKU, Barcode chuẩn hóa và giá bán
-                  niêm yết.
-                </p>
-              </div>
-              <ShimmerButton onClick={() => setActiveModal("create_product")}>
-                <Plus className="h-3.5 w-3.5" />
-                Thêm Sản Phẩm Mới
-              </ShimmerButton>
-            </div>
-
-            <div className="space-y-2.5">
-              {allVariants.map((v) => (
-                <div
-                  key={v.variantId}
-                  className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-4 hover:border-neutral-300 transition-all"
-                >
-                  <div className="flex items-center gap-3.5">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 font-mono text-xs font-bold text-neutral-700">
-                      SKU
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-neutral-900">
-                          {v.productName}
-                        </span>
-                        <span className="rounded bg-neutral-100 px-2 py-0.5 font-mono text-[11px] text-neutral-600">
-                          {v.sku}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 text-xs text-neutral-500">
-                        Barcode: <span className="font-mono">{v.barcode}</span>{" "}
-                        • Tồn hiện tại:{" "}
-                        <strong className="text-neutral-800">
-                          {v.onHand} đv
-                        </strong>
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-bold text-neutral-900">
-                      {formatMoneyVND(v.price)}
-                    </span>
-                    <RippleButton
-                      onClick={() => {
-                        setAdjVariantId(v.variantId);
-                        setActiveModal("adjust_stock");
-                      }}
-                    >
-                      + Nhập kho
-                    </RippleButton>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <CatalogProductsView
+            products={products as unknown as ProductRecord[]}
+            categories={categories}
+            accessToken={accessToken}
+            apiFetch={apiFetch}
+            onRefresh={() => refreshWorkspaceData(accessToken || undefined)}
+            notify={notify}
+            formatMoney={formatMoneyVND}
+          />
         )}
 
         {/* ================================================================ */}

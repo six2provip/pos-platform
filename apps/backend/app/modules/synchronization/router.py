@@ -38,6 +38,8 @@ from app.infrastructure.models import (
     PaymentMethod,
     Product,
     ProductBarcode,
+    ProductCategory,
+    ProductImage,
     ProductVariant,
     Store,
     SyncCheckpoint,
@@ -215,6 +217,25 @@ def pos_bootstrap(
         .filter(ProductBarcode.organization_id == org.id)
         .all()
     )
+    prod_cat_links = (
+        db.query(ProductCategory)
+        .filter(ProductCategory.organization_id == org.id)
+        .all()
+    )
+    prod_cat_map: Dict[str, List[str]] = {}
+    for link in prod_cat_links:
+        prod_cat_map.setdefault(link.product_id, []).append(link.category_id)
+
+    prod_images = (
+        db.query(ProductImage)
+        .filter(ProductImage.organization_id == org.id)
+        .order_by(ProductImage.is_primary.desc(), ProductImage.sort_order.asc())
+        .all()
+    )
+    prod_img_map: Dict[str, str] = {}
+    for im in prod_images:
+        if im.product_id not in prod_img_map or im.is_primary:
+            prod_img_map[im.product_id] = im.image_url
     drawers = (
         db.query(CashDrawer)
         .filter(
@@ -292,6 +313,8 @@ def pos_bootstrap(
                 {
                     "id": p.id,
                     "category_id": p.category_id,
+                    "category_ids": prod_cat_map.get(p.id) or ([p.category_id] if p.category_id else []),
+                    "image_url": prod_img_map.get(p.id) or p.image_key,
                     "product_code": p.product_code,
                     "name": p.name,
                     "product_type": p.product_type,

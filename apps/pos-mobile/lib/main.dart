@@ -132,6 +132,8 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   bool _isOfflineGraceExpired = false;
 
   // Cashier state
+  List<Map<String, dynamic>> _categories = [];
+  String _selectedCategoryId = 'all';
   List<Map<String, dynamic>> _variants = [];
   List<Map<String, dynamic>> _orders = [];
   List<Map<String, dynamic>> _outboxQueue = [];
@@ -379,6 +381,16 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
           continue;
         }
         final vid = v['id'].toString();
+        final rawImg = prod?['image_url']?.toString() ?? '';
+        final fullImg = rawImg.isEmpty
+            ? ''
+            : (rawImg.startsWith('http') ? rawImg : '$_serverUrl$rawImg');
+        final catIds = (prod?['category_ids'] as List? ?? [])
+            .map((e) => e.toString())
+            .toList();
+        if (catIds.isEmpty && prod?['category_id'] != null) {
+          catIds.add(prod!['category_id'].toString());
+        }
         mappedVariants.add({
           'variantId': vid,
           'productId': v['product_id']?.toString() ?? '',
@@ -389,8 +401,15 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
           'barcode': barcodeMap[vid] ?? v['sku']?.toString() ?? '',
           'price': (double.tryParse(v['default_price']?.toString() ?? '0') ?? 0).round(),
           'onHand': invMap[vid] ?? 0,
+          'imageUrl': fullImg,
+          'categoryIds': catIds,
         });
       }
+
+      final mappedCats = (boot['categories'] as List? ?? [])
+          .whereType<Map>()
+          .map((c) => Map<String, dynamic>.from(c))
+          .toList();
 
       await LocalPosDb.instance.saveCatalogVariants(orgId, mappedVariants);
 
@@ -408,6 +427,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
 
       if (!mounted) return;
       setState(() {
+        _categories = mappedCats;
         _variants = mappedVariants;
         _activeCashSession = boot['current_cash_session'] != null
             ? Map<String, dynamic>.from(boot['current_cash_session'] as Map)
@@ -1025,6 +1045,10 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   Widget _buildPosTerminalScreen() {
     final isWide = MediaQuery.of(context).size.width >= 760;
     final filteredVariants = _variants.where((v) {
+      if (_selectedCategoryId != 'all') {
+        final cids = (v['categoryIds'] as List?)?.map((e) => e.toString()).toList() ?? [];
+        if (!cids.contains(_selectedCategoryId)) return false;
+      }
       if (_searchQuery.trim().isEmpty) return true;
       final q = _searchQuery.toLowerCase();
       return v['productName'].toString().toLowerCase().contains(q) ||
@@ -1353,25 +1377,61 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   }
 
   Widget _buildCatalogPane(List<Map<String, dynamic>> items) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
           child: TextField(
             decoration: InputDecoration(
               hintText: 'Tìm tên món, SKU hoặc mã vạch...',
               prefixIcon: const Icon(Icons.search),
               filled: true,
-              fillColor: Colors.white,
+              fillColor: isDark ? const Color(0xFF1F2937) : Colors.white,
               contentPadding: const EdgeInsets.symmetric(vertical: 10),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey.shade300),
+                borderSide: BorderSide(
+                  color: isDark ? Colors.white12 : Colors.grey.shade300,
+                ),
               ),
             ),
             onChanged: (val) => setState(() => _searchQuery = val),
           ),
         ),
+        if (_categories.isNotEmpty)
+          SizedBox(
+            height: 40,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: const Text('Tất cả', style: TextStyle(fontSize: 12)),
+                    selected: _selectedCategoryId == 'all',
+                    onSelected: (_) => setState(() => _selectedCategoryId = 'all'),
+                  ),
+                ),
+                for (final c in _categories)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(
+                        c['name']?.toString() ?? '',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      selected: _selectedCategoryId == c['id']?.toString(),
+                      onSelected: (_) => setState(
+                        () => _selectedCategoryId = c['id']?.toString() ?? 'all',
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 6),
         Expanded(
           child: items.isEmpty
               ? const Center(child: Text('Chưa có sản phẩm nào trong chi nhánh.'))
@@ -1381,25 +1441,39 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                     maxCrossAxisExtent: 210,
                     mainAxisSpacing: 10,
                     crossAxisSpacing: 10,
-                    childAspectRatio: 1.05,
+                    childAspectRatio: 0.92,
                   ),
                   itemCount: items.length,
                   itemBuilder: (ctx, i) {
                     final v = items[i];
+                    final imgUrl = v['imageUrl']?.toString() ?? '';
                     return InkWell(
                       onTap: () => _addToCart(v),
                       borderRadius: BorderRadius.circular(14),
                       child: Container(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: isDark ? const Color(0xFF111827) : Colors.white,
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.grey.shade200),
+                          border: Border.all(
+                            color: isDark ? Colors.white12 : Colors.grey.shade200,
+                          ),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
+                            if (imgUrl.isNotEmpty)
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: Image.network(
+                                  imgUrl,
+                                  height: 62,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                                ),
+                              ),
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -1419,7 +1493,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: Colors.grey.shade600,
+                                    color: isDark ? Colors.white54 : Colors.grey.shade600,
                                   ),
                                 ),
                               ],

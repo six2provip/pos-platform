@@ -724,6 +724,63 @@ class ProductBarcode(Base):
     )
 
 
+class ProductCategory(Base):
+    __tablename__ = "product_categories"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    organization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    product_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    category_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "product_id"],
+            ["products.organization_id", "products.id"],
+            name="fk_prod_cat_product_same_org",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "category_id"],
+            ["categories.organization_id", "categories.id"],
+            name="fk_prod_cat_category_same_org",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "product_id",
+            "category_id",
+            name="uq_prod_cat_org_prod_cat",
+        ),
+    )
+
+
+class ProductImage(Base):
+    __tablename__ = "product_images"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    organization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    product_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    image_url: Mapped[str] = mapped_column(Text, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "product_id"],
+            ["products.organization_id", "products.id"],
+            name="fk_prod_img_product_same_org",
+            ondelete="CASCADE",
+        ),
+        Index("ix_prod_img_org_product", "organization_id", "product_id"),
+    )
+
+
 class PriceList(Base):
     __tablename__ = "price_lists"
 
