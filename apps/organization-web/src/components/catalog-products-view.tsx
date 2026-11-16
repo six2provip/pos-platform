@@ -294,6 +294,7 @@ export function CatalogProductsView({
   const [images, setImages] = useState<ProductImageRow[]>([]);
   const [imageUrlInput, setImageUrlInput] = useState("");
   const [variants, setVariants] = useState<DraftVariant[]>([]);
+  const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -484,6 +485,7 @@ export function CatalogProductsView({
         isNew: true,
       },
     ]);
+    setSelectedVariantIdx(0);
     setEditorOpen(true);
   };
 
@@ -539,6 +541,7 @@ export function CatalogProductsView({
             String(v.default_price ?? "").trim() !== ""
         ),
     });
+    setSelectedVariantIdx(0);
     setEditorOpen(true);
   };
 
@@ -627,6 +630,7 @@ export function CatalogProductsView({
         isNew: true,
       },
     ]);
+    setSelectedVariantIdx(variants.length);
   };
 
   const updateDraftVariant = (idx: number, patch: Partial<DraftVariant>) => {
@@ -651,6 +655,7 @@ export function CatalogProductsView({
       if (next.length > 0 && !next.some((v) => v.is_default)) {
         next[0] = { ...next[0], is_default: true };
       }
+      setSelectedVariantIdx((cur) => Math.max(0, Math.min(cur, next.length - 1)));
       return next;
     });
   };
@@ -1158,164 +1163,222 @@ export function CatalogProductsView({
               </motion.div>
             )}
 
-            {editorTab === "variants" && (
+            {editorTab === "variants" && (() => {
+              const safeVarIdx = Math.min(
+                selectedVariantIdx,
+                Math.max(0, variants.length - 1)
+              );
+              const activeVar = variants[safeVarIdx];
+              const activeErr = varValidation.errors.invalidVariants?.[safeVarIdx];
+              const showNameErr = Boolean(touchedSteps.variants && activeErr?.nameErr);
+              const showPriceErr = Boolean(touchedSteps.variants && activeErr?.priceErr);
+
+              return (
               <motion.div
                 key="tab-variants"
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 8 }}
                 transition={{ duration: 0.16 }}
-                className="space-y-4"
+                className="grid grid-cols-1 gap-5 lg:grid-cols-12"
               >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-sm font-bold text-neutral-900 dark:text-white">
-                      Danh Sách Biến Thể ({variants.length})
-                    </h4>
-                    <p className="text-xs text-neutral-500">
-                      Mỗi biến thể (Size M, L, Đóng gói...) có mã SKU, giá vốn và giá bán riêng.
-                    </p>
+                {/* Left 4 cols: Master Variant List */}
+                <div className="flex flex-col rounded-2xl border border-neutral-200/80 bg-neutral-50/70 p-4 lg:col-span-4 dark:border-neutral-800 dark:bg-neutral-800/40">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
+                        Biến thể ({variants.length})
+                      </h4>
+                      <p className="text-[11px] text-neutral-500">
+                        Chọn biến thể để chỉnh sửa chi tiết.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addDraftVariant}
+                      className="inline-flex items-center gap-1 rounded-full bg-neutral-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Thêm
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={addDraftVariant}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-1.5 text-xs font-bold text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Thêm biến thể
-                  </button>
+
+                  <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
+                    <AnimatePresence initial={false}>
+                      {variants.map((v, idx) => {
+                        const isSelected = idx === safeVarIdx;
+                        const rowErr = varValidation.errors.invalidVariants?.[idx];
+                        const hasErr = Boolean(
+                          touchedSteps.variants && (rowErr?.nameErr || rowErr?.priceErr)
+                        );
+                        return (
+                          <motion.button
+                            key={v.id || v.variant_code || `draft-${idx}`}
+                            type="button"
+                            initial={{ opacity: 0, y: -6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.16 }}
+                            onClick={() => setSelectedVariantIdx(idx)}
+                            className={`flex w-full items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-left transition-all ${
+                              hasErr
+                                ? "border-rose-500 bg-rose-50/70 ring-1 ring-rose-500/20 dark:bg-rose-950/30"
+                                : isSelected
+                                  ? "border-blue-600 bg-blue-50/80 ring-1 ring-blue-600/20 dark:border-blue-400 dark:bg-blue-950/30"
+                                  : "border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-900"
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="truncate text-xs font-bold text-neutral-900 dark:text-white">
+                                  {v.variant_name.trim() || `Biến thể #${idx + 1}`}
+                                </span>
+                                {v.is_default && (
+                                  <span className="shrink-0 rounded-full bg-blue-600 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                                    Mặc định
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-0.5 truncate text-[11px] tabular-nums text-neutral-500">
+                                {formatPriceNumber(v.default_price || 0)} • {v.unit_name || "Cái"}
+                                {v.barcode ? ` • ${v.barcode}` : ""}
+                              </div>
+                            </div>
+                            {hasErr && (
+                              <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                            )}
+                          </motion.button>
+                        );
+                      })}
+                    </AnimatePresence>
+                  </div>
                 </div>
 
-                <div className="overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-neutral-200 bg-neutral-50 text-[11px] font-semibold uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/60 dark:text-neutral-400">
-                        <th className="w-20 px-3 py-2.5 text-center">Mặc định</th>
-                        <th className="px-3 py-2.5">Tên biến thể *</th>
-                        <th className="px-3 py-2.5">Mã SKU</th>
-                        <th className="px-3 py-2.5">Mã vạch (Barcode)</th>
-                        <th className="w-24 px-3 py-2.5">Đơn vị</th>
-                        <th className="w-28 px-3 py-2.5">Giá vốn</th>
-                        <th className="w-28 px-3 py-2.5">Giá bán *</th>
-                        <th className="w-12 px-3 py-2.5 text-right">Xóa</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                      <AnimatePresence initial={false}>
-                        {variants.map((v, idx) => {
-                          const vErr = varValidation.errors.invalidVariants?.[idx];
-                          const showNameErr = Boolean(touchedSteps.variants && vErr?.nameErr);
-                          const showPriceErr = Boolean(touchedSteps.variants && vErr?.priceErr);
-                          return (
-                            <motion.tr
-                              key={v.id || v.variant_code || `draft-${idx}`}
-                              initial={{ opacity: 0, y: -6 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: -6 }}
-                              transition={{ duration: 0.18 }}
+                {/* Right 8 cols: Detail Form for Active Variant */}
+                <div className="rounded-2xl border border-neutral-200/80 bg-white p-5 lg:col-span-8 dark:border-neutral-800 dark:bg-neutral-900/60">
+                  {activeVar && (
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={activeVar.id || activeVar.variant_code || safeVarIdx}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6 }}
+                        transition={{ duration: 0.16 }}
+                        className="space-y-5"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 pb-3 dark:border-neutral-800">
+                          <div>
+                            <h4 className="text-sm font-bold text-neutral-900 dark:text-white">
+                              Chi tiết: {activeVar.variant_name.trim() || `Biến thể #${safeVarIdx + 1}`}
+                            </h4>
+                            <p className="text-[11px] text-neutral-500">
+                              SKU giúp đồng bộ tồn kho nội bộ; Barcode dùng cho súng quét mã vạch tại quầy POS.
+                            </p>
+                          </div>
+                          {activeVar.isNew && variants.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeDraftVariant(safeVarIdx)}
+                              className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400"
                             >
-                              <td className="px-3 py-2 text-center align-top">
-                                <button
-                                  type="button"
-                                  onClick={() => setDefaultDraftVariant(idx)}
-                                  title={
-                                    v.is_default
-                                      ? "Biến thể mặc định khi chọn nhanh trên POS"
-                                      : "Đặt làm biến thể mặc định"
-                                  }
-                                  className={`mt-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full border transition-all ${
-                                    v.is_default
-                                      ? "border-blue-600 bg-blue-600 text-white shadow-sm ring-4 ring-blue-600/15"
-                                      : "border-neutral-300 bg-white text-transparent hover:border-blue-400 dark:border-neutral-600 dark:bg-neutral-800"
-                                  }`}
-                                >
-                                  <Check className="h-3.5 w-3.5" />
-                                </button>
-                              </td>
-                              <td className="px-3 py-2 align-top">
-                                <BeInput
-                                  type="text"
-                                  value={v.variant_name}
-                                  onChange={(val) =>
-                                    updateDraftVariant(idx, { variant_name: val })
-                                  }
-                                  error={showNameErr ? vErr?.nameErr : undefined}
-                                  fieldClassName="h-9 rounded-lg"
-                                />
-                              </td>
-                              <td className="px-3 py-2 align-top">
-                                <BeInput
-                                  type="text"
-                                  value={v.sku}
-                                  onChange={(val) =>
-                                    updateDraftVariant(idx, { sku: val })
-                                  }
-                                  fieldClassName="h-9 rounded-lg"
-                                />
-                              </td>
-                              <td className="px-3 py-2 align-top">
-                                <BeInput
-                                  type="text"
-                                  value={v.barcode}
-                                  onChange={(val) =>
-                                    updateDraftVariant(idx, { barcode: val })
-                                  }
-                                  leftIcon={<ScanBarcode />}
-                                  placeholder="VD: 8934563..."
-                                  fieldClassName="h-9 rounded-lg"
-                                />
-                              </td>
-                              <td className="px-3 py-2 align-top">
-                                <BeInput
-                                  type="text"
-                                  value={v.unit_name}
-                                  onChange={(val) =>
-                                    updateDraftVariant(idx, { unit_name: val })
-                                  }
-                                  fieldClassName="h-9 rounded-lg"
-                                />
-                              </td>
-                              <td className="px-3 py-2 align-top">
-                                <BeInput
-                                  type="number"
-                                  value={v.default_cost}
-                                  onChange={(val) =>
-                                    updateDraftVariant(idx, { default_cost: val })
-                                  }
-                                  fieldClassName="h-9 rounded-lg"
-                                />
-                              </td>
-                              <td className="px-3 py-2 align-top">
-                                <BeInput
-                                  type="number"
-                                  value={v.default_price}
-                                  onChange={(val) =>
-                                    updateDraftVariant(idx, { default_price: val })
-                                  }
-                                  error={showPriceErr ? vErr?.priceErr : undefined}
-                                  fieldClassName="h-9 rounded-lg font-bold"
-                                />
-                              </td>
-                              <td className="px-3 py-2 text-right align-top">
-                                {v.isNew && variants.length > 1 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => removeDraftVariant(idx)}
-                                    className="mt-1 rounded-lg p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
-                              </td>
-                            </motion.tr>
-                          );
-                        })}
-                      </AnimatePresence>
-                    </tbody>
-                  </table>
+                              <Trash2 className="h-3 w-3" />
+                              Xóa biến thể
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Row 1: Name, SKU, Unit */}
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                          <BeInput
+                            label="Tên biến thể *"
+                            value={activeVar.variant_name}
+                            onChange={(val) =>
+                              updateDraftVariant(safeVarIdx, { variant_name: val })
+                            }
+                            placeholder="VD: Size M (Tiêu chuẩn)"
+                            success={Boolean(activeVar.variant_name.trim())}
+                            error={showNameErr ? activeErr?.nameErr : undefined}
+                          />
+                          <BeInput
+                            label="Mã SKU (tùy chọn)"
+                            value={activeVar.sku}
+                            onChange={(val) =>
+                              updateDraftVariant(safeVarIdx, { sku: val })
+                            }
+                            placeholder="VD: SKU-TS-M"
+                          />
+                          <BeInput
+                            label="Đơn vị tính"
+                            value={activeVar.unit_name}
+                            onChange={(val) =>
+                              updateDraftVariant(safeVarIdx, { unit_name: val })
+                            }
+                            placeholder="Ly, Cái, Hộp..."
+                          />
+                        </div>
+
+                        {/* Row 2: Barcode, Cost, Price */}
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                          <BeInput
+                            label="Mã vạch (Barcode)"
+                            value={activeVar.barcode}
+                            onChange={(val) =>
+                              updateDraftVariant(safeVarIdx, { barcode: val })
+                            }
+                            leftIcon={<ScanBarcode />}
+                            placeholder="VD: 8934563123456"
+                          />
+                          <BeInput
+                            type="number"
+                            label="Giá vốn"
+                            value={activeVar.default_cost}
+                            onChange={(val) =>
+                              updateDraftVariant(safeVarIdx, { default_cost: val })
+                            }
+                            placeholder="0"
+                          />
+                          <BeInput
+                            type="number"
+                            label="Giá bán *"
+                            value={activeVar.default_price}
+                            onChange={(val) =>
+                              updateDraftVariant(safeVarIdx, { default_price: val })
+                            }
+                            placeholder="35000"
+                            success={
+                              activeVar.default_price.trim() !== "" &&
+                              Number(activeVar.default_price) >= 0
+                            }
+                            error={showPriceErr ? activeErr?.priceErr : undefined}
+                          />
+                        </div>
+
+                        {/* Row 3: Default Variant Switch */}
+                        <div className="flex items-center justify-between rounded-xl border border-neutral-200/80 bg-neutral-50/70 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-800/40">
+                          <div>
+                            <div className="text-xs font-bold text-neutral-900 dark:text-white">
+                              Đặt làm biến thể mặc định
+                            </div>
+                            <div className="text-[11px] text-neutral-500">
+                              Thu ngân bấm chọn nhanh sản phẩm trên POS sẽ tự động lấy biến thể này.
+                            </div>
+                          </div>
+                          <BeSwitch
+                            checked={activeVar.is_default}
+                            onCheckedChange={(checked) => {
+                              if (checked) setDefaultDraftVariant(safeVarIdx);
+                            }}
+                            disabled={activeVar.is_default}
+                            ariaLabel="Đặt làm biến thể mặc định"
+                          />
+                        </div>
+                      </motion.div>
+                    </AnimatePresence>
+                  )}
                 </div>
               </motion.div>
-            )}
+              );
+            })()}
           </AnimatePresence>
           </div>
         </div>
