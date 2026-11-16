@@ -154,6 +154,8 @@ class UpdateVariantRequest(BaseModel):
     unit_name: Optional[str] = Field(default=None, min_length=1, max_length=40)
     default_cost: Optional[str] = None
     default_price: Optional[str] = None
+    is_default: Optional[bool] = None
+    barcode: Optional[str] = None
     status: Optional[str] = None
 
 
@@ -1114,6 +1116,56 @@ def update_variant(
         )
     if body.default_price is not None:
         variant.default_price = to_decimal(body.default_price, "default_price")
+    if body.is_default is not None:
+        if body.is_default:
+            db.query(ProductVariant).filter(
+                ProductVariant.organization_id == org_id,
+                ProductVariant.product_id == product_id,
+                ProductVariant.id != variant.id,
+                ProductVariant.deleted_at.is_(None),
+            ).update({"is_default": False})
+        variant.is_default = body.is_default
+    if body.barcode is not None:
+        clean_bc = normalize_barcode(body.barcode) if body.barcode.strip() else ""
+        existing_primary = (
+            db.query(ProductBarcode)
+            .filter(
+                ProductBarcode.organization_id == org_id,
+                ProductBarcode.product_variant_id == variant.id,
+                ProductBarcode.is_primary.is_(True),
+            )
+            .first()
+        )
+        if not clean_bc:
+            if existing_primary is not None:
+                db.delete(existing_primary)
+        else:
+            dup = (
+                db.query(ProductBarcode)
+                .filter(
+                    ProductBarcode.organization_id == org_id,
+                    ProductBarcode.barcode == clean_bc,
+                    ProductBarcode.product_variant_id != variant.id,
+                )
+                .first()
+            )
+            if dup is not None:
+                raise ConflictError(
+                    code="DUPLICATE_BARCODE",
+                    message=f"Barcode '{clean_bc}' is already assigned to another variant.",
+                )
+            if existing_primary is not None:
+                existing_primary.barcode = clean_bc
+            else:
+                db.add(
+                    ProductBarcode(
+                        organization_id=org_id,
+                        product_variant_id=variant.id,
+                        barcode=clean_bc,
+                        barcode_type="EAN13",
+                        is_primary=True,
+                    )
+                )
     if body.status is not None:
         variant.status = body.status
 

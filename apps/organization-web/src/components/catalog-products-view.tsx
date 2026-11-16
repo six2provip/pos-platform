@@ -19,6 +19,7 @@ import {
   MoreHorizontal,
   Plus,
   Power,
+  ScanBarcode,
   Search,
   SlidersHorizontal,
   Star,
@@ -634,12 +635,24 @@ export function CatalogProductsView({
     );
   };
 
+  const setDefaultDraftVariant = (idx: number) => {
+    setVariants((prev) =>
+      prev.map((v, i) => ({ ...v, is_default: i === idx }))
+    );
+  };
+
   const removeDraftVariant = (idx: number) => {
     if (variants.length <= 1) {
       notify("error", "Mỗi sản phẩm cần ít nhất 1 biến thể.");
       return;
     }
-    setVariants((prev) => prev.filter((_, i) => i !== idx));
+    setVariants((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      if (next.length > 0 && !next.some((v) => v.is_default)) {
+        next[0] = { ...next[0], is_default: true };
+      }
+      return next;
+    });
   };
 
   const getStepValidation = (step: EditorTab) => {
@@ -761,7 +774,7 @@ export function CatalogProductsView({
                 unit_name: v.unit_name.trim() || "Cái",
                 default_cost: v.default_cost.trim() || undefined,
                 default_price: v.default_price.trim() || "0",
-                is_default: i === 0 ? true : v.is_default,
+                is_default: variants.some((x) => x.is_default) ? v.is_default : i === 0,
                 barcodes: v.barcode.trim()
                   ? [{ barcode: v.barcode.trim(), is_primary: true }]
                   : [],
@@ -802,7 +815,7 @@ export function CatalogProductsView({
                   unit_name: v.unit_name.trim() || "Cái",
                   default_cost: v.default_cost.trim() || undefined,
                   default_price: v.default_price.trim() || "0",
-                  is_default: false,
+                  is_default: v.is_default,
                   barcodes: v.barcode.trim()
                     ? [{ barcode: v.barcode.trim(), is_primary: true }]
                     : [],
@@ -821,6 +834,8 @@ export function CatalogProductsView({
                   unit_name: v.unit_name.trim() || "Cái",
                   default_cost: v.default_cost.trim() || "",
                   default_price: v.default_price.trim() || "0",
+                  is_default: v.is_default,
+                  barcode: v.barcode.trim(),
                 }),
               },
               accessToken || undefined
@@ -1175,12 +1190,14 @@ export function CatalogProductsView({
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-neutral-200 bg-neutral-50 text-[11px] font-semibold uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/60 dark:text-neutral-400">
+                        <th className="w-20 px-3 py-2.5 text-center">Mặc định</th>
                         <th className="px-3 py-2.5">Tên biến thể *</th>
                         <th className="px-3 py-2.5">Mã SKU</th>
-                        <th className="px-3 py-2.5 w-24">Đơn vị</th>
-                        <th className="px-3 py-2.5 w-32">Giá vốn (₫)</th>
-                        <th className="px-3 py-2.5 w-32">Giá bán (₫) *</th>
-                        <th className="px-3 py-2.5 w-12 text-right">Xóa</th>
+                        <th className="px-3 py-2.5">Mã vạch (Barcode)</th>
+                        <th className="w-24 px-3 py-2.5">Đơn vị</th>
+                        <th className="w-28 px-3 py-2.5">Giá vốn</th>
+                        <th className="w-28 px-3 py-2.5">Giá bán *</th>
+                        <th className="w-12 px-3 py-2.5 text-right">Xóa</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -1197,6 +1214,24 @@ export function CatalogProductsView({
                               exit={{ opacity: 0, y: -6 }}
                               transition={{ duration: 0.18 }}
                             >
+                              <td className="px-3 py-2 text-center align-top">
+                                <button
+                                  type="button"
+                                  onClick={() => setDefaultDraftVariant(idx)}
+                                  title={
+                                    v.is_default
+                                      ? "Biến thể mặc định khi chọn nhanh trên POS"
+                                      : "Đặt làm biến thể mặc định"
+                                  }
+                                  className={`mt-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full border transition-all ${
+                                    v.is_default
+                                      ? "border-blue-600 bg-blue-600 text-white shadow-sm ring-4 ring-blue-600/15"
+                                      : "border-neutral-300 bg-white text-transparent hover:border-blue-400 dark:border-neutral-600 dark:bg-neutral-800"
+                                  }`}
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                </button>
+                              </td>
                               <td className="px-3 py-2 align-top">
                                 <BeInput
                                   type="text"
@@ -1215,6 +1250,18 @@ export function CatalogProductsView({
                                   onChange={(val) =>
                                     updateDraftVariant(idx, { sku: val })
                                   }
+                                  fieldClassName="h-9 rounded-lg"
+                                />
+                              </td>
+                              <td className="px-3 py-2 align-top">
+                                <BeInput
+                                  type="text"
+                                  value={v.barcode}
+                                  onChange={(val) =>
+                                    updateDraftVariant(idx, { barcode: val })
+                                  }
+                                  leftIcon={<ScanBarcode />}
+                                  placeholder="VD: 8934563..."
                                   fieldClassName="h-9 rounded-lg"
                                 />
                               </td>
