@@ -27,9 +27,13 @@ import {
   X,
 } from "lucide-react";
 import type { CategoryRecord } from "./catalog-categories-view";
+import { BeInput } from "./motion/input";
+import { BeMultiSelect } from "./motion/multi-select";
 import { OverflowActions, type OverflowActionItem } from "./motion/overflow-actions";
 import { AnimatedPagination } from "./motion/pagination";
 import { ProductImageUpload } from "./motion/product-image-upload";
+import { BeSelect } from "./motion/select";
+import { BeSwitch } from "./motion/switch";
 
 export interface ProductVariantRow {
   id: string;
@@ -543,44 +547,36 @@ export function CatalogProductsView({
     );
   };
 
-  const handleUploadFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    setUploadingImg(true);
-    try {
-      for (const file of Array.from(files)) {
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result || ""));
-          reader.onerror = () => reject(new Error("Không thể đọc file ảnh"));
-          reader.readAsDataURL(file);
-        });
-        const uploaded = await apiFetch(
-          "/api/v1/products/upload-image",
-          {
-            method: "POST",
-            body: JSON.stringify({
-              filename: file.name,
-              content_base64: dataUrl,
-            }),
-          },
-          accessToken || undefined
-        );
-        setImages((prev) => [
-          ...prev,
-          {
-            image_url: uploaded.image_url,
-            sort_order: prev.length,
-            is_primary: prev.length === 0,
-          },
-        ]);
-      }
-      notify("success", "Đã tải ảnh sản phẩm lên thành công!");
-    } catch (err: any) {
-      notify("error", err?.message || "Lỗi tải ảnh");
-    } finally {
-      setUploadingImg(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
+  const uploadSingleImageFile = async (file: File): Promise<string> => {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Không thể đọc file ảnh"));
+      reader.readAsDataURL(file);
+    });
+    const uploaded = await apiFetch(
+      "/api/v1/products/upload-image",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          filename: file.name,
+          content_base64: dataUrl,
+        }),
+      },
+      accessToken || undefined
+    );
+    return uploaded.image_url as string;
+  };
+
+  const handleImageUploaded = (imageUrl: string) => {
+    setImages((prev) => [
+      ...prev,
+      {
+        image_url: imageUrl,
+        sort_order: prev.length,
+        is_primary: prev.length === 0,
+      },
+    ]);
   };
 
   const handleAddImageUrl = () => {
@@ -1032,239 +1028,102 @@ export function CatalogProductsView({
                   transition={{ duration: 0.16 }}
                   className="grid grid-cols-1 gap-6 lg:grid-cols-12"
                 >
-                  {/* Left 7 cols: General Fields */}
+                  {/* Left 7 cols: General Fields (beUI Input, Select, Switch) */}
                   <div className="space-y-4 lg:col-span-7">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <div className="sm:col-span-2">
-                        <label className="mb-1 block text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                          Tên sản phẩm *
-                        </label>
-                        <input
-                          type="text"
-                          value={prodName}
-                          onChange={(e) => setProdName(e.target.value)}
-                          placeholder="VD: Trà Đào Cam Sả Đặc Biệt"
-                          className={`w-full rounded-xl border px-3.5 py-2 text-xs text-neutral-900 focus:outline-none dark:bg-neutral-800 dark:text-white ${
-                            touchedSteps.general && genValidation.errors.nameErr
-                              ? "border-rose-500 ring-2 ring-rose-500/15 focus:border-rose-500"
-                              : "border-neutral-300 focus:border-blue-600 dark:border-neutral-700"
-                          }`}
-                        />
-                        {touchedSteps.general && genValidation.errors.nameErr && (
-                          <p className="mt-1 text-[11px] font-medium text-rose-600">
-                            {genValidation.errors.nameErr}
-                          </p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                          Mã sản phẩm *
-                        </label>
-                        <input
-                          type="text"
-                          disabled={Boolean(editingProd)}
-                          value={prodCode}
-                          onChange={(e) => setProdCode(e.target.value)}
-                          className={`w-full rounded-xl border px-3.5 py-2 text-xs text-neutral-900 disabled:bg-neutral-100 focus:outline-none dark:bg-neutral-800 dark:text-white ${
-                            touchedSteps.general && genValidation.errors.codeErr
-                              ? "border-rose-500 ring-2 ring-rose-500/15 focus:border-rose-500"
-                              : "border-neutral-300 focus:border-blue-600 dark:border-neutral-700"
-                          }`}
-                        />
-                        {touchedSteps.general && genValidation.errors.codeErr && (
-                          <p className="mt-1 text-[11px] font-medium text-rose-600">
-                            {genValidation.errors.codeErr}
-                          </p>
-                        )}
-                      </div>
+                      <BeInput
+                        className="sm:col-span-2"
+                        label="Tên sản phẩm *"
+                        value={prodName}
+                        onChange={setProdName}
+                        placeholder="VD: Trà Đào Cam Sả Đặc Biệt"
+                        success={Boolean(prodName.trim())}
+                        error={
+                          touchedSteps.general && genValidation.errors.nameErr
+                            ? genValidation.errors.nameErr
+                            : undefined
+                        }
+                      />
+                      <BeInput
+                        label="Mã sản phẩm *"
+                        disabled={Boolean(editingProd)}
+                        value={prodCode}
+                        onChange={setProdCode}
+                        success={!editingProd && Boolean(prodCode.trim())}
+                        error={
+                          touchedSteps.general && genValidation.errors.codeErr
+                            ? genValidation.errors.codeErr
+                            : undefined
+                        }
+                      />
                     </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                      Mô tả sản phẩm
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={prodDesc}
-                      onChange={(e) => setProdDesc(e.target.value)}
-                      placeholder="Thành phần, định lượng pha chế hoặc thông tin nổi bật..."
-                      className="w-full rounded-xl border border-neutral-300 px-3.5 py-2 text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <div>
-                      <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                        Loại hàng hóa
+                      <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                        Mô tả sản phẩm
                       </label>
-                      <select
+                      <textarea
+                        rows={3}
+                        value={prodDesc}
+                        onChange={(e) => setProdDesc(e.target.value)}
+                        placeholder="Thành phần, định lượng pha chế hoặc thông tin nổi bật..."
+                        className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-xs text-neutral-900 outline-none transition-colors focus:border-blue-600 focus:ring-2 focus:ring-blue-600/15 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <BeSelect
+                        label="Loại hàng hóa"
                         value={prodType}
-                        onChange={(e) => setProdType(e.target.value)}
-                        className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                      >
-                        <option value="stocked">Hàng có tồn kho</option>
-                        <option value="non_stocked">Pha chế / Không trừ kho</option>
-                        <option value="service">Dịch vụ / Phụ thu</option>
-                      </select>
-                    </div>
+                        onValueChange={setProdType}
+                        options={[
+                          { value: "stocked", label: "Hàng có tồn kho" },
+                          { value: "non_stocked", label: "Pha chế / Không trừ kho" },
+                          { value: "service", label: "Dịch vụ / Phụ thu" },
+                        ]}
+                      />
 
-                    <div>
-                      <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                        Trạng thái bán
-                      </label>
-                      <select
+                      <BeSelect
+                        label="Trạng thái bán"
                         value={prodStatus}
                         disabled={!editingProd}
-                        onChange={(e) => setProdStatus(e.target.value)}
-                        className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-xs text-neutral-900 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                      >
-                        <option value="active">Đang bán</option>
-                        <option value="inactive">Ngừng bán</option>
-                        <option value="archived">Lưu trữ</option>
-                      </select>
-                    </div>
-
-                    <div className="flex items-end">
-                      <label className="flex w-full items-center justify-between rounded-xl border border-neutral-300 px-3 py-2 text-xs dark:border-neutral-700">
-                        <span className="font-semibold text-neutral-700 dark:text-neutral-300">
-                          Theo dõi tồn kho
-                        </span>
-                        <input
-                          type="checkbox"
-                          checked={trackInv}
-                          onChange={(e) => setTrackInv(e.target.checked)}
-                          className="h-4 w-4 accent-neutral-900"
-                        />
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right 5 cols: Multi-Category Selection (Searchable + Pinned Selected Chips) */}
-                <div className="flex flex-col rounded-2xl border border-neutral-200/80 bg-neutral-50/70 p-4 lg:col-span-5 dark:border-neutral-800 dark:bg-neutral-800/40">
-                  <div className="mb-2.5 flex items-center justify-between gap-2">
-                    <div>
-                      <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
-                        Gắn Danh Mục ({selectedCatIds.length} đã chọn)
-                      </h4>
-                      <p className="text-[11px] text-neutral-500">
-                        1 sản phẩm có thể thuộc nhiều danh mục cùng lúc.
-                      </p>
-                    </div>
-                    {selectedCatIds.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setSelectedCatIds([])}
-                        className="text-[11px] font-semibold text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
-                      >
-                        Bỏ chọn hết
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Pinned Selected Category Pills */}
-                  {selectedCatIds.length > 0 && (
-                    <div className="mb-2.5 flex max-h-20 flex-wrap gap-1.5 overflow-y-auto rounded-xl border border-neutral-200/70 bg-white p-2 dark:border-neutral-700 dark:bg-neutral-900">
-                      {selectedCatIds.map((cid) => {
-                        const catObj = categories.find((c) => c.id === cid);
-                        if (!catObj) return null;
-                        return (
-                          <span
-                            key={cid}
-                            className="inline-flex items-center gap-1 rounded-full bg-neutral-900 px-2.5 py-1 text-[11px] font-semibold text-white dark:bg-white dark:text-neutral-900"
-                          >
-                            <span className="max-w-[140px] truncate">{catObj.name}</span>
-                            <button
-                              type="button"
-                              onClick={() => toggleCategory(cid)}
-                              className="rounded-full p-0.5 hover:bg-white/20 dark:hover:bg-neutral-900/15"
-                            >
-                              <X className="h-2.5 w-2.5" />
-                            </button>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Quick Search inside Categories */}
-                  {categories.length > 0 && (
-                    <div className="mb-2.5 flex items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-1.5 dark:border-neutral-700 dark:bg-neutral-900">
-                      <Search className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
-                      <input
-                        type="text"
-                        value={editorCatSearch}
-                        onChange={(e) => setEditorCatSearch(e.target.value)}
-                        placeholder="Tìm nhanh danh mục..."
-                        className="w-full bg-transparent text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-white"
+                        onValueChange={setProdStatus}
+                        options={[
+                          { value: "active", label: "Đang bán" },
+                          { value: "inactive", label: "Ngừng bán" },
+                          { value: "archived", label: "Lưu trữ" },
+                        ]}
                       />
-                      {editorCatSearch && (
-                        <button
-                          type="button"
-                          onClick={() => setEditorCatSearch("")}
-                          className="text-neutral-400 hover:text-neutral-700"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      )}
-                    </div>
-                  )}
 
-                  {categories.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-center text-xs text-neutral-500">
-                      Chưa có danh mục nào.
-                    </div>
-                  ) : (
-                    (() => {
-                      const q = editorCatSearch.trim().toLowerCase();
-                      const visibleCats = q
-                        ? categories.filter((c) => c.name.toLowerCase().includes(q))
-                        : categories;
-
-                      if (visibleCats.length === 0) {
-                        return (
-                          <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-center text-xs text-neutral-400">
-                            Không tìm thấy danh mục phù hợp.
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div className="grid max-h-[210px] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-                          {visibleCats.map((cat) => {
-                            const checked = selectedCatIds.includes(cat.id);
-                            return (
-                              <button
-                                key={cat.id}
-                                type="button"
-                                title={cat.name}
-                                onClick={() => toggleCategory(cat.id)}
-                                className={`flex items-center justify-between rounded-xl border px-3 py-2 text-left text-xs transition-all ${
-                                  checked
-                                    ? "border-neutral-900 bg-neutral-900 text-white shadow-sm dark:border-white dark:bg-white dark:text-neutral-900"
-                                    : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
-                                }`}
-                              >
-                                <span className="truncate pr-2 font-medium">{cat.name}</span>
-                                <span
-                                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                                    checked
-                                      ? "border-white bg-white/20 dark:border-neutral-900"
-                                      : "border-neutral-300 dark:border-neutral-600"
-                                  }`}
-                                >
-                                  {checked && <Check className="h-3 w-3" />}
-                                </span>
-                              </button>
-                            );
-                          })}
+                      <div className="flex items-end">
+                        <div className="flex h-10 w-full items-center justify-between rounded-xl border border-neutral-300 bg-white px-3.5 dark:border-neutral-700 dark:bg-neutral-800">
+                          <BeSwitch
+                            checked={trackInv}
+                            onCheckedChange={setTrackInv}
+                            label="Theo dõi tồn kho"
+                            className="w-full"
+                          />
                         </div>
-                      );
-                    })()
-                  )}
-                </div>
-              </motion.div>
-            )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right 5 cols: beUI Multi-Select Category Picker */}
+                  <div className="flex flex-col justify-between rounded-2xl border border-neutral-200/80 bg-neutral-50/70 p-4 lg:col-span-5 dark:border-neutral-800 dark:bg-neutral-800/40">
+                    <BeMultiSelect
+                      label={`Gắn Danh Mục (${selectedCatIds.length} đã chọn)`}
+                      helperText="1 sản phẩm có thể thuộc nhiều danh mục cùng lúc. Gõ để tìm nhanh."
+                      options={categories.map((c) => ({
+                        value: c.id,
+                        label: c.name,
+                      }))}
+                      values={selectedCatIds}
+                      onChange={setSelectedCatIds}
+                      placeholder="Chọn hoặc tìm nhanh danh mục..."
+                    />
+                  </div>
+                </motion.div>
+              )}
 
             {editorTab === "images" && (
               <motion.div
@@ -1276,8 +1135,8 @@ export function CatalogProductsView({
               >
                 <ProductImageUpload
                   images={images}
-                  uploading={uploadingImg}
-                  onUploadFiles={handleUploadFiles}
+                  onUploadSingleFile={uploadSingleImageFile}
+                  onImageUploaded={handleImageUploaded}
                   onSetPrimary={setPrimaryImage}
                   onRemove={removeImage}
                 />
@@ -1325,94 +1184,86 @@ export function CatalogProductsView({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                      {variants.map((v, idx) => {
-                        const vErr = varValidation.errors.invalidVariants?.[idx];
-                        const showNameErr = Boolean(touchedSteps.variants && vErr?.nameErr);
-                        const showPriceErr = Boolean(touchedSteps.variants && vErr?.priceErr);
-                        return (
-                        <tr key={v.id || `draft-${idx}`}>
-                          <td className="px-3 py-2 align-top">
-                            <input
-                              type="text"
-                              value={v.variant_name}
-                              onChange={(e) =>
-                                updateDraftVariant(idx, { variant_name: e.target.value })
-                              }
-                              className={`w-full rounded-lg border bg-white px-2.5 py-1.5 text-xs focus:outline-none dark:bg-neutral-800 dark:text-white ${
-                                showNameErr
-                                  ? "border-rose-500 ring-2 ring-rose-500/15"
-                                  : "border-neutral-300 focus:border-blue-600 dark:border-neutral-700"
-                              }`}
-                            />
-                            {showNameErr && (
-                              <p className="mt-1 text-[10px] font-medium text-rose-600">
-                                {vErr?.nameErr}
-                              </p>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 align-top">
-                            <input
-                              type="text"
-                              value={v.sku}
-                              onChange={(e) =>
-                                updateDraftVariant(idx, { sku: e.target.value })
-                              }
-                              className="w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                            />
-                          </td>
-                          <td className="px-3 py-2 align-top">
-                            <input
-                              type="text"
-                              value={v.unit_name}
-                              onChange={(e) =>
-                                updateDraftVariant(idx, { unit_name: e.target.value })
-                              }
-                              className="w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                            />
-                          </td>
-                          <td className="px-3 py-2 align-top">
-                            <input
-                              type="number"
-                              value={v.default_cost}
-                              onChange={(e) =>
-                                updateDraftVariant(idx, { default_cost: e.target.value })
-                              }
-                              className="w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                            />
-                          </td>
-                          <td className="px-3 py-2 align-top">
-                            <input
-                              type="number"
-                              value={v.default_price}
-                              onChange={(e) =>
-                                updateDraftVariant(idx, { default_price: e.target.value })
-                              }
-                              className={`w-full rounded-lg border bg-white px-2.5 py-1.5 text-xs font-bold focus:outline-none dark:bg-neutral-800 dark:text-white ${
-                                showPriceErr
-                                  ? "border-rose-500 ring-2 ring-rose-500/15"
-                                  : "border-neutral-300 focus:border-blue-600 dark:border-neutral-700"
-                              }`}
-                            />
-                            {showPriceErr && (
-                              <p className="mt-1 text-[10px] font-medium text-rose-600">
-                                {vErr?.priceErr}
-                              </p>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-right align-top">
-                            {v.isNew && variants.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => removeDraftVariant(idx)}
-                                className="rounded-lg p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                        );
-                      })}
+                      <AnimatePresence initial={false}>
+                        {variants.map((v, idx) => {
+                          const vErr = varValidation.errors.invalidVariants?.[idx];
+                          const showNameErr = Boolean(touchedSteps.variants && vErr?.nameErr);
+                          const showPriceErr = Boolean(touchedSteps.variants && vErr?.priceErr);
+                          return (
+                            <motion.tr
+                              key={v.id || v.variant_code || `draft-${idx}`}
+                              initial={{ opacity: 0, y: -6 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -6 }}
+                              transition={{ duration: 0.18 }}
+                            >
+                              <td className="px-3 py-2 align-top">
+                                <BeInput
+                                  type="text"
+                                  value={v.variant_name}
+                                  onChange={(val) =>
+                                    updateDraftVariant(idx, { variant_name: val })
+                                  }
+                                  error={showNameErr ? vErr?.nameErr : undefined}
+                                  fieldClassName="h-9 rounded-lg"
+                                />
+                              </td>
+                              <td className="px-3 py-2 align-top">
+                                <BeInput
+                                  type="text"
+                                  value={v.sku}
+                                  onChange={(val) =>
+                                    updateDraftVariant(idx, { sku: val })
+                                  }
+                                  fieldClassName="h-9 rounded-lg"
+                                />
+                              </td>
+                              <td className="px-3 py-2 align-top">
+                                <BeInput
+                                  type="text"
+                                  value={v.unit_name}
+                                  onChange={(val) =>
+                                    updateDraftVariant(idx, { unit_name: val })
+                                  }
+                                  fieldClassName="h-9 rounded-lg"
+                                />
+                              </td>
+                              <td className="px-3 py-2 align-top">
+                                <BeInput
+                                  type="number"
+                                  value={v.default_cost}
+                                  onChange={(val) =>
+                                    updateDraftVariant(idx, { default_cost: val })
+                                  }
+                                  fieldClassName="h-9 rounded-lg"
+                                />
+                              </td>
+                              <td className="px-3 py-2 align-top">
+                                <BeInput
+                                  type="number"
+                                  value={v.default_price}
+                                  onChange={(val) =>
+                                    updateDraftVariant(idx, { default_price: val })
+                                  }
+                                  error={showPriceErr ? vErr?.priceErr : undefined}
+                                  fieldClassName="h-9 rounded-lg font-bold"
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-right align-top">
+                                {v.isNew && variants.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeDraftVariant(idx)}
+                                    className="mt-1 rounded-lg p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </td>
+                            </motion.tr>
+                          );
+                        })}
+                      </AnimatePresence>
                     </tbody>
                   </table>
                 </div>
