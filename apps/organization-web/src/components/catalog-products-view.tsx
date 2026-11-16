@@ -13,6 +13,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  ChevronDown,
   Edit3,
   Image as ImageIcon,
   Layers,
@@ -301,6 +302,7 @@ export function CatalogProductsView({
   const [imageUrlInput, setImageUrlInput] = useState("");
   const [variants, setVariants] = useState<DraftVariant[]>([]);
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
+  const [expandedOptionGroupIds, setExpandedOptionGroupIds] = useState<string[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -1196,8 +1198,8 @@ export function CatalogProductsView({
                 transition={{ duration: 0.16 }}
                 className="grid grid-cols-1 gap-5 lg:grid-cols-12"
               >
-                {/* Left 4 cols: Master Variant List (clean divider, no nested box border) */}
-                <div className="flex flex-col lg:col-span-4 lg:border-r lg:border-neutral-200/70 lg:pr-6 dark:lg:border-neutral-800">
+                {/* Left 3 cols: Master Variant List (compact width, clean divider) */}
+                <div className="flex flex-col lg:col-span-3 lg:border-r lg:border-neutral-200/70 lg:pr-5 dark:lg:border-neutral-800">
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <div>
                       <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
@@ -1269,8 +1271,8 @@ export function CatalogProductsView({
                   </div>
                 </div>
 
-                {/* Right 8 cols: Detail Form for Active Variant (clean flat surface) */}
-                <div className="lg:col-span-8 lg:pl-1">
+                {/* Right 9 cols: Detail Form for Active Variant (clean flat surface) */}
+                <div className="lg:col-span-9 lg:pl-1">
                   {activeVar && (
                     <AnimatePresence mode="wait">
                       <motion.div
@@ -1442,7 +1444,7 @@ export function CatalogProductsView({
                             emptyText="Chưa có nhóm tùy chọn nào. Tạo tại mục Quản lý Tùy chọn."
                           />
 
-                          {/* Live Preview of Attached Option Groups & Their Items */}
+                          {/* Compact Collapsible Accordion Preview of Attached Option Groups */}
                           <AnimatePresence initial={false}>
                             {activeVar.option_group_ids.length > 0 && (
                               <motion.div
@@ -1450,90 +1452,147 @@ export function CatalogProductsView({
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: 4 }}
                                 transition={{ duration: 0.18 }}
-                                className="space-y-2 pt-1"
+                                className="space-y-1.5 pt-1"
                               >
-                                <div className="text-[11px] font-medium text-neutral-400">
-                                  Xem trước chi tiết các tùy chọn sẽ hiển thị trên POS:
+                                <div className="flex items-center justify-between text-[11px] text-neutral-400">
+                                  <span>
+                                    Nhấn vào từng nhóm để xem nhanh các lựa chọn bên trong ({activeVar.option_group_ids.length} nhóm)
+                                  </span>
+                                  {activeVar.option_group_ids.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const allOpen = activeVar.option_group_ids.every(
+                                          (id) => expandedOptionGroupIds.includes(id)
+                                        );
+                                        setExpandedOptionGroupIds(
+                                          allOpen ? [] : [...activeVar.option_group_ids]
+                                        );
+                                      }}
+                                      className="font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                                    >
+                                      {activeVar.option_group_ids.every((id) =>
+                                        expandedOptionGroupIds.includes(id)
+                                      )
+                                        ? "Thu gọn tất cả"
+                                        : "Mở tất cả"}
+                                    </button>
+                                  )}
                                 </div>
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+
+                                <div className="max-h-[210px] space-y-1.5 overflow-y-auto pr-1">
                                   {activeVar.option_group_ids.map((gid) => {
                                     const grp = optionGroups.find((g) => g.id === gid);
                                     if (!grp) return null;
+                                    const isOpen = expandedOptionGroupIds.includes(gid);
+
                                     return (
                                       <motion.div
                                         key={gid}
                                         layout
-                                        initial={{ opacity: 0, scale: 0.97 }}
-                                        animate={{ opacity: 1, scale: 1 }}
-                                        exit={{ opacity: 0, scale: 0.97 }}
-                                        className="rounded-xl bg-neutral-50/90 p-3 dark:bg-neutral-800/50"
+                                        initial={{ opacity: 0, y: -4 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -4 }}
+                                        className="overflow-hidden rounded-xl bg-neutral-50/90 dark:bg-neutral-800/50"
                                       >
-                                        <div className="mb-2 flex items-start justify-between gap-2">
-                                          <div className="min-w-0">
-                                            <div className="truncate text-xs font-bold text-neutral-900 dark:text-white">
+                                        {/* Compact 1-Line Accordion Header */}
+                                        <div
+                                          onClick={() =>
+                                            setExpandedOptionGroupIds((prev) =>
+                                              prev.includes(gid)
+                                                ? prev.filter((id) => id !== gid)
+                                                : [...prev, gid]
+                                            )
+                                          }
+                                          className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 transition-colors hover:bg-neutral-100/80 dark:hover:bg-neutral-800"
+                                        >
+                                          <div className="flex min-w-0 flex-1 items-center gap-2">
+                                            <span className="truncate text-xs font-bold text-neutral-900 dark:text-white">
                                               {grp.name}
-                                            </div>
-                                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px]">
-                                              <span
-                                                className={`font-semibold ${
-                                                  grp.is_required
-                                                    ? "text-rose-600 dark:text-rose-400"
-                                                    : "text-neutral-500"
-                                                }`}
-                                              >
-                                                {grp.is_required ? "Bắt buộc" : "Tùy chọn"}
-                                              </span>
-                                              <span className="text-neutral-300 dark:text-neutral-600">•</span>
-                                              <span className="text-neutral-500 dark:text-neutral-400">
-                                                {grp.selection_mode === "single"
-                                                  ? "Chọn 1"
-                                                  : `Chọn nhiều (${grp.min_selections}–${
-                                                      grp.max_selections ?? "∞"
-                                                    })`}
-                                              </span>
-                                            </div>
-                                          </div>
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              updateDraftVariant(safeVarIdx, {
-                                                option_group_ids:
-                                                  activeVar.option_group_ids.filter(
-                                                    (id) => id !== gid
-                                                  ),
-                                              })
-                                            }
-                                            title="Gỡ nhóm tùy chọn này"
-                                            className="rounded-full p-1 text-neutral-400 hover:bg-neutral-200/70 hover:text-rose-600 dark:hover:bg-neutral-700"
-                                          >
-                                            <X className="h-3.5 w-3.5" />
-                                          </button>
-                                        </div>
-
-                                        <div className="flex flex-wrap gap-1.5">
-                                          {grp.items.map((it, i) => (
+                                            </span>
                                             <span
-                                              key={it.id || i}
-                                              className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium ${
-                                                it.is_default
-                                                  ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
-                                                  : "bg-white text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                                              className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                                                grp.is_required
+                                                  ? "bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400"
+                                                  : "bg-neutral-200/70 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300"
                                               }`}
                                             >
-                                              <span className="max-w-[130px] truncate">
-                                                {it.name}
-                                              </span>
-                                              {Number(it.price_delta) > 0 && (
-                                                <span className="tabular-nums font-bold text-emerald-600 dark:text-emerald-400">
-                                                  +{formatPriceNumber(it.price_delta)}
-                                                </span>
-                                              )}
-                                              {it.is_default && (
-                                                <Check className="h-2.5 w-2.5 shrink-0" />
-                                              )}
+                                              {grp.is_required ? "Bắt buộc" : "Tùy chọn"}
                                             </span>
-                                          ))}
+                                            <span className="hidden sm:inline shrink-0 text-[10px] text-neutral-400">
+                                              {grp.selection_mode === "single"
+                                                ? "Chọn 1"
+                                                : `Chọn nhiều (${grp.min_selections}–${
+                                                    grp.max_selections ?? "∞"
+                                                  })`}{" "}
+                                              • {grp.items.length} lựa chọn
+                                            </span>
+                                          </div>
+
+                                          <div className="flex shrink-0 items-center gap-1">
+                                            <motion.span
+                                              animate={{ rotate: isOpen ? 180 : 0 }}
+                                              transition={{ duration: 0.16 }}
+                                              className="grid h-6 w-6 place-items-center text-neutral-400"
+                                            >
+                                              <ChevronDown className="h-3.5 w-3.5" />
+                                            </motion.span>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                updateDraftVariant(safeVarIdx, {
+                                                  option_group_ids:
+                                                    activeVar.option_group_ids.filter(
+                                                      (id) => id !== gid
+                                                    ),
+                                                });
+                                              }}
+                                              title="Gỡ nhóm tùy chọn này"
+                                              className="grid h-6 w-6 place-items-center rounded-full text-neutral-400 hover:bg-neutral-200/70 hover:text-rose-600 dark:hover:bg-neutral-700"
+                                            >
+                                              <X className="h-3.5 w-3.5" />
+                                            </button>
+                                          </div>
                                         </div>
+
+                                        {/* Expandable Child Options List */}
+                                        <AnimatePresence initial={false}>
+                                          {isOpen && (
+                                            <motion.div
+                                              initial={{ height: 0, opacity: 0 }}
+                                              animate={{ height: "auto", opacity: 1 }}
+                                              exit={{ height: 0, opacity: 0 }}
+                                              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                                              className="overflow-hidden border-t border-neutral-200/60 dark:border-neutral-700/60"
+                                            >
+                                              <div className="flex flex-wrap gap-1.5 px-3 py-2.5">
+                                                {grp.items.map((it, i) => (
+                                                  <span
+                                                    key={it.id || i}
+                                                    className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium ${
+                                                      it.is_default
+                                                        ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
+                                                        : "bg-white text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                                                    }`}
+                                                  >
+                                                    <span className="max-w-[140px] truncate">
+                                                      {it.name}
+                                                    </span>
+                                                    {Number(it.price_delta) > 0 && (
+                                                      <span className="tabular-nums font-bold text-emerald-600 dark:text-emerald-400">
+                                                        +{formatPriceNumber(it.price_delta)}
+                                                      </span>
+                                                    )}
+                                                    {it.is_default && (
+                                                      <Check className="h-2.5 w-2.5 shrink-0" />
+                                                    )}
+                                                  </span>
+                                                ))}
+                                              </div>
+                                            </motion.div>
+                                          )}
+                                        </AnimatePresence>
                                       </motion.div>
                                     );
                                   })}
