@@ -41,7 +41,7 @@ class Settings(BaseModel):
     jwt_issuer: str = "pos-platform-business"
     jwt_user_audience: str = "pos-business-user"
     jwt_device_audience: str = "pos-business-device"
-    access_token_expire_seconds: int = 900  # 15 minutes
+    access_token_expire_seconds: int = 7200  # 2 hours (auto-refreshed via 30-day refresh_token)
     refresh_token_expire_days: int = 30
     device_access_token_expire_seconds: int = 900
     activation_code_expire_seconds: int = 300

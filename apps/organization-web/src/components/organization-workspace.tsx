@@ -410,9 +410,48 @@ export default function OrganizationWorkspace({
   );
 
   const accessTokenRef = useRef<string | null>(accessToken);
+  const refreshPromiseRef = useRef<Promise<string | null> | null>(null);
   useEffect(() => {
     accessTokenRef.current = accessToken;
   }, [accessToken]);
+
+  const refreshSessionToken = useCallback(async (): Promise<string | null> => {
+    if (typeof window === "undefined") return null;
+    if (refreshPromiseRef.current) return refreshPromiseRef.current;
+
+    const rt = localStorage.getItem("pos_refresh_token");
+    if (!rt) return null;
+
+    const task = (async () => {
+      try {
+        const res = await fetch("/api/v1/auth/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: rt }),
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.data?.access_token) {
+          localStorage.removeItem("pos_access_token");
+          localStorage.removeItem("pos_refresh_token");
+          return null;
+        }
+        const nextAccess = json.data.access_token as string;
+        const nextRefresh = json.data.refresh_token as string | undefined;
+        localStorage.setItem("pos_access_token", nextAccess);
+        if (nextRefresh) localStorage.setItem("pos_refresh_token", nextRefresh);
+        accessTokenRef.current = nextAccess;
+        setAccessToken(nextAccess);
+        return nextAccess;
+      } catch {
+        return null;
+      } finally {
+        refreshPromiseRef.current = null;
+      }
+    })();
+
+    refreshPromiseRef.current = task;
+    return task;
+  }, []);
 
   const apiFetch = useCallback(
     async (
@@ -420,19 +459,35 @@ export default function OrganizationWorkspace({
       options: RequestInit = {},
       tokenOverride?: string | null
     ) => {
+      const execute = async (tk: string | null) => {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          ...(options.headers as Record<string, string>),
+        };
+        if (tk) {
+          headers["Authorization"] = `Bearer ${tk}`;
+        }
+        return fetch(path, {
+          ...options,
+          headers,
+        });
+      };
+
       const tokenToUse =
         tokenOverride !== undefined ? tokenOverride : accessTokenRef.current;
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        ...(options.headers as Record<string, string>),
-      };
-      if (tokenToUse) {
-        headers["Authorization"] = `Bearer ${tokenToUse}`;
+      let res = await execute(tokenToUse);
+
+      if (
+        res.status === 401 &&
+        tokenToUse &&
+        !path.startsWith("/api/v1/auth/")
+      ) {
+        const refreshed = await refreshSessionToken();
+        if (refreshed) {
+          res = await execute(refreshed);
+        }
       }
-      const res = await fetch(path, {
-        ...options,
-        headers,
-      });
+
       const json = await res.json().catch(() => null);
       if (!res.ok || (json && json.success === false)) {
         const msg =
@@ -447,7 +502,7 @@ export default function OrganizationWorkspace({
       }
       return json?.data;
     },
-    []
+    [refreshSessionToken]
   );
 
   const refreshWorkspaceData = useCallback(
@@ -701,6 +756,7 @@ export default function OrganizationWorkspace({
   const handleLogout = useCallback(() => {
     if (typeof window !== "undefined") {
       localStorage.removeItem("pos_access_token");
+      localStorage.removeItem("pos_refresh_token");
       localStorage.removeItem("pos_current_user");
       localStorage.removeItem("pos_current_org");
       localStorage.removeItem("pos_selected_store_id");
@@ -777,6 +833,7 @@ export default function OrganizationWorkspace({
               err.message?.toLowerCase()?.includes("expired")
             ) {
               localStorage.removeItem("pos_access_token");
+              localStorage.removeItem("pos_refresh_token");
               localStorage.removeItem("pos_current_user");
               localStorage.removeItem("pos_current_org");
               localStorage.removeItem("pos_selected_store_id");
@@ -853,6 +910,9 @@ export default function OrganizationWorkspace({
 
       if (typeof window !== "undefined") {
         localStorage.setItem("pos_access_token", tk);
+        if (data.refresh_token) {
+          localStorage.setItem("pos_refresh_token", data.refresh_token);
+        }
         localStorage.setItem("pos_current_user", JSON.stringify(data.user));
         localStorage.setItem("pos_current_org", JSON.stringify(data.organization));
       }
@@ -957,6 +1017,9 @@ export default function OrganizationWorkspace({
 
         if (typeof window !== "undefined") {
           localStorage.setItem("pos_access_token", tk);
+          if (loginData.refresh_token) {
+            localStorage.setItem("pos_refresh_token", loginData.refresh_token);
+          }
           localStorage.setItem("pos_current_user", JSON.stringify(loginData.user));
           localStorage.setItem("pos_current_org", JSON.stringify(loginData.organization));
         }
