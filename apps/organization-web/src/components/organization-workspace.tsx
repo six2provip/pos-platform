@@ -1915,11 +1915,11 @@ export default function OrganizationWorkspace({
   // VIEW 2: SHOPIFY POS CLEAN & SMOOTH WORKSPACE + BEUI CIRCLE BLUR THEME
   // ==========================================================================
   return (
-    <div className="flex min-h-screen bg-[#F4F5F7] text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100 transition-colors">
+    <div className="flex h-screen overflow-hidden bg-[#F4F5F7] text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100 transition-colors">
       {/* ================================================================== */}
       {/* LEFT SIDEBAR (CLEAN PILL MENU + DARK STATUS CARD + THEME TOGGLE)   */}
       {/* ================================================================== */}
-      <aside className="flex w-[244px] shrink-0 flex-col justify-between border-r border-neutral-200/80 bg-white px-3.5 py-5 select-none dark:border-neutral-800 dark:bg-neutral-900">
+      <aside className="flex w-[244px] shrink-0 flex-col justify-between overflow-y-auto border-r border-neutral-200/80 bg-white px-3.5 py-5 select-none dark:border-neutral-800 dark:bg-neutral-900">
         <div>
           {/* Top Brand */}
           <div className="flex items-center justify-between px-2 pb-5">
@@ -2134,10 +2134,10 @@ export default function OrganizationWorkspace({
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto px-7 py-4">
+        <main className="flex flex-1 flex-col min-h-0 overflow-y-auto px-7 py-4">
         {/* Global Notification Bar */}
         {banner && (
-          <div className="mb-6 flex items-center justify-between rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-800 shadow-sm">
+          <div className="mb-3 shrink-0 flex items-center justify-between rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-xs text-neutral-800 shadow-sm">
             <div className="flex items-center gap-2">
               <CheckCircle2
                 className={`h-4 w-4 shrink-0 ${

@@ -79,7 +79,9 @@ interface CatalogProductsViewProps {
   formatMoney: (val: number | string) => string;
 }
 
-const PAGE_SIZE = 8;
+const DEFAULT_PAGE_SIZE = 8;
+const ROW_HEIGHT = 54;
+const THEAD_HEIGHT = 38;
 type EditorTab = "general" | "images" | "variants";
 
 export function CatalogProductsView({
@@ -95,7 +97,9 @@ export function CatalogProductsView({
   const [filterCatId, setFilterCatId] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
+  const tableContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Horizontal Detail / Editor state
   const [editorOpen, setEditorOpen] = useState(false);
@@ -146,12 +150,34 @@ export function CatalogProductsView({
     });
   }, [products, search, filterCatId, filterStatus]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  // Dynamically compute rows per page so the table fits 100% of any screen resolution without scroll
+  useEffect(() => {
+    const el = tableContainerRef.current;
+    if (!el || editorOpen) return;
+
+    const updatePageSize = () => {
+      const available = el.clientHeight - THEAD_HEIGHT;
+      if (available <= 0) return;
+      const next = Math.max(5, Math.floor(available / ROW_HEIGHT));
+      setPageSize((prev) => (prev === next ? prev : next));
+    };
+
+    updatePageSize();
+    const observer = new ResizeObserver(updatePageSize);
+    observer.observe(el);
+    window.addEventListener("resize", updatePageSize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updatePageSize);
+    };
+  }, [editorOpen]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const pagedProducts = useMemo(() => {
-    const start = (safePage - 1) * PAGE_SIZE;
-    return filtered.slice(start, start + PAGE_SIZE);
-  }, [filtered, safePage]);
+    const start = (safePage - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, safePage, pageSize]);
 
   useEffect(() => {
     setPage(1);
@@ -952,18 +978,18 @@ export function CatalogProductsView({
   }
 
   // ===========================================================================
-  // COMPACT 8-ROW TABLE VIEW + BEUI ANIMATED PAGINATION (NO PAGE SCROLL)
+  // RESPONSIVE FIT-TO-VIEWPORT TABLE VIEW + BEUI ANIMATED PAGINATION (NO SCROLL)
   // ===========================================================================
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-1 min-h-0 flex-col gap-3">
       {/* Compact Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold tracking-tight text-neutral-900 dark:text-white">
             Quản Lý Sản Phẩm & Biến Thể
           </h1>
           <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-            Hiển thị {pagedProducts.length} / {filtered.length} sản phẩm (tối đa 8 sản phẩm mỗi trang).
+            Hiển thị {pagedProducts.length} / {filtered.length} sản phẩm (tự động {pageSize} dòng vừa khít màn hình).
           </p>
         </div>
 
@@ -978,7 +1004,7 @@ export function CatalogProductsView({
       </div>
 
       {/* Compact Filter Bar */}
-      <div className="flex flex-wrap items-center gap-2.5 rounded-2xl border border-neutral-200/80 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
+      <div className="flex shrink-0 flex-wrap items-center gap-2.5 rounded-2xl border border-neutral-200/80 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
         <div className="flex flex-1 min-w-[200px] items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-700 dark:bg-neutral-800">
           <Search className="h-3.5 w-3.5 text-neutral-400" />
           <input
@@ -1015,17 +1041,20 @@ export function CatalogProductsView({
         </select>
       </div>
 
-      {/* Fixed-layout Table: fits 8 rows cleanly with strict truncation */}
-      <div className="overflow-visible rounded-2xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+      {/* Fixed-layout Table: dynamically fills viewport height with strict truncation */}
+      <div
+        ref={tableContainerRef}
+        className="flex-1 min-h-0 overflow-visible rounded-2xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
+      >
         <table className="w-full table-fixed text-left text-xs">
           <thead>
             <tr className="border-b border-neutral-200/80 bg-neutral-50/70 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-400">
-              <th className="w-[30%] px-4 py-2.5">Sản phẩm</th>
+              <th className="w-[28%] px-4 py-2.5">Sản phẩm</th>
               <th className="w-[24%] px-3 py-2.5">Danh mục</th>
               <th className="w-[17%] px-3 py-2.5">Biến thể</th>
               <th className="w-[14%] px-3 py-2.5">Khoảng giá</th>
-              <th className="w-[9%] px-3 py-2.5">Trạng thái</th>
-              <th className="w-[6%] px-3 py-2.5 text-right">Thao tác</th>
+              <th className="w-[9%] whitespace-nowrap px-3 py-2.5">Trạng thái</th>
+              <th className="w-[8%] whitespace-nowrap px-3 py-2.5 text-right">Thao tác</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -1036,7 +1065,7 @@ export function CatalogProductsView({
                 </td>
               </tr>
             ) : (
-              pagedProducts.map((p) => {
+              pagedProducts.map((p, rowIdx) => {
                 const prices = (p.variants || []).map((v) => Number(v.default_price || 0));
                 const minPrice = prices.length ? Math.min(...prices) : 0;
                 const maxPrice = prices.length ? Math.max(...prices) : 0;
@@ -1050,10 +1079,13 @@ export function CatalogProductsView({
                     ? formatMoney(minPrice)
                     : `${formatMoney(minPrice)} – ${formatMoney(maxPrice)}`;
 
+                const openUpward =
+                  pagedProducts.length > 2 && rowIdx >= pagedProducts.length - 2;
+
                 return (
                   <tr
                     key={p.id}
-                    className="h-[52px] transition-colors hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40"
+                    className="h-[54px] transition-colors hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40"
                   >
                     {/* Product Name + Code + Thumbnail */}
                     <td className="px-4 py-2">
@@ -1182,12 +1214,14 @@ export function CatalogProductsView({
                       <AnimatePresence>
                         {openActionId === p.id && (
                           <motion.div
-                            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                            initial={{ opacity: 0, scale: 0.95, y: openUpward ? 4 : -4 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                            exit={{ opacity: 0, scale: 0.95, y: openUpward ? 4 : -4 }}
                             transition={{ duration: 0.12 }}
                             onClick={(e) => e.stopPropagation()}
-                            className="absolute right-3 top-10 z-30 w-44 rounded-xl border border-neutral-200 bg-white p-1.5 text-left shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+                            className={`absolute right-3 z-30 w-44 rounded-xl border border-neutral-200 bg-white p-1.5 text-left shadow-xl dark:border-neutral-700 dark:bg-neutral-900 ${
+                              openUpward ? "bottom-11" : "top-10"
+                            }`}
                           >
                             <button
                               type="button"
@@ -1226,7 +1260,7 @@ export function CatalogProductsView({
       </div>
 
       {/* Footer with beUI Animated Pagination */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-white px-4 py-2 dark:border-neutral-800 dark:bg-neutral-900">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-white px-4 py-2 dark:border-neutral-800 dark:bg-neutral-900">
         <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
           Trang <strong className="text-neutral-900 dark:text-white">{safePage}</strong> / {totalPages} • Tổng {filtered.length} sản phẩm
         </span>
