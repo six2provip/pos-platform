@@ -468,28 +468,31 @@ export function CatalogOptionsView({
                   damping: 38,
                   mass: 0.55,
                 }}
-                className="pointer-events-auto flex max-h-[86vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-neutral-200/90 bg-neutral-100/95 p-1.5 shadow-2xl dark:border-neutral-700/80 dark:bg-neutral-900/95"
+                className="pointer-events-auto flex max-h-[86vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-neutral-200/80 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950"
               >
-                {/* Outer Modal Header */}
-                <div className="flex items-center justify-between px-4 py-2.5">
+                {/* Clean Single-Card Modal Header */}
+                <div className="flex shrink-0 items-center justify-between border-b border-neutral-200/80 px-6 py-4 dark:border-neutral-800">
                   <div>
-                    <h3 className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
+                    <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
                       {editingGroup
                         ? `Chỉnh sửa nhóm: ${editingGroup.name}`
                         : "Tạo Nhóm Tùy Chọn Mới"}
                     </h3>
+                    <p className="text-[11px] text-neutral-400">
+                      Thiết lập quy tắc chọn và danh sách lựa chọn con cho sản phẩm.
+                    </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setModalOpen(false)}
-                    className="grid h-7 w-7 place-items-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-200/70 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
+                    className="grid h-8 w-8 place-items-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
                   >
                     <X className="h-4 w-4" />
                   </button>
                 </div>
 
-                {/* Inner Horizontal 2-Column Card */}
-                <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-[20px] border border-neutral-200/70 bg-white dark:border-neutral-800 dark:bg-neutral-950">
+                {/* Horizontal 2-Column Body */}
+                <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
                   <div className="grid flex-1 min-h-0 grid-cols-1 gap-6 overflow-y-auto p-6 lg:grid-cols-12">
                     {/* Left 5 cols: Group Info & Rules */}
                     <div className="space-y-4 lg:col-span-5 lg:border-r lg:border-neutral-200/70 lg:pr-6 dark:lg:border-neutral-800">
@@ -598,7 +601,15 @@ export function CatalogOptionsView({
                         </motion.button>
                       </div>
 
-                      <div className="flex-1 space-y-2 overflow-y-auto pr-1 max-h-[340px]">
+                      {/* Clean Column Headers */}
+                      <div className="mb-1.5 grid grid-cols-12 items-center gap-2.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                        <span className="col-span-5">Tên lựa chọn *</span>
+                        <span className="col-span-4">Giá cộng thêm</span>
+                        <span className="col-span-2 text-center whitespace-nowrap">Mặc định</span>
+                        <span className="col-span-1 text-right">Xóa</span>
+                      </div>
+
+                      <div className="flex-1 space-y-2 overflow-y-auto pr-1 max-h-[320px]">
                         <AnimatePresence initial={false}>
                           {items.map((it, idx) => (
                             <motion.div
@@ -608,7 +619,7 @@ export function CatalogOptionsView({
                               animate={{ opacity: 1, y: 0, scale: 1 }}
                               exit={{ opacity: 0, y: -6, scale: 0.98 }}
                               transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                              className="grid grid-cols-12 items-center gap-2 rounded-xl bg-neutral-50/90 p-2 dark:bg-neutral-900/70"
+                              className="grid grid-cols-12 items-center gap-2.5 py-0.5"
                             >
                               <div className="col-span-5">
                                 <BeInput
@@ -622,7 +633,7 @@ export function CatalogOptionsView({
                                       ? true
                                       : undefined
                                   }
-                                  fieldClassName="h-9 rounded-lg"
+                                  fieldClassName="h-9 rounded-xl"
                                 />
                               </div>
                               <div className="col-span-4">
@@ -632,24 +643,30 @@ export function CatalogOptionsView({
                                   onChange={(val) =>
                                     updateDraftItem(idx, { price_delta: val })
                                   }
-                                  placeholder="Giá + thêm"
-                                  fieldClassName="h-9 rounded-lg tabular-nums"
+                                  placeholder="0"
+                                  fieldClassName="h-9 rounded-xl tabular-nums"
                                 />
                               </div>
                               <div className="col-span-2 flex items-center justify-center">
-                                <button
+                                <motion.button
                                   type="button"
+                                  whileTap={{ scale: 0.9 }}
                                   onClick={() =>
                                     updateDraftItem(idx, { is_default: !it.is_default })
                                   }
-                                  className={`rounded-full px-2.5 py-1 text-[10px] font-bold transition-colors ${
+                                  title={
                                     it.is_default
-                                      ? "bg-blue-600 text-white shadow-xs"
-                                      : "bg-neutral-200/80 text-neutral-600 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-300"
+                                      ? "Đang đặt làm mặc định"
+                                      : "Đặt làm lựa chọn mặc định"
+                                  }
+                                  className={`grid h-7 w-7 place-items-center rounded-full border transition-all ${
+                                    it.is_default
+                                      ? "border-blue-600 bg-blue-600 text-white shadow-sm ring-4 ring-blue-600/15"
+                                      : "border-neutral-300 bg-white text-transparent hover:border-blue-400 dark:border-neutral-600 dark:bg-neutral-800"
                                   }`}
                                 >
-                                  {it.is_default ? "Mặc định ✓" : "Mặc định"}
-                                </button>
+                                  <Check className="h-3.5 w-3.5" />
+                                </motion.button>
                               </div>
                               <div className="col-span-1 text-right">
                                 {items.length > 1 && (
