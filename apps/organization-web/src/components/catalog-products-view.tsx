@@ -27,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import type { CategoryRecord } from "./catalog-categories-view";
+import { OverflowActions, type OverflowActionItem } from "./motion/overflow-actions";
 import { AnimatedPagination } from "./motion/pagination";
 
 export interface ProductVariantRow {
@@ -915,8 +916,8 @@ export function CatalogProductsView({
         noValidate
         className="flex h-full flex-1 min-h-0 flex-col gap-3"
       >
-        {/* Top Bar + 4-Color Process Stepper */}
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-white px-5 py-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+        {/* Section 1: Clean Page Title Header */}
+        <div className="flex shrink-0 items-center justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-white px-5 py-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
@@ -926,17 +927,23 @@ export function CatalogProductsView({
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div className="min-w-0">
-              <h2 className="truncate text-sm font-bold text-neutral-900 dark:text-white">
+              <h2 className="truncate text-base font-bold text-neutral-900 dark:text-white">
                 {editingProd ? `Chi tiết sản phẩm: ${editingProd.name}` : "Thêm Sản Phẩm Mới"}
               </h2>
               <p className="text-[11px] text-neutral-500">
-                Hoàn thành lần lượt 3 bước tiến trình hoặc bấm trực tiếp để chuyển bước.
+                Hoàn thành lần lượt 3 bước tiến trình hoặc bấm trực tiếp vào từng bước để chuyển đổi.
               </p>
             </div>
           </div>
 
-          {/* 3-Step Visual Stepper (Blue=Active, Green=Done, Gray=Pending, Red=Error) */}
-          <div className="flex flex-wrap items-center gap-1.5">
+          <span className="shrink-0 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+            Bước {currentStepIdx + 1} / {stepsMeta.length}
+          </span>
+        </div>
+
+        {/* Section 2: Dedicated Process Stepper Section (Blue=Active, Green=Done, Gray=Pending, Red=Error) */}
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-white px-5 py-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+          <div className="flex flex-1 flex-wrap items-center gap-2">
             {stepsMeta.map((step, idx) => {
               const status = getStepVisualStatus(step.id);
               const badgeCls =
@@ -961,7 +968,7 @@ export function CatalogProductsView({
                   <button
                     type="button"
                     onClick={() => goToStep(step.id)}
-                    className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-left transition-all ${pillCls}`}
+                    className={`flex items-center gap-2.5 rounded-full border px-3.5 py-1.5 text-left transition-all ${pillCls}`}
                   >
                     <span
                       className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-colors ${badgeCls}`}
@@ -975,13 +982,13 @@ export function CatalogProductsView({
                       )}
                     </span>
                     <div className="leading-tight">
-                      <div className="text-[11px] font-bold">{step.title}</div>
+                      <div className="text-xs font-bold">{step.title}</div>
                       <div className="text-[10px] opacity-75">{step.subtitle}</div>
                     </div>
                   </button>
                   {idx < stepsMeta.length - 1 && (
                     <div
-                      className={`hidden h-[2px] w-5 rounded-full sm:block transition-colors ${
+                      className={`hidden h-[2px] flex-1 min-w-[20px] max-w-[64px] rounded-full sm:block transition-colors ${
                         status === "completed"
                           ? "bg-emerald-500"
                           : status === "error"
@@ -997,26 +1004,16 @@ export function CatalogProductsView({
             })}
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setEditorOpen(false)}
-              className="rounded-full border border-neutral-200 px-3.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"
-            >
-              Hủy
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-full bg-neutral-900 px-4 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
-            >
-              {saving ? "Đang lưu..." : editingProd ? "Lưu Thay Đổi" : "Tạo Sản Phẩm"}
-            </button>
+          <div className="hidden xl:flex items-center gap-3 text-[11px] text-neutral-500">
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-600" /> Đang làm</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-600" /> Hoàn thành</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-neutral-300 dark:bg-neutral-600" /> Chưa làm</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-rose-600" /> Thiếu thông tin</span>
           </div>
         </div>
 
-        {/* Full-Height Step Card + Pinned Wizard Action Footer */}
-        <div className="flex flex-1 min-h-0 flex-col justify-between overflow-hidden rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+        {/* Section 3: Full-Height Step Form Content */}
+        <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-2xl border border-neutral-200/80 bg-white p-5 pb-20 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
           <div className="min-h-0 flex-1 overflow-y-auto pr-1">
             <AnimatePresence mode="wait">
               {editorTab === "general" && (
@@ -1427,55 +1424,86 @@ export function CatalogProductsView({
             )}
           </AnimatePresence>
           </div>
-
-          {/* Pinned Bottom Process Navigation Footer */}
-          <div className="mt-4 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-200/80 pt-4 dark:border-neutral-800">
-            <div className="flex items-center gap-3 text-[11px] text-neutral-500">
-              <span className="rounded-full bg-blue-50 px-2.5 py-1 font-bold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
-                Bước {currentStepIdx + 1} / {stepsMeta.length}
-              </span>
-              <span className="hidden sm:inline-flex items-center gap-3">
-                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-600" /> Đang làm</span>
-                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-600" /> Hoàn thành</span>
-                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-neutral-300 dark:bg-neutral-600" /> Chưa làm</span>
-                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-rose-600" /> Thiếu thông tin</span>
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {currentStepIdx > 0 && (
-                <button
-                  type="button"
-                  onClick={handlePrevStep}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-4 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Quay lại
-                </button>
-              )}
-
-              {currentStepIdx < stepsMeta.length - 1 ? (
-                <button
-                  type="button"
-                  onClick={handleNextStep}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700"
-                >
-                  Tiếp theo
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                  {saving ? "Đang lưu..." : editingProd ? "Hoàn tất & Lưu" : "Hoàn tất & Tạo"}
-                </button>
-              )}
-            </div>
-          </div>
         </div>
+
+        {/* Floating beUI Overflow Actions Bar */}
+        {(() => {
+          const saveLabel = saving
+            ? "Đang lưu..."
+            : editingProd
+              ? "Lưu Thay Đổi"
+              : "Tạo Sản Phẩm";
+          const triggerSave = () => {
+            void handleSaveProduct({
+              preventDefault: () => {},
+            } as React.FormEvent);
+          };
+
+          const primaryActions: OverflowActionItem[] =
+            currentStepIdx < stepsMeta.length - 1
+              ? [
+                  {
+                    id: "next",
+                    label: "Tiếp theo",
+                    icon: <ArrowRight className="h-4 w-4" />,
+                    variant: "primary",
+                    onClick: handleNextStep,
+                  },
+                  {
+                    id: "save",
+                    label: saveLabel,
+                    icon: <Check className="h-4 w-4" />,
+                    disabled: saving,
+                    onClick: triggerSave,
+                  },
+                ]
+              : [
+                  {
+                    id: "save",
+                    label: editingProd ? (saving ? "Đang lưu..." : "Hoàn tất & Lưu") : saving ? "Đang lưu..." : "Tạo Sản Phẩm",
+                    icon: <Check className="h-4 w-4" />,
+                    variant: "primary",
+                    disabled: saving,
+                    onClick: triggerSave,
+                  },
+                  {
+                    id: "prev",
+                    label: "Quay lại",
+                    icon: <ArrowLeft className="h-4 w-4" />,
+                    onClick: handlePrevStep,
+                  },
+                ];
+
+          const overflowActions: OverflowActionItem[] = [
+            ...(currentStepIdx > 0 && currentStepIdx < stepsMeta.length - 1
+              ? [
+                  {
+                    id: "prev-overflow",
+                    label: "Quay lại",
+                    icon: <ArrowLeft className="h-4 w-4" />,
+                    onClick: handlePrevStep,
+                  } as OverflowActionItem,
+                ]
+              : []),
+            {
+              id: "cancel",
+              label: "Hủy bỏ",
+              icon: <X className="h-4 w-4" />,
+              variant: "danger",
+              onClick: () => setEditorOpen(false),
+            },
+          ];
+
+          return (
+            <div className="pointer-events-none fixed inset-x-0 bottom-5 z-40 flex justify-center md:pl-[244px]">
+              <OverflowActions
+                className="pointer-events-auto"
+                primaryActions={primaryActions}
+                overflowActions={overflowActions}
+              />
+            </div>
+          );
+        })()}
       </motion.form>
     );
   }
