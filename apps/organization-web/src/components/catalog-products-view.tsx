@@ -29,6 +29,7 @@ import {
 import type { CategoryRecord } from "./catalog-categories-view";
 import { OverflowActions, type OverflowActionItem } from "./motion/overflow-actions";
 import { AnimatedPagination } from "./motion/pagination";
+import { ProductImageUpload } from "./motion/product-image-upload";
 
 export interface ProductVariantRow {
   id: string;
@@ -284,6 +285,7 @@ export function CatalogProductsView({
   const [trackInv, setTrackInv] = useState(true);
   const [prodStatus, setProdStatus] = useState("active");
   const [selectedCatIds, setSelectedCatIds] = useState<string[]>([]);
+  const [editorCatSearch, setEditorCatSearch] = useState("");
   const [images, setImages] = useState<ProductImageRow[]>([]);
   const [imageUrlInput, setImageUrlInput] = useState("");
   const [variants, setVariants] = useState<DraftVariant[]>([]);
@@ -461,6 +463,7 @@ export function CatalogProductsView({
     setTrackInv(true);
     setProdStatus("active");
     setSelectedCatIds(categories[0] ? [categories[0].id] : []);
+    setEditorCatSearch("");
     setImages([]);
     setImageUrlInput("");
     setVariants([
@@ -496,6 +499,7 @@ export function CatalogProductsView({
           ? [p.category_id]
           : []
     );
+    setEditorCatSearch("");
     setImages(
       p.images && p.images.length > 0
         ? p.images
@@ -1012,14 +1016,6 @@ export function CatalogProductsView({
                 }`}
               />
             </div>
-
-            {/* Compact 4-Color Legend */}
-            <div className="mt-2.5 flex flex-wrap items-center justify-center gap-4 text-[10px] text-neutral-400">
-              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-600" /> Đang làm</span>
-              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-600" /> Hoàn thành</span>
-              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full border border-neutral-400 bg-white dark:bg-neutral-900" /> Chưa làm</span>
-              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-600" /> Thiếu thông tin</span>
-            </div>
           </div>
         </div>
 
@@ -1144,9 +1140,9 @@ export function CatalogProductsView({
                   </div>
                 </div>
 
-                {/* Right 5 cols: Multi-Category Selection */}
-                <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/70 p-4 lg:col-span-5 dark:border-neutral-800 dark:bg-neutral-800/40">
-                  <div className="mb-3 flex items-center justify-between">
+                {/* Right 5 cols: Multi-Category Selection (Searchable + Pinned Selected Chips) */}
+                <div className="flex flex-col rounded-2xl border border-neutral-200/80 bg-neutral-50/70 p-4 lg:col-span-5 dark:border-neutral-800 dark:bg-neutral-800/40">
+                  <div className="mb-2.5 flex items-center justify-between gap-2">
                     <div>
                       <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
                         Gắn Danh Mục ({selectedCatIds.length} đã chọn)
@@ -1155,41 +1151,116 @@ export function CatalogProductsView({
                         1 sản phẩm có thể thuộc nhiều danh mục cùng lúc.
                       </p>
                     </div>
+                    {selectedCatIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCatIds([])}
+                        className="text-[11px] font-semibold text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+                      >
+                        Bỏ chọn hết
+                      </button>
+                    )}
                   </div>
+
+                  {/* Pinned Selected Category Pills */}
+                  {selectedCatIds.length > 0 && (
+                    <div className="mb-2.5 flex max-h-20 flex-wrap gap-1.5 overflow-y-auto rounded-xl border border-neutral-200/70 bg-white p-2 dark:border-neutral-700 dark:bg-neutral-900">
+                      {selectedCatIds.map((cid) => {
+                        const catObj = categories.find((c) => c.id === cid);
+                        if (!catObj) return null;
+                        return (
+                          <span
+                            key={cid}
+                            className="inline-flex items-center gap-1 rounded-full bg-neutral-900 px-2.5 py-1 text-[11px] font-semibold text-white dark:bg-white dark:text-neutral-900"
+                          >
+                            <span className="max-w-[140px] truncate">{catObj.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => toggleCategory(cid)}
+                              className="rounded-full p-0.5 hover:bg-white/20 dark:hover:bg-neutral-900/15"
+                            >
+                              <X className="h-2.5 w-2.5" />
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Quick Search inside Categories */}
+                  {categories.length > 0 && (
+                    <div className="mb-2.5 flex items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-1.5 dark:border-neutral-700 dark:bg-neutral-900">
+                      <Search className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
+                      <input
+                        type="text"
+                        value={editorCatSearch}
+                        onChange={(e) => setEditorCatSearch(e.target.value)}
+                        placeholder="Tìm nhanh danh mục..."
+                        className="w-full bg-transparent text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-white"
+                      />
+                      {editorCatSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setEditorCatSearch("")}
+                          className="text-neutral-400 hover:text-neutral-700"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {categories.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-center text-xs text-neutral-500">
                       Chưa có danh mục nào.
                     </div>
                   ) : (
-                    <div className="grid max-h-60 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-                      {categories.map((cat) => {
-                        const checked = selectedCatIds.includes(cat.id);
+                    (() => {
+                      const q = editorCatSearch.trim().toLowerCase();
+                      const visibleCats = q
+                        ? categories.filter((c) => c.name.toLowerCase().includes(q))
+                        : categories;
+
+                      if (visibleCats.length === 0) {
                         return (
-                          <button
-                            key={cat.id}
-                            type="button"
-                            onClick={() => toggleCategory(cat.id)}
-                            className={`flex items-center justify-between rounded-xl border px-3 py-2 text-left text-xs transition-all ${
-                              checked
-                                ? "border-neutral-900 bg-neutral-900 text-white shadow-sm dark:border-white dark:bg-white dark:text-neutral-900"
-                                : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
-                            }`}
-                          >
-                            <span className="truncate pr-2 font-medium">{cat.name}</span>
-                            <span
-                              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                                checked
-                                  ? "border-white bg-white/20 dark:border-neutral-900"
-                                  : "border-neutral-300 dark:border-neutral-600"
-                              }`}
-                            >
-                              {checked && <Check className="h-3 w-3" />}
-                            </span>
-                          </button>
+                          <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-center text-xs text-neutral-400">
+                            Không tìm thấy danh mục phù hợp.
+                          </div>
                         );
-                      })}
-                    </div>
+                      }
+
+                      return (
+                        <div className="grid max-h-[210px] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+                          {visibleCats.map((cat) => {
+                            const checked = selectedCatIds.includes(cat.id);
+                            return (
+                              <button
+                                key={cat.id}
+                                type="button"
+                                title={cat.name}
+                                onClick={() => toggleCategory(cat.id)}
+                                className={`flex items-center justify-between rounded-xl border px-3 py-2 text-left text-xs transition-all ${
+                                  checked
+                                    ? "border-neutral-900 bg-neutral-900 text-white shadow-sm dark:border-white dark:bg-white dark:text-neutral-900"
+                                    : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                                }`}
+                              >
+                                <span className="truncate pr-2 font-medium">{cat.name}</span>
+                                <span
+                                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                                    checked
+                                      ? "border-white bg-white/20 dark:border-neutral-900"
+                                      : "border-neutral-300 dark:border-neutral-600"
+                                  }`}
+                                >
+                                  {checked && <Check className="h-3 w-3" />}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()
                   )}
                 </div>
               </motion.div>
@@ -1202,100 +1273,14 @@ export function CatalogProductsView({
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 8 }}
                 transition={{ duration: 0.16 }}
-                className="space-y-4"
               >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h4 className="text-sm font-bold text-neutral-900 dark:text-white">
-                      Thư Viện Hình Ảnh ({images.length} ảnh)
-                    </h4>
-                    <p className="text-xs text-neutral-500">
-                      Tải lên từ máy hoặc dán URL ảnh. Bấm biểu tượng ngôi sao để chọn ảnh đại diện chính trên quầy POS.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      className="hidden"
-                      onChange={(e) => handleUploadFiles(e.target.files)}
-                    />
-                    <button
-                      type="button"
-                      disabled={uploadingImg}
-                      onClick={() => fileInputRef.current?.click()}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-2 text-xs font-bold text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900"
-                    >
-                      <Upload className="h-3.5 w-3.5" />
-                      {uploadingImg ? "Đang tải..." : "Tải ảnh lên"}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={imageUrlInput}
-                    onChange={(e) => setImageUrlInput(e.target.value)}
-                    placeholder="Hoặc dán URL hình ảnh (https://...)"
-                    className="flex-1 rounded-xl border border-neutral-300 px-3.5 py-2 text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddImageUrl}
-                    className="rounded-xl border border-neutral-300 bg-neutral-100 px-4 py-2 text-xs font-bold text-neutral-800 hover:bg-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                  >
-                    Thêm URL
-                  </button>
-                </div>
-
-                {images.length === 0 ? (
-                  <div className="flex h-44 flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 text-xs text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800/40">
-                    <ImageIcon className="mb-2 h-7 w-7 text-neutral-400" />
-                    Chưa có hình ảnh nào cho sản phẩm này.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-                    {images.map((im, idx) => (
-                      <div
-                        key={`${im.image_url}-${idx}`}
-                        className={`group relative aspect-square overflow-hidden rounded-2xl border-2 ${
-                          im.is_primary
-                            ? "border-emerald-500 ring-2 ring-emerald-500/20"
-                            : "border-neutral-200 dark:border-neutral-700"
-                        }`}
-                      >
-                        <img
-                          src={im.image_url}
-                          alt={`Ảnh ${idx + 1}`}
-                          className="h-full w-full object-cover"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setPrimaryImage(idx)}
-                          title="Đặt làm ảnh chính"
-                          className={`absolute left-1.5 top-1.5 rounded-lg p-1.5 ${
-                            im.is_primary
-                              ? "bg-emerald-500 text-white"
-                              : "bg-black/55 text-white/80 hover:bg-black/80"
-                          }`}
-                        >
-                          <Star className="h-3 w-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeImage(idx)}
-                          title="Xóa ảnh"
-                          className="absolute right-1.5 top-1.5 rounded-lg bg-black/55 p-1.5 text-white hover:bg-rose-600"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <ProductImageUpload
+                  images={images}
+                  uploading={uploadingImg}
+                  onUploadFiles={handleUploadFiles}
+                  onSetPrimary={setPrimaryImage}
+                  onRemove={removeImage}
+                />
               </motion.div>
             )}
 
