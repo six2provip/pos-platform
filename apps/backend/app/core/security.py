@@ -165,6 +165,59 @@ def decode_access_token(
     return payload
 
 
+def create_platform_admin_token(
+    settings: Settings,
+    admin_id: str,
+    email: str,
+    role: str,
+    now: Optional[datetime] = None,
+) -> str:
+    """Issue a Platform Super-Admin access JWT with an isolated audience."""
+    issued_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    expires_at = issued_at + timedelta(seconds=settings.access_token_expire_seconds)
+    claims: Dict[str, Any] = {
+        "sub": admin_id,
+        "principal_type": "platform_admin",
+        "email": email,
+        "role": role,
+        "iss": settings.jwt_issuer,
+        "aud": "pos-platform-admin",
+        "iat": int(issued_at.timestamp()),
+        "nbf": int(issued_at.timestamp()),
+        "exp": int(expires_at.timestamp()),
+        "jti": str(uuid.uuid4()),
+    }
+    return jwt.encode(claims, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def decode_platform_admin_token(token: str, settings: Settings) -> Dict[str, Any]:
+    """Decode and validate a Platform Super-Admin JWT."""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+            issuer=settings.jwt_issuer,
+            audience=["pos-platform-admin"],
+            options={"require": ["sub", "principal_type", "role", "iss", "aud", "exp"]},
+        )
+    except jwt.ExpiredSignatureError as exc:
+        raise UnauthorizedError(
+            code="TOKEN_EXPIRED", message="Platform admin token has expired."
+        ) from exc
+    except jwt.InvalidTokenError as exc:
+        raise UnauthorizedError(
+            code="INVALID_TOKEN", message="Invalid platform admin token."
+        ) from exc
+
+    if payload.get("principal_type") != "platform_admin":
+        raise UnauthorizedError(
+            code="INVALID_PRINCIPAL_TYPE",
+            message="Token is not a platform admin token.",
+        )
+    return payload
+
+
 def compute_canonical_request_hash(payload: Any) -> str:
     """Compute a deterministic SHA-256 hash over a semantically canonicalized request payload."""
     canonical_json = json.dumps(

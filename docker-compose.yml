@@ -102,32 +102,17 @@ services:
     working_dir: /workspace/apps/organization-web
     depends_on:
       - pos-backend
+      - pos-control-plane
     environment:
       NEXT_PUBLIC_API_BASE_URL: http://pos-backend:8000
+      NEXT_PUBLIC_CONTROL_BASE_URL: http://pos-control-plane:8001
+      ENABLE_SUPER_ADMIN: "${ENABLE_SUPER_ADMIN:-true}"
       NODE_ENV: development
     volumes:
       - .:/workspace
     command: ["npm", "run", "dev"]
     ports:
       - "${ORG_WEB_PORT:-13000}:13000"
-    restart: unless-stopped
-
-  pos-super-admin-web:
-    image: node:20-slim
-    container_name: pos-super-admin-web
-    working_dir: /workspace/apps/super-admin-web
-    depends_on:
-      - pos-control-plane
-      - pos-backend
-    environment:
-      NEXT_PUBLIC_CONTROL_BASE_URL: http://pos-control-plane:8001
-      NEXT_PUBLIC_API_BASE_URL: http://pos-backend:8000
-      NODE_ENV: development
-    volumes:
-      - .:/workspace
-    command: ["npm", "run", "dev"]
-    ports:
-      - "127.0.0.1:${SUPER_ADMIN_WEB_PORT:-13001}:13001"
     restart: unless-stopped
 
 volumes:

@@ -1,7 +1,11 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { Edit3, FolderTree, Plus, Search, X } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { Check, Edit3, FolderTree, Plus, Search, X } from "lucide-react";
+import { BeInput } from "./motion/input";
+import { BeSelect } from "./motion/select";
+import { BeSwitch } from "./motion/switch";
 
 export interface CategoryRecord {
   id: string;
@@ -33,12 +37,20 @@ export function CatalogCategoriesView({
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<CategoryRecord | null>(null);
   const [saving, setSaving] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   const [name, setName] = useState("");
-  const [code, setCode] = useState("");
   const [parentId, setParentId] = useState("");
-  const [sortOrder, setSortOrder] = useState("0");
-  const [statusVal, setStatusVal] = useState("active");
+  const [isActive, setIsActive] = useState(true);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setModalOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [modalOpen]);
 
   const catNameMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -46,39 +58,44 @@ export function CatalogCategoriesView({
     return m;
   }, [categories]);
 
+  const parentOptions = useMemo(() => {
+    return [
+      { value: "", label: "-- Danh mục gốc --" },
+      ...categories
+        .filter((c) => !editing || c.id !== editing.id)
+        .map((c) => ({ value: c.id, label: c.name })),
+    ];
+  }, [categories, editing]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return categories.filter((c) => {
       if (!q) return true;
-      return (
-        c.name.toLowerCase().includes(q) ||
-        (c.code || "").toLowerCase().includes(q)
-      );
+      return c.name.toLowerCase().includes(q);
     });
   }, [categories, search]);
 
   const openCreate = () => {
     setEditing(null);
+    setSubmitted(false);
     setName("");
-    setCode("");
     setParentId("");
-    setSortOrder(String(categories.length + 1));
-    setStatusVal("active");
+    setIsActive(true);
     setModalOpen(true);
   };
 
   const openEdit = (cat: CategoryRecord) => {
     setEditing(cat);
+    setSubmitted(false);
     setName(cat.name);
-    setCode(cat.code || "");
     setParentId(cat.parent_category_id || "");
-    setSortOrder(String(cat.sort_order ?? 0));
-    setStatusVal(cat.status || "active");
+    setIsActive((cat.status || "active") === "active");
     setModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitted(true);
     if (!name.trim()) return;
     setSaving(true);
     try {
@@ -89,10 +106,8 @@ export function CatalogCategoriesView({
             method: "PATCH",
             body: JSON.stringify({
               name: name.trim(),
-              code: code.trim() ? code.trim().toUpperCase() : null,
               parent_category_id: parentId || null,
-              sort_order: Number(sortOrder) || 0,
-              status: statusVal,
+              status: isActive ? "active" : "inactive",
             }),
           },
           accessToken || undefined
@@ -105,9 +120,7 @@ export function CatalogCategoriesView({
             method: "POST",
             body: JSON.stringify({
               name: name.trim(),
-              code: code.trim() ? code.trim().toUpperCase() : undefined,
               parent_category_id: parentId || null,
-              sort_order: Number(sortOrder) || 0,
             }),
           },
           accessToken || undefined
@@ -147,7 +160,12 @@ export function CatalogCategoriesView({
   };
 
   return (
-    <div className="space-y-5">
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+      className="space-y-5"
+    >
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -159,14 +177,15 @@ export function CatalogCategoriesView({
           </p>
         </div>
 
-        <button
+        <motion.button
           type="button"
+          whileTap={{ scale: 0.97 }}
           onClick={openCreate}
           className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
         >
           <Plus className="h-3.5 w-3.5" />
           Thêm Danh Mục
-        </button>
+        </motion.button>
       </div>
 
       {/* Filter Bar */}
@@ -177,12 +196,16 @@ export function CatalogCategoriesView({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Tìm theo tên hoặc mã danh mục..."
+            placeholder="Tìm theo tên danh mục..."
             className="w-full bg-transparent text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-white"
           />
         </div>
         <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-          Tổng: <strong className="text-neutral-900 dark:text-white">{filtered.length}</strong> danh mục
+          Tổng:{" "}
+          <strong className="text-neutral-900 dark:text-white">
+            {filtered.length}
+          </strong>{" "}
+          danh mục
         </div>
       </div>
 
@@ -193,10 +216,8 @@ export function CatalogCategoriesView({
             <thead>
               <tr className="border-b border-neutral-200/80 bg-neutral-50/70 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-400">
                 <th className="px-4 py-3">Tên danh mục</th>
-                <th className="px-4 py-3">Mã</th>
                 <th className="px-4 py-3">Danh mục cha</th>
                 <th className="px-4 py-3 text-center">Số sản phẩm</th>
-                <th className="px-4 py-3 text-center">Thứ tự</th>
                 <th className="px-4 py-3">Trạng thái</th>
                 <th className="px-4 py-3 text-right">Thao tác</th>
               </tr>
@@ -204,7 +225,10 @@ export function CatalogCategoriesView({
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-xs text-neutral-500">
+                  <td
+                    colSpan={5}
+                    className="px-4 py-10 text-center text-xs text-neutral-500"
+                  >
                     Chưa có danh mục nào. Bấm &ldquo;+ Thêm Danh Mục&rdquo; để bắt đầu.
                   </td>
                 </tr>
@@ -222,26 +246,22 @@ export function CatalogCategoriesView({
                         <span>{cat.name}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
-                      {cat.code || "--"}
-                    </td>
                     <td className="px-4 py-3 text-neutral-600 dark:text-neutral-300">
-                      {cat.parent_category_id ? catNameMap.get(cat.parent_category_id) || "--" : "Danh mục gốc"}
+                      {cat.parent_category_id
+                        ? catNameMap.get(cat.parent_category_id) || "--"
+                        : "Danh mục gốc"}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span className="inline-flex rounded-full bg-neutral-100 px-2.5 py-0.5 text-[11px] font-bold text-neutral-800 dark:bg-neutral-800 dark:text-neutral-200">
                         {cat.product_count ?? 0}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-center tabular-nums text-neutral-600 dark:text-neutral-300">
-                      {cat.sort_order}
-                    </td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
                           cat.status === "active"
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800"
-                            : "bg-neutral-100 text-neutral-500 border border-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:border-neutral-700"
+                            ? "border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                            : "border border-neutral-200 bg-neutral-100 text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-400"
                         }`}
                       >
                         {cat.status === "active" ? "Đang hoạt động" : "Tạm ẩn"}
@@ -252,7 +272,7 @@ export function CatalogCategoriesView({
                         <button
                           type="button"
                           onClick={() => openEdit(cat)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                          className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-white px-3 py-1 text-[11px] font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
                         >
                           <Edit3 className="h-3 w-3" />
                           Sửa
@@ -260,7 +280,7 @@ export function CatalogCategoriesView({
                         <button
                           type="button"
                           onClick={() => handleToggleStatus(cat)}
-                          className="rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                          className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-[11px] font-semibold text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
                         >
                           {cat.status === "active" ? "Ẩn" : "Bật"}
                         </button>
@@ -274,121 +294,129 @@ export function CatalogCategoriesView({
         </div>
       </div>
 
-      {/* Create / Edit Category Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/50 p-4 backdrop-blur-[2px]">
-          <div className="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-6 shadow-2xl dark:border-neutral-800 dark:bg-neutral-900">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-100 dark:border-neutral-800">
-              <h3 className="text-base font-bold text-neutral-900 dark:text-white">
-                {editing ? "Chỉnh Sửa Danh Mục" : "Thêm Danh Mục Mới"}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+      {/* Create / Edit Category Modal (beUI Spring + Blur Backdrop) */}
+      <AnimatePresence>
+        {modalOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              onClick={() => setModalOpen(false)}
+              className="fixed inset-0 z-[80] bg-black/25 [backdrop-filter:blur(10px)_saturate(140%)] [-webkit-backdrop-filter:blur(10px)_saturate(140%)]"
+            />
+            <div className="pointer-events-none fixed inset-4 z-[81] flex items-center justify-center">
+              <motion.form
+                onSubmit={handleSubmit}
+                noValidate
+                initial={{ opacity: 0, y: 20, scale: 0.96, filter: "blur(4px)" }}
+                animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+                exit={{
+                  opacity: 0,
+                  y: 16,
+                  scale: 0.97,
+                  filter: "blur(4px)",
+                  transition: { duration: 0.16, ease: [0.16, 1, 0.3, 1] },
+                }}
+                transition={{
+                  type: "spring",
+                  stiffness: 420,
+                  damping: 38,
+                  mass: 0.55,
+                }}
+                className="pointer-events-auto flex w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-neutral-200/80 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950"
               >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="mt-4 space-y-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                  Tên danh mục *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="VD: Trà Trái Cây, Bánh Ngọt, Best Seller..."
-                  className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                    Mã danh mục
-                  </label>
-                  <input
-                    type="text"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    placeholder="VD: TRA-TRAI-CAY"
-                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                    Thứ tự hiển thị
-                  </label>
-                  <input
-                    type="number"
-                    value={sortOrder}
-                    onChange={(e) => setSortOrder(e.target.value)}
-                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                  Danh mục cha (tùy chọn)
-                </label>
-                <select
-                  value={parentId}
-                  onChange={(e) => setParentId(e.target.value)}
-                  className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                >
-                  <option value="">-- Danh mục gốc --</option>
-                  {categories
-                    .filter((c) => !editing || c.id !== editing.id)
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                </select>
-              </div>
-
-              {editing && (
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                    Trạng thái
-                  </label>
-                  <select
-                    value={statusVal}
-                    onChange={(e) => setStatusVal(e.target.value)}
-                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                {/* Modal Header */}
+                <div className="flex shrink-0 items-center justify-between border-b border-neutral-200/80 px-6 py-4 dark:border-neutral-800">
+                  <div>
+                    <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                      {editing
+                        ? `Chỉnh sửa danh mục: ${editing.name}`
+                        : "Thêm Danh Mục Mới"}
+                    </h3>
+                    <p className="text-[11px] text-neutral-400">
+                      Phân loại thực đơn & nhóm hàng hóa hiển thị trên POS.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setModalOpen(false)}
+                    className="grid h-8 w-8 place-items-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
                   >
-                    <option value="active">Đang hoạt động</option>
-                    <option value="inactive">Tạm ẩn</option>
-                  </select>
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
-              )}
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-neutral-100 dark:border-neutral-800">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="rounded-xl border border-neutral-200 px-4 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="rounded-xl bg-neutral-900 px-4 py-2 text-xs font-bold text-white hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
-                >
-                  {saving ? "Đang lưu..." : editing ? "Cập nhật" : "Tạo danh mục"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
+                {/* Modal Body */}
+                <div className="space-y-4 p-6">
+                  <BeInput
+                    label="Tên danh mục *"
+                    value={name}
+                    onChange={setName}
+                    placeholder="VD: Trà Trái Cây, Bánh Ngọt, Best Seller..."
+                    success={Boolean(name.trim())}
+                    error={
+                      submitted && !name.trim()
+                        ? "Vui lòng nhập tên danh mục."
+                        : undefined
+                    }
+                  />
+
+                  <BeSelect
+                    label="Danh mục cha (tùy chọn)"
+                    value={parentId}
+                    onValueChange={setParentId}
+                    options={parentOptions}
+                  />
+
+                  {editing && (
+                    <div className="flex items-center justify-between rounded-xl bg-neutral-50/90 px-3.5 py-2.5 dark:bg-neutral-900">
+                      <div>
+                        <div className="text-xs font-semibold text-neutral-900 dark:text-white">
+                          Trạng thái hoạt động
+                        </div>
+                        <div className="text-[11px] text-neutral-400">
+                          Cho phép hiển thị danh mục này trên màn hình bán hàng POS
+                        </div>
+                      </div>
+                      <BeSwitch
+                        checked={isActive}
+                        onCheckedChange={setIsActive}
+                        ariaLabel="Trạng thái hoạt động"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Modal Footer */}
+                <div className="flex shrink-0 items-center justify-end gap-2 border-t border-neutral-200/80 px-6 py-3.5 dark:border-neutral-800">
+                  <button
+                    type="button"
+                    onClick={() => setModalOpen(false)}
+                    className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"
+                  >
+                    Hủy
+                  </button>
+                  <motion.button
+                    type="submit"
+                    whileTap={{ scale: 0.97 }}
+                    disabled={saving}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    {saving
+                      ? "Đang lưu..."
+                      : editing
+                        ? "Cập Nhật Danh Mục"
+                        : "Lưu Danh Mục"}
+                  </motion.button>
+                </div>
+              </motion.form>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }
-

@@ -19,7 +19,8 @@ from app.core.config import Settings
 from app.core.database import Base, build_engine
 from app.core.envelope import error_response, ok_response
 from app.core.exceptions import AppError
-from app.infrastructure.models import Organization
+from app.core.security import hash_password
+from app.infrastructure.models import Organization, PlatformAdmin
 from app.modules.organizations.service import provision_organization
 
 
@@ -70,6 +71,22 @@ def create_app(
                         admin_display_name="Quản trị viên Hệ thống",
                         initial_store_code="DEMO-S1",
                         initial_store_name="Chi nhánh Quận 1 - Nguyễn Huệ",
+                    )
+                    seed_db.commit()
+                except Exception:
+                    seed_db.rollback()
+
+            existing_admin = seed_db.query(PlatformAdmin).first()
+            if existing_admin is None:
+                try:
+                    seed_db.add(
+                        PlatformAdmin(
+                            email="superadmin@pos.vn",
+                            display_name="Platform Super Admin",
+                            password_hash=hash_password("SuperAdmin@123456"),
+                            role="super_admin",
+                            status="active",
+                        )
                     )
                     seed_db.commit()
                 except Exception:

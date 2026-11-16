@@ -1778,3 +1778,35 @@ class LocalLicenseCache(Base):
         CheckConstraint("id = 1", name="ck_local_license_cache_singleton"),
     )
 
+
+class PlatformAdmin(Base):
+    """Provider-level Super Admin / Support accounts for Cloud/Unified Console."""
+
+    __tablename__ = "platform_admins"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(30), nullable=False, default="super_admin")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('super_admin', 'support')", name="ck_platform_admins_role"
+        ),
+        CheckConstraint(
+            "status IN ('active', 'locked')", name="ck_platform_admins_status"
+        ),
+    )
+
+

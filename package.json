@@ -4,12 +4,10 @@
   "private": true,
   "workspaces": [
     "packages/*",
-    "apps/organization-web",
-    "apps/super-admin-web"
+    "apps/organization-web"
   ],
   "scripts": {
-    "dev:org": "npm --workspace=@pos-platform/organization-web run dev",
-    "dev:admin": "npm --workspace=@pos-platform/super-admin-web run dev"
+    "dev:org": "npm --workspace=@pos-platform/organization-web run dev"
   }
 }
 

@@ -60,7 +60,7 @@ export function BeSelect({
     if (!el) return;
     const rect = el.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom;
-    const openUpward = spaceBelow < 180 && rect.top > spaceBelow;
+    const openUpward = spaceBelow < 248 && rect.top > spaceBelow;
     setCoords({
       left: rect.left,
       top: openUpward ? rect.top - 6 : rect.bottom + 6,
@@ -72,11 +72,17 @@ export function BeSelect({
   useLayoutEffect(() => {
     if (!open) return;
     updateCoords();
+    const onScroll = (e: Event) => {
+      if (contentRef.current && contentRef.current.contains(e.target as Node)) {
+        return;
+      }
+      updateCoords();
+    };
     window.addEventListener("resize", updateCoords);
-    window.addEventListener("scroll", updateCoords, true);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       window.removeEventListener("resize", updateCoords);
-      window.removeEventListener("scroll", updateCoords, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [open, updateCoords]);
 
@@ -186,7 +192,7 @@ export function BeSelect({
                     : undefined,
                   transformOrigin: coords.openUpward ? "bottom" : "top",
                 }}
-                className="z-[9999] overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-2xl dark:border-neutral-700 dark:bg-neutral-900"
+                className="z-[9999] max-h-60 overflow-y-auto overscroll-contain rounded-xl border border-neutral-200 bg-white p-1 shadow-2xl dark:border-neutral-700 dark:bg-neutral-900"
               >
                 {options.map((opt) => {
                   const selected = opt.value === value;

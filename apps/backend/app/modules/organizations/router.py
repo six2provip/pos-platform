@@ -12,11 +12,24 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import UserPrincipal, get_db, get_request_id, get_settings, require_permission
+from app.api.deps import (
+    UserPrincipal,
+    get_db,
+    get_request_id,
+    get_settings,
+    require_permission,
+    require_platform_admin,
+)
 from app.core.config import Settings
 from app.core.envelope import ok_response
 from app.core.exceptions import NotFoundError
-from app.infrastructure.models import CatalogChangeLog, Organization, OrganizationSetting, User
+from app.infrastructure.models import (
+    CatalogChangeLog,
+    Organization,
+    OrganizationSetting,
+    PlatformAdmin,
+    User,
+)
 from app.modules.audit.service import record_audit_event
 from app.modules.organizations.service import (
     provision_organization,
@@ -131,6 +144,7 @@ class UpdateOrganizationStatusRequest(BaseModel):
 def set_organization_status(
     org_id: str,
     body: UpdateOrganizationStatusRequest,
+    _admin: PlatformAdmin = Depends(require_platform_admin),
     db: Session = Depends(get_db),
     request_id: str = Depends(get_request_id),
 ) -> Dict[str, Any]:
@@ -146,6 +160,7 @@ def set_organization_status(
 
 @router.get("/list-all")
 def list_all_organizations(
+    _admin: PlatformAdmin = Depends(require_platform_admin),
     db: Session = Depends(get_db),
     request_id: str = Depends(get_request_id),
 ) -> Dict[str, Any]:

@@ -24,6 +24,7 @@ from app.modules.devices.router import router as devices_router
 from app.modules.employees.router import router as employees_router
 from app.modules.inventory.router import router as inventory_router
 from app.modules.organizations.router import router as organizations_router
+from app.modules.platform.router import router as platform_router
 from app.modules.products.router import router as products_router
 from app.modules.sales.router import router as sales_router
 from app.modules.stores.router import router as stores_router
@@ -33,6 +34,7 @@ api_v1_router = APIRouter(prefix="/api/v1")
 
 api_v1_router.include_router(auth_router)
 api_v1_router.include_router(organizations_router)
+api_v1_router.include_router(platform_router)
 api_v1_router.include_router(stores_router)
 api_v1_router.include_router(employees_router)
 api_v1_router.include_router(devices_router)

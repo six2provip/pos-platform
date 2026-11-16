@@ -23,7 +23,11 @@ from app.core.exceptions import (
     UnauthorizedError,
     ValidationAppError,
 )
-from app.core.security import compute_canonical_request_hash, decode_access_token
+from app.core.security import (
+    compute_canonical_request_hash,
+    decode_access_token,
+    decode_platform_admin_token,
+)
 from app.infrastructure.models import (
     Device,
     DeviceToken,
@@ -31,6 +35,7 @@ from app.infrastructure.models import (
     Organization,
     OrganizationMembership,
     Permission,
+    PlatformAdmin,
     Role,
     RolePermission,
     Store,
@@ -464,4 +469,49 @@ def complete_idempotency_record(
     record.response_body = response_data
     record.resource_type = resource_type
     record.resource_id = resource_id
+
+
+def require_platform_admin(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> PlatformAdmin:
+    """Authenticate a Platform Admin (Super Admin / Support). Disabled in private server mode."""
+    if settings.deployment_mode == "private":
+        raise ForbiddenError(
+            code="PLATFORM_ADMIN_DISABLED",
+            message="Platform administration endpoints are disabled on Private Server deployments.",
+        )
+
+    if credentials is None or not credentials.credentials:
+        raise UnauthorizedError(
+            code="MISSING_CREDENTIALS",
+            message="Platform admin bearer token is required.",
+        )
+
+    payload = decode_platform_admin_token(credentials.credentials, settings)
+    admin_id = payload.get("sub")
+    admin = db.query(PlatformAdmin).filter(PlatformAdmin.id == admin_id).first()
+    if admin is None:
+        raise UnauthorizedError(
+            code="ADMIN_NOT_FOUND", message="Platform admin account does not exist."
+        )
+    if admin.status != "active":
+        raise ForbiddenError(
+            code="ADMIN_LOCKED", message="Platform admin account is locked."
+        )
+    return admin
+
+
+def require_super_admin(
+    admin: PlatformAdmin = Depends(require_platform_admin),
+) -> PlatformAdmin:
+    """Restrict endpoint strictly to Platform Super Admins (excludes read-only/support)."""
+    if admin.role != "super_admin":
+        raise ForbiddenError(
+            code="SUPER_ADMIN_REQUIRED",
+            message="This action requires 'super_admin' role.",
+        )
+    return admin
+
 
