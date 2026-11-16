@@ -185,7 +185,14 @@ export function CatalogOptionsView({
       notify("error", "Mỗi nhóm tùy chọn cần ít nhất 1 lựa chọn.");
       return;
     }
+    const nextLen = items.length - 1;
     setItems((prev) => prev.filter((_, i) => i !== idx));
+    if (Number(minSelections || 0) > nextLen) {
+      setMinSelections(String(nextLen));
+    }
+    if (maxSelections.trim() !== "" && Number(maxSelections) > nextLen) {
+      setMaxSelections(String(nextLen));
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -227,6 +234,14 @@ export function CatalogOptionsView({
 
     if (maxSel !== null && maxSel < minSel) {
       notify("error", "Số lượng chọn tối đa phải lớn hơn hoặc bằng tối thiểu.");
+      return;
+    }
+    if (minSel > validItems.length) {
+      notify("error", `Chọn tối thiểu không được vượt quá ${validItems.length} lựa chọn.`);
+      return;
+    }
+    if (maxSel !== null && maxSel > validItems.length) {
+      notify("error", `Chọn tối đa không được vượt quá ${validItems.length} lựa chọn.`);
       return;
     }
     if (validItems.some((it) => Number(it.price_delta || 0) < 0)) {
@@ -584,6 +599,7 @@ export function CatalogOptionsView({
                             <BeInput
                               type="number"
                               min={isRequired ? 1 : 0}
+                              max={items.length}
                               label="Chọn tối thiểu"
                               value={minSelections}
                               onChange={(val) => {
@@ -594,21 +610,26 @@ export function CatalogOptionsView({
                                 const num = Math.floor(Number(val));
                                 if (Number.isNaN(num)) return;
                                 const floorLimit = isRequired ? 1 : 0;
-                                setMinSelections(String(Math.max(floorLimit, num)));
+                                setMinSelections(
+                                  String(Math.min(items.length, Math.max(floorLimit, num)))
+                                );
                               }}
                               error={
                                 Number(minSelections || 0) < (isRequired ? 1 : 0)
                                   ? isRequired
                                     ? "Tối thiểu phải ≥ 1"
                                     : "Không được < 0"
-                                  : undefined
+                                  : Number(minSelections || 0) > items.length
+                                    ? `Tối đa ${items.length} lựa chọn`
+                                    : undefined
                               }
                               placeholder={isRequired ? "1" : "0"}
                             />
                             <BeInput
                               type="number"
                               min={isRequired ? 1 : 1}
-                              label="Chọn tối đa"
+                              max={items.length}
+                              label={`Chọn tối đa (≤ ${items.length})`}
                               value={maxSelections}
                               onChange={(val) => {
                                 if (val === "") {
@@ -617,16 +638,21 @@ export function CatalogOptionsView({
                                 }
                                 const num = Math.floor(Number(val));
                                 if (Number.isNaN(num)) return;
-                                setMaxSelections(String(Math.max(0, num)));
+                                setMaxSelections(
+                                  String(Math.min(items.length, Math.max(1, num)))
+                                );
                               }}
                               error={
                                 maxSelections.trim() !== "" &&
                                 (Number(maxSelections) < 1 ||
                                   Number(maxSelections) < Number(minSelections || 0))
                                   ? "Tối đa phải ≥ tối thiểu"
-                                  : undefined
+                                  : maxSelections.trim() !== "" &&
+                                      Number(maxSelections) > items.length
+                                    ? `Không vượt quá ${items.length}`
+                                    : undefined
                               }
-                              placeholder="Không giới hạn"
+                              placeholder={`Tối đa ${items.length}`}
                             />
                           </motion.div>
                         )}

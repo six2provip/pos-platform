@@ -1707,11 +1707,22 @@ def create_option_group(
             code="INVALID_SELECTION_BOUNDS",
             message="When is_required is true, min_selections must be >= 1.",
         )
+    item_count = len(body.items)
+    if min_sel > item_count:
+        raise ValidationAppError(
+            code="INVALID_SELECTION_BOUNDS",
+            message=f"min_selections ({min_sel}) cannot exceed option items count ({item_count}).",
+        )
     max_sel = 1 if mode == "single" else body.max_selections
     if max_sel is not None and max_sel < min_sel:
         raise ValidationAppError(
             code="INVALID_SELECTION_BOUNDS",
             message="max_selections must be >= min_selections.",
+        )
+    if max_sel is not None and max_sel > item_count:
+        raise ValidationAppError(
+            code="INVALID_SELECTION_BOUNDS",
+            message=f"max_selections ({max_sel}) cannot exceed option items count ({item_count}).",
         )
 
     grp = OptionGroup(
@@ -1811,6 +1822,27 @@ def update_option_group(
         grp.status = body.status
     if body.items is not None:
         _sync_option_items(db, org_id, grp, body.items)
+        item_count = len(body.items)
+    else:
+        item_count = (
+            db.query(OptionItem)
+            .filter(
+                OptionItem.organization_id == org_id,
+                OptionItem.option_group_id == grp.id,
+                OptionItem.deleted_at.is_(None),
+            )
+            .count()
+        )
+    if grp.min_selections > item_count:
+        raise ValidationAppError(
+            code="INVALID_SELECTION_BOUNDS",
+            message=f"min_selections ({grp.min_selections}) cannot exceed option items count ({item_count}).",
+        )
+    if grp.max_selections is not None and grp.max_selections > item_count:
+        raise ValidationAppError(
+            code="INVALID_SELECTION_BOUNDS",
+            message=f"max_selections ({grp.max_selections}) cannot exceed option items count ({item_count}).",
+        )
 
     grp.version += 1
     db.flush()
