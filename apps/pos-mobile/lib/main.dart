@@ -79,6 +79,7 @@ class CartEntry {
   final String variantName;
   final String sku;
   final int price;
+  final List<Map<String, dynamic>> selectedOptions;
   int quantity;
 
   CartEntry({
@@ -87,8 +88,15 @@ class CartEntry {
     required this.variantName,
     required this.sku,
     required this.price,
+    this.selectedOptions = const [],
     this.quantity = 1,
   });
+
+  String get optionsKey {
+    if (selectedOptions.isEmpty) return '';
+    final ids = selectedOptions.map((o) => o['id']?.toString() ?? o['name']?.toString() ?? '').toList()..sort();
+    return ids.join('|');
+  }
 }
 
 class PosTerminalRoot extends StatefulWidget {
@@ -403,6 +411,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
           'onHand': invMap[vid] ?? 0,
           'imageUrl': fullImg,
           'categoryIds': catIds,
+          'optionGroups': (v['option_groups'] as List?) ?? const [],
         });
       }
 
@@ -464,10 +473,24 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   int get _cartTotal =>
       _cart.fold(0, (sum, item) => sum + (item.price * item.quantity));
 
-  void _addToCart(Map<String, dynamic> variant) {
+  void _addToCart(
+    Map<String, dynamic> variant, {
+    List<Map<String, dynamic>> selectedOptions = const [],
+  }) {
     final vid = variant['variantId'].toString();
+    final basePrice = variant['price'] as int;
+    final optionsDelta = selectedOptions.fold<int>(
+      0,
+      (sum, o) => sum + (double.tryParse(o['price_delta']?.toString() ?? '0') ?? 0).round(),
+    );
+    final finalPrice = basePrice + optionsDelta;
+    final sortedIds = selectedOptions.map((o) => o['id']?.toString() ?? o['name']?.toString() ?? '').toList()..sort();
+    final key = sortedIds.join('|');
+
     setState(() {
-      final idx = _cart.indexWhere((c) => c.variantId == vid);
+      final idx = _cart.indexWhere(
+        (c) => c.variantId == vid && c.optionsKey == key,
+      );
       if (idx >= 0) {
         _cart[idx].quantity++;
       } else {
@@ -477,11 +500,250 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
             productName: variant['productName'].toString(),
             variantName: variant['variantName'].toString(),
             sku: variant['sku'].toString(),
-            price: variant['price'] as int,
+            price: finalPrice,
+            selectedOptions: selectedOptions,
           ),
         );
       }
     });
+  }
+
+  Future<void> _onVariantTap(Map<String, dynamic> variant) async {
+    final rawGroups = (variant['optionGroups'] as List?) ?? const [];
+    final groups = rawGroups
+        .whereType<Map>()
+        .map((g) => Map<String, dynamic>.from(g))
+        .where((g) => ((g['items'] as List?) ?? const []).isNotEmpty)
+        .toList();
+    if (groups.isEmpty) {
+      _addToCart(variant);
+      return;
+    }
+
+    // Initialize default selections per group
+    final Map<String, Set<String>> selectedByGroup = {};
+    for (final g in groups) {
+      final gid = g['id']?.toString() ?? '';
+      final items = ((g['items'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((it) => Map<String, dynamic>.from(it))
+          .toList();
+      final defaults = items
+          .where((it) => it['is_default'] == true)
+          .map((it) => it['id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      if (g['selection_mode'] == 'single' && defaults.length > 1) {
+        selectedByGroup[gid] = {defaults.first};
+      } else {
+        selectedByGroup[gid] = defaults;
+      }
+    }
+
+    final basePrice = variant['price'] as int;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            int extraPrice = 0;
+            bool allValid = true;
+            for (final g in groups) {
+              final gid = g['id']?.toString() ?? '';
+              final chosen = selectedByGroup[gid] ?? const <String>{};
+              final isReq = g['is_required'] == true;
+              final minSel = (g['min_selections'] as int?) ?? (isReq ? 1 : 0);
+              final effectiveMin = isReq && minSel < 1 ? 1 : minSel;
+              if (chosen.length < effectiveMin) {
+                allValid = false;
+              }
+              final items = ((g['items'] as List?) ?? const [])
+                  .whereType<Map>()
+                  .map((it) => Map<String, dynamic>.from(it));
+              for (final it in items) {
+                if (chosen.contains(it['id']?.toString())) {
+                  extraPrice +=
+                      (double.tryParse(it['price_delta']?.toString() ?? '0') ?? 0)
+                          .round();
+                }
+              }
+            }
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    variant['productName'].toString(),
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    '${variant['variantName']} • Giá gốc ${formatVnd(basePrice)}',
+                    style: const TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 440,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: groups.map((g) {
+                      final gid = g['id']?.toString() ?? '';
+                      final mode = g['selection_mode']?.toString() ?? 'single';
+                      final isReq = g['is_required'] == true;
+                      final minSel = (g['min_selections'] as int?) ?? (isReq ? 1 : 0);
+                      final maxSel = g['max_selections'] as int?;
+                      final chosen = selectedByGroup[gid] ?? const <String>{};
+                      final items = ((g['items'] as List?) ?? const [])
+                          .whereType<Map>()
+                          .map((it) => Map<String, dynamic>.from(it))
+                          .where((it) => it['status'] != 'inactive')
+                          .toList();
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    g['name']?.toString() ?? 'Tùy chọn',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isReq
+                                        ? Colors.red.shade50
+                                        : Colors.grey.shade100,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    mode == 'single'
+                                        ? (isReq ? 'Bắt buộc · Chọn 1' : 'Chọn 1')
+                                        : (isReq
+                                            ? 'Bắt buộc · Tối thiểu ${minSel < 1 ? 1 : minSel}${maxSel != null ? ' / Tối đa $maxSel' : ''}'
+                                            : 'Tùy chọn${maxSel != null ? ' · Tối đa $maxSel' : ''}'),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: isReq
+                                          ? Colors.red.shade700
+                                          : Colors.black54,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: items.map((it) {
+                                final iid = it['id']?.toString() ?? '';
+                                final isSelected = chosen.contains(iid);
+                                final delta = (double.tryParse(
+                                            it['price_delta']?.toString() ?? '0') ??
+                                        0)
+                                    .round();
+                                return FilterChip(
+                                  selected: isSelected,
+                                  label: Text(
+                                    delta > 0
+                                        ? '${it['name']} (+${formatVnd(delta)})'
+                                        : '${it['name']}',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  onSelected: (checked) {
+                                    setModalState(() {
+                                      final next = Set<String>.from(chosen);
+                                      if (mode == 'single') {
+                                        if (checked) {
+                                          next
+                                            ..clear()
+                                            ..add(iid);
+                                        } else if (!isReq) {
+                                          next.remove(iid);
+                                        }
+                                      } else {
+                                        if (checked) {
+                                          if (maxSel != null && next.length >= maxSel) {
+                                            return;
+                                          }
+                                          next.add(iid);
+                                        } else {
+                                          next.remove(iid);
+                                        }
+                                      }
+                                      selectedByGroup[gid] = next;
+                                    });
+                                  },
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(),
+                  child: const Text('Hủy'),
+                ),
+                ElevatedButton(
+                  onPressed: allValid
+                      ? () {
+                          final List<Map<String, dynamic>> picked = [];
+                          for (final g in groups) {
+                            final gid = g['id']?.toString() ?? '';
+                            final chosen = selectedByGroup[gid] ?? const <String>{};
+                            final items = ((g['items'] as List?) ?? const [])
+                                .whereType<Map>()
+                                .map((it) => Map<String, dynamic>.from(it));
+                            for (final it in items) {
+                              if (chosen.contains(it['id']?.toString())) {
+                                picked.add({
+                                  'id': it['id'],
+                                  'option_group_id': gid,
+                                  'group_name': g['name'],
+                                  'name': it['name'],
+                                  'price_delta': it['price_delta'],
+                                });
+                              }
+                            }
+                          }
+                          Navigator.of(dialogCtx).pop();
+                          _addToCart(variant, selectedOptions: picked);
+                        }
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kEmeraldDark,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: Text('Thêm • ${formatVnd(basePrice + extraPrice)}'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _checkoutOrder() async {
@@ -521,6 +783,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                 'product_variant_id': c.variantId,
                 'quantity': '${c.quantity}.0000',
                 'unit_price': '${c.price}.0000',
+                if (c.selectedOptions.isNotEmpty) 'selected_options': c.selectedOptions,
               })
           .toList();
 
@@ -577,6 +840,8 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
             .map((c) => {
                   'product_variant_id': c.variantId,
                   'quantity': '${c.quantity}.0000',
+                  'unit_price': '${c.price}.0000',
+                  if (c.selectedOptions.isNotEmpty) 'selected_options': c.selectedOptions,
                 })
             .toList(),
         paymentMethodCode: _paymentMethod,
@@ -1448,7 +1713,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                     final v = items[i];
                     final imgUrl = v['imageUrl']?.toString() ?? '';
                     return InkWell(
-                      onTap: () => _addToCart(v),
+                      onTap: () => _onVariantTap(v),
                       borderRadius: BorderRadius.circular(14),
                       child: Container(
                         padding: const EdgeInsets.all(10),
@@ -1582,7 +1847,26 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                           item.productName,
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
-                        subtitle: Text(formatVnd(item.price)),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(formatVnd(item.price)),
+                            if (item.selectedOptions.isNotEmpty)
+                              Text(
+                                item.selectedOptions
+                                    .map((o) => o['name']?.toString() ?? '')
+                                    .where((n) => n.isNotEmpty)
+                                    .join(', '),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                          ],
+                        ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [

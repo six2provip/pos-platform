@@ -41,6 +41,8 @@ from app.core.money import format_decimal, to_decimal
 from app.infrastructure.models import (
     CatalogChangeLog,
     Category,
+    OptionGroup,
+    OptionItem,
     PriceList,
     PriceListItem,
     Product,
@@ -49,6 +51,7 @@ from app.infrastructure.models import (
     ProductImage,
     ProductVariant,
     StorePriceListAssignment,
+    VariantOptionGroup,
 )
 from app.modules.audit.service import record_audit_event
 
@@ -117,6 +120,7 @@ class VariantInput(BaseModel):
     currency_code: str = Field(default="VND", min_length=3, max_length=3)
     is_default: bool = True
     barcodes: List[BarcodeInput] = Field(default_factory=list)
+    option_group_ids: List[str] = Field(default_factory=list)
 
 
 class CreateProductRequest(BaseModel):
@@ -156,7 +160,47 @@ class UpdateVariantRequest(BaseModel):
     default_price: Optional[str] = None
     is_default: Optional[bool] = None
     barcode: Optional[str] = None
+    option_group_ids: Optional[List[str]] = None
     status: Optional[str] = None
+
+
+class OptionItemInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=160)
+    price_delta: str = "0"
+    is_default: bool = False
+    sort_order: int = 0
+    status: str = Field(default="active")
+
+
+class CreateOptionGroupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: Optional[str] = Field(default=None, max_length=60)
+    name: str = Field(min_length=1, max_length=160)
+    description: Optional[str] = None
+    selection_mode: str = Field(default="single")  # single | multiple
+    is_required: bool = False
+    min_selections: int = Field(default=0, ge=0)
+    max_selections: Optional[int] = Field(default=None, ge=1)
+    sort_order: int = 0
+    items: List[OptionItemInput] = Field(min_length=1)
+
+
+class UpdateOptionGroupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: Optional[str] = Field(default=None, max_length=60)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=160)
+    description: Optional[str] = None
+    selection_mode: Optional[str] = None
+    is_required: Optional[bool] = None
+    min_selections: Optional[int] = Field(default=None, ge=0)
+    max_selections: Optional[int] = Field(default=None, ge=1)
+    sort_order: Optional[int] = None
+    status: Optional[str] = None
+    items: Optional[List[OptionItemInput]] = None
 
 
 class CreatePriceListRequest(BaseModel):
@@ -359,8 +403,85 @@ def _create_variant_row(
             )
         )
 
+    if getattr(v_in, "option_group_ids", None):
+        _sync_variant_option_groups(db, org_id, variant.id, v_in.option_group_ids)
+
     db.flush()
     return variant
+
+
+def _serialize_option_group(db: Session, grp: OptionGroup) -> Dict[str, Any]:
+    items = (
+        db.query(OptionItem)
+        .filter(
+            OptionItem.organization_id == grp.organization_id,
+            OptionItem.option_group_id == grp.id,
+            OptionItem.deleted_at.is_(None),
+        )
+        .order_by(OptionItem.sort_order.asc(), OptionItem.created_at.asc())
+        .all()
+    )
+    return {
+        "id": grp.id,
+        "organization_id": grp.organization_id,
+        "code": grp.code,
+        "name": grp.name,
+        "description": grp.description,
+        "selection_mode": grp.selection_mode,
+        "is_required": grp.is_required,
+        "min_selections": grp.min_selections,
+        "max_selections": grp.max_selections,
+        "sort_order": grp.sort_order,
+        "status": grp.status,
+        "version": grp.version,
+        "items": [
+            {
+                "id": it.id,
+                "option_group_id": it.option_group_id,
+                "name": it.name,
+                "price_delta": format_decimal(it.price_delta),
+                "is_default": it.is_default,
+                "sort_order": it.sort_order,
+                "status": it.status,
+            }
+            for it in items
+        ],
+    }
+
+
+def _sync_variant_option_groups(
+    db: Session, org_id: str, variant_id: str, group_ids: List[str]
+) -> None:
+    """Replace variant_option_groups links for a variant."""
+    db.query(VariantOptionGroup).filter(
+        VariantOptionGroup.organization_id == org_id,
+        VariantOptionGroup.product_variant_id == variant_id,
+    ).delete(synchronize_session=False)
+
+    deduped = list(dict.fromkeys([gid for gid in group_ids if gid]))
+    if not deduped:
+        return
+
+    valid_ids = {
+        row[0]
+        for row in db.query(OptionGroup.id)
+        .filter(
+            OptionGroup.organization_id == org_id,
+            OptionGroup.id.in_(deduped),
+            OptionGroup.deleted_at.is_(None),
+        )
+        .all()
+    }
+    for idx, gid in enumerate(deduped):
+        if gid in valid_ids:
+            db.add(
+                VariantOptionGroup(
+                    organization_id=org_id,
+                    product_variant_id=variant_id,
+                    option_group_id=gid,
+                    sort_order=idx,
+                )
+            )
 
 
 def _serialize_variant(db: Session, v: ProductVariant) -> Dict[str, Any]:
@@ -372,6 +493,30 @@ def _serialize_variant(db: Session, v: ProductVariant) -> Dict[str, Any]:
         )
         .all()
     )
+    opt_links = (
+        db.query(VariantOptionGroup)
+        .filter(
+            VariantOptionGroup.organization_id == v.organization_id,
+            VariantOptionGroup.product_variant_id == v.id,
+        )
+        .order_by(VariantOptionGroup.sort_order.asc())
+        .all()
+    )
+    opt_group_ids = [lnk.option_group_id for lnk in opt_links]
+    opt_groups_map: Dict[str, OptionGroup] = {}
+    if opt_group_ids:
+        rows = (
+            db.query(OptionGroup)
+            .filter(
+                OptionGroup.organization_id == v.organization_id,
+                OptionGroup.id.in_(opt_group_ids),
+                OptionGroup.deleted_at.is_(None),
+                OptionGroup.status == "active",
+            )
+            .all()
+        )
+        opt_groups_map = {g.id: g for g in rows}
+
     return {
         "id": v.id,
         "product_id": v.product_id,
@@ -393,6 +538,12 @@ def _serialize_variant(db: Session, v: ProductVariant) -> Dict[str, Any]:
                 "is_primary": b.is_primary,
             }
             for b in barcodes
+        ],
+        "option_group_ids": opt_group_ids,
+        "option_groups": [
+            _serialize_option_group(db, opt_groups_map[gid])
+            for gid in opt_group_ids
+            if gid in opt_groups_map
         ],
     }
 
@@ -1166,6 +1317,8 @@ def update_variant(
                         is_primary=True,
                     )
                 )
+    if body.option_group_ids is not None:
+        _sync_variant_option_groups(db, org_id, variant.id, body.option_group_ids)
     if body.status is not None:
         variant.status = body.status
 
@@ -1478,4 +1631,205 @@ def get_pos_pricing(
         },
         request_id=request_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# Option Groups / Modifiers (Topping, Sugar/Ice, Add-ons)
+# ---------------------------------------------------------------------------
+
+
+def _sync_option_items(
+    db: Session, org_id: str, group: OptionGroup, items: List[OptionItemInput]
+) -> None:
+    db.query(OptionItem).filter(
+        OptionItem.organization_id == org_id,
+        OptionItem.option_group_id == group.id,
+    ).delete(synchronize_session=False)
+
+    for idx, it in enumerate(items):
+        price_dec = to_decimal(it.price_delta, "price_delta")
+        if price_dec < Decimal("0"):
+            raise ValidationAppError(
+                code="NEGATIVE_OPTION_PRICE",
+                message="price_delta must be non-negative.",
+            )
+        db.add(
+            OptionItem(
+                organization_id=org_id,
+                option_group_id=group.id,
+                name=it.name.strip(),
+                price_delta=price_dec,
+                is_default=it.is_default,
+                sort_order=it.sort_order if it.sort_order else idx,
+                status=it.status if it.status in ("active", "inactive") else "active",
+            )
+        )
+
+
+@router.get("/option-groups")
+def list_option_groups(
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    _check_catalog_read(principal)
+    groups = (
+        db.query(OptionGroup)
+        .filter(
+            OptionGroup.organization_id == principal.organization.id,
+            OptionGroup.deleted_at.is_(None),
+        )
+        .order_by(OptionGroup.sort_order.asc(), OptionGroup.created_at.desc())
+        .all()
+    )
+    return ok_response(
+        [_serialize_option_group(db, g) for g in groups], request_id=request_id
+    )
+
+
+@router.post("/option-groups", status_code=status.HTTP_201_CREATED)
+def create_option_group(
+    body: CreateOptionGroupRequest,
+    principal: UserPrincipal = Depends(require_permission("products.create")),
+    db: Session = Depends(get_db),
+    request_id: str = Depends(get_request_id),
+) -> JSONResponse:
+    org_id = principal.organization.id
+    mode = body.selection_mode if body.selection_mode in ("single", "multiple") else "single"
+    min_sel = body.min_selections
+    if body.is_required and min_sel < 1:
+        min_sel = 1
+    max_sel = 1 if mode == "single" else body.max_selections
+    if max_sel is not None and max_sel < min_sel:
+        raise ValidationAppError(
+            code="INVALID_SELECTION_BOUNDS",
+            message="max_selections must be >= min_selections.",
+        )
+
+    grp = OptionGroup(
+        organization_id=org_id,
+        code=body.code.strip().upper() if body.code else None,
+        name=body.name.strip(),
+        description=body.description.strip() if body.description else None,
+        selection_mode=mode,
+        is_required=body.is_required,
+        min_selections=min_sel,
+        max_selections=max_sel,
+        sort_order=body.sort_order,
+        status="active",
+        version=1,
+    )
+    db.add(grp)
+    db.flush()
+    _sync_option_items(db, org_id, grp, body.items)
+    db.flush()
+
+    serialized = _serialize_option_group(db, grp)
+    record_audit_event(
+        db,
+        action="option_group.created",
+        entity_type="option_group",
+        actor_type="user",
+        actor_id=principal.user.id,
+        organization_id=org_id,
+        entity_id=grp.id,
+        request_id=request_id,
+        metadata={"name": grp.name},
+    )
+    db.commit()
+    return JSONResponse(
+        status_code=status.HTTP_201_CREATED,
+        content=ok_response(serialized, request_id=request_id),
+    )
+
+
+@router.patch("/option-groups/{group_id}")
+def update_option_group(
+    group_id: str,
+    body: UpdateOptionGroupRequest,
+    principal: UserPrincipal = Depends(require_permission("products.update")),
+    db: Session = Depends(get_db),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    org_id = principal.organization.id
+    grp = (
+        db.query(OptionGroup)
+        .filter(
+            OptionGroup.organization_id == org_id,
+            OptionGroup.id == group_id,
+            OptionGroup.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if grp is None:
+        raise NotFoundError(
+            code="OPTION_GROUP_NOT_FOUND", message="Option group not found."
+        )
+
+    if body.code is not None:
+        grp.code = body.code.strip().upper() or None
+    if body.name is not None:
+        grp.name = body.name.strip()
+    if body.description is not None:
+        grp.description = body.description.strip() or None
+    if body.selection_mode is not None and body.selection_mode in ("single", "multiple"):
+        grp.selection_mode = body.selection_mode
+    if body.is_required is not None:
+        grp.is_required = body.is_required
+    if body.min_selections is not None:
+        grp.min_selections = body.min_selections
+    if grp.is_required and grp.min_selections < 1:
+        grp.min_selections = 1
+    if grp.selection_mode == "single":
+        grp.max_selections = 1
+    elif "max_selections" in body.model_fields_set:
+        grp.max_selections = body.max_selections
+    if grp.max_selections is not None and grp.max_selections < grp.min_selections:
+        raise ValidationAppError(
+            code="INVALID_SELECTION_BOUNDS",
+            message="max_selections must be >= min_selections.",
+        )
+    if body.sort_order is not None:
+        grp.sort_order = body.sort_order
+    if body.status is not None and body.status in ("active", "inactive"):
+        grp.status = body.status
+    if body.items is not None:
+        _sync_option_items(db, org_id, grp, body.items)
+
+    grp.version += 1
+    db.flush()
+    serialized = _serialize_option_group(db, grp)
+    db.commit()
+    return ok_response(serialized, request_id=request_id)
+
+
+@router.delete("/option-groups/{group_id}")
+def delete_option_group(
+    group_id: str,
+    principal: UserPrincipal = Depends(require_permission("products.delete")),
+    db: Session = Depends(get_db),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    org_id = principal.organization.id
+    grp = (
+        db.query(OptionGroup)
+        .filter(
+            OptionGroup.organization_id == org_id,
+            OptionGroup.id == group_id,
+            OptionGroup.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if grp is None:
+        raise NotFoundError(
+            code="OPTION_GROUP_NOT_FOUND", message="Option group not found."
+        )
+    grp.deleted_at = datetime.now(timezone.utc)
+    grp.status = "inactive"
+    db.query(VariantOptionGroup).filter(
+        VariantOptionGroup.organization_id == org_id,
+        VariantOptionGroup.option_group_id == grp.id,
+    ).delete(synchronize_session=False)
+    db.commit()
+    return ok_response({"deleted": True, "id": group_id}, request_id=request_id)
 

@@ -757,6 +757,118 @@ class ProductCategory(Base):
     )
 
 
+class OptionGroup(Base):
+    __tablename__ = "option_groups"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    organization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    code: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    selection_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="single"
+    )
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    min_selections: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_selections: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "id", name="uq_option_groups_org_id"),
+        CheckConstraint(
+            "selection_mode IN ('single', 'multiple')",
+            name="ck_option_groups_mode",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'inactive')", name="ck_option_groups_status"
+        ),
+        CheckConstraint("min_selections >= 0", name="ck_option_groups_min_sel"),
+    )
+
+
+class OptionItem(Base):
+    __tablename__ = "option_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    organization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    option_group_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    price_delta: Mapped[Decimal] = mapped_column(
+        Numeric(19, 4), nullable=False, default=Decimal("0.0000")
+    )
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "option_group_id"],
+            ["option_groups.organization_id", "option_groups.id"],
+            name="fk_option_items_group_same_org",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("organization_id", "id", name="uq_option_items_org_id"),
+        CheckConstraint("price_delta >= 0", name="ck_option_items_price_delta"),
+        CheckConstraint(
+            "status IN ('active', 'inactive')", name="ck_option_items_status"
+        ),
+    )
+
+
+class VariantOptionGroup(Base):
+    __tablename__ = "variant_option_groups"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    organization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    product_variant_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    option_group_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "product_variant_id"],
+            ["product_variants.organization_id", "product_variants.id"],
+            name="fk_var_opt_variant_same_org",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "option_group_id"],
+            ["option_groups.organization_id", "option_groups.id"],
+            name="fk_var_opt_group_same_org",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "product_variant_id",
+            "option_group_id",
+            name="uq_var_opt_org_var_grp",
+        ),
+    )
+
+
 class ProductImage(Base):
     __tablename__ = "product_images"
 
@@ -1146,6 +1258,7 @@ class OrderItem(Base):
         Numeric(19, 4), nullable=False, default=Decimal("0.0000")
     )
     line_total: Mapped[Decimal] = mapped_column(Numeric(19, 4), nullable=False)
+    selected_options_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )

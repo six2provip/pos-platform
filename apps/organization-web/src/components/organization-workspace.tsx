@@ -39,6 +39,7 @@ import {
   ShoppingBag,
   ShoppingCart,
   Sliders,
+  SlidersHorizontal,
   Smartphone,
   Sparkles,
   Store as StoreIcon,
@@ -72,6 +73,10 @@ import {
   CatalogProductsView,
   type ProductRecord,
 } from "@/components/catalog-products-view";
+import {
+  CatalogOptionsView,
+  type OptionGroupRecord,
+} from "@/components/catalog-options-view";
 import {
   Skeleton,
   OverviewSkeleton,
@@ -174,6 +179,7 @@ type NavTab =
   | "orders"
   | "categories"
   | "products"
+  | "options"
   | "inventory"
   | "stores"
   | "devices"
@@ -185,6 +191,7 @@ const TAB_PATHS: Record<NavTab, string> = {
   orders: "/orders",
   categories: "/categories",
   products: "/products",
+  options: "/options",
   inventory: "/inventory",
   stores: "/stores",
   devices: "/stores",
@@ -198,6 +205,7 @@ function getTabFromPathname(pathname: string): NavTab | null {
   if (clean === "orders") return "orders";
   if (clean === "categories") return "categories";
   if (clean === "products" || clean === "catalog") return "products";
+  if (clean === "options" || clean === "modifiers") return "options";
   if (clean === "inventory" || clean === "stock") return "inventory";
   if (
     clean === "stores" ||
@@ -282,7 +290,11 @@ export default function OrganizationWorkspace({
   const [catalogMenuOpen, setCatalogMenuOpen] = useState<boolean>(true);
 
   useEffect(() => {
-    if (activeTab === "categories" || activeTab === "products") {
+    if (
+      activeTab === "categories" ||
+      activeTab === "products" ||
+      activeTab === "options"
+    ) {
       setCatalogMenuOpen(true);
     }
   }, [activeTab]);
@@ -341,6 +353,7 @@ export default function OrganizationWorkspace({
   >({});
   const [devices, setDevices] = useState<PosDeviceItem[]>([]);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
+  const [optionGroups, setOptionGroups] = useState<OptionGroupRecord[]>([]);
   const [viewingStoreDevicesId, setViewingStoreDevicesId] = useState<string | null>(null);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
 
@@ -510,19 +523,25 @@ export default function OrganizationWorkspace({
       const tk = token || accessTokenRef.current;
       if (!tk) return;
       try {
-        const [capData, storeList, prodList, orderList, catList] = await Promise.all([
-          apiFetch("/api/v1/system/capabilities", {}, tk).catch(() => null),
-          apiFetch("/api/v1/stores", {}, tk).catch(() => []),
-          apiFetch("/api/v1/products", {}, tk).catch(() => []),
-          apiFetch("/api/v1/orders", {}, tk).catch(() => []),
-          apiFetch("/api/v1/categories", {}, tk).catch(() => []),
-        ]);
+        const [capData, storeList, prodList, orderList, catList, optList] =
+          await Promise.all([
+            apiFetch("/api/v1/system/capabilities", {}, tk).catch(() => null),
+            apiFetch("/api/v1/stores", {}, tk).catch(() => []),
+            apiFetch("/api/v1/products", {}, tk).catch(() => []),
+            apiFetch("/api/v1/orders", {}, tk).catch(() => []),
+            apiFetch("/api/v1/categories", {}, tk).catch(() => []),
+            apiFetch("/api/v1/option-groups", {}, tk).catch(() => []),
+          ]);
 
         if (capData) setCapabilities(capData);
         const normalizedCats: CategoryRecord[] = Array.isArray(catList)
           ? catList
           : catList?.items || [];
         setCategories(normalizedCats);
+        const normalizedOpts: OptionGroupRecord[] = Array.isArray(optList)
+          ? optList
+          : optList?.items || [];
+        setOptionGroups(normalizedOpts);
         const normalizedStores: StoreItem[] = Array.isArray(storeList)
           ? storeList
           : storeList?.items || [];
@@ -2079,7 +2098,9 @@ export default function OrganizationWorkspace({
             <div>
               {(() => {
                 const isCatalogActive =
-                  activeTab === "categories" || activeTab === "products";
+                  activeTab === "categories" ||
+                  activeTab === "products" ||
+                  activeTab === "options";
                 return (
                   <button
                     type="button"
@@ -2137,6 +2158,16 @@ export default function OrganizationWorkspace({
                           path: "/products",
                           badge:
                             products.length > 0 ? `${products.length}` : undefined,
+                        },
+                        {
+                          id: "options",
+                          label: "Quản lý Tùy chọn",
+                          icon: SlidersHorizontal,
+                          path: "/options",
+                          badge:
+                            optionGroups.length > 0
+                              ? `${optionGroups.length}`
+                              : undefined,
                         },
                       ].map((sub) => {
                         const SubIcon = sub.icon;
@@ -2864,11 +2895,22 @@ export default function OrganizationWorkspace({
           <CatalogProductsView
             products={products as unknown as ProductRecord[]}
             categories={categories}
+            optionGroups={optionGroups}
             accessToken={accessToken}
             apiFetch={apiFetch}
             onRefresh={() => refreshWorkspaceData(accessToken || undefined)}
             notify={notify}
             formatMoney={formatMoneyVND}
+          />
+        )}
+
+        {activeTab === "options" && (
+          <CatalogOptionsView
+            optionGroups={optionGroups}
+            accessToken={accessToken}
+            apiFetch={apiFetch}
+            onRefresh={() => refreshWorkspaceData(accessToken || undefined)}
+            notify={notify}
           />
         )}
 

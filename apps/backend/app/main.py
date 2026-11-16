@@ -34,6 +34,18 @@ def create_app(
     effective_engine = engine or build_engine(effective_settings.database_url)
     if create_tables:
         Base.metadata.create_all(bind=effective_engine)
+        try:
+            from sqlalchemy import text
+
+            with effective_engine.begin() as conn:
+                if effective_engine.dialect.name == "postgresql":
+                    conn.execute(
+                        text(
+                            "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS selected_options_json JSONB"
+                        )
+                    )
+        except Exception:
+            pass
 
     session_factory = sessionmaker(
         bind=effective_engine, autocommit=False, autoflush=False, expire_on_commit=False

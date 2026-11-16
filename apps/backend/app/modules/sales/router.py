@@ -150,6 +150,7 @@ class OrderItemInput(BaseModel):
     tax_name_snapshot: Optional[str] = None
     product_name_snapshot: Optional[str] = None
     variant_name_snapshot: Optional[str] = None
+    selected_options: Optional[List[Dict[str, Any]]] = None
 
 
 class OrderDiscountInput(BaseModel):
@@ -353,6 +354,7 @@ def _serialize_order(db: Session, order: Order) -> Dict[str, Any]:
                 "discount_amount": format_decimal(it.discount_amount),
                 "tax_amount": format_decimal(it.tax_amount),
                 "line_total": format_decimal(it.line_total),
+                "selected_options": it.selected_options_json or [],
             }
             for it in items
         ],
@@ -563,6 +565,10 @@ def create_order_tx(
             unit_price = _resolve_effective_variant_price(
                 db, org_id, store.id, variant
             )
+            if item_in.selected_options:
+                for opt in item_in.selected_options:
+                    if isinstance(opt, dict) and opt.get("price_delta") is not None:
+                        unit_price += to_decimal(opt["price_delta"], "option_price_delta")
 
         line_gross = to_decimal(qty * unit_price)
         item_disc = to_decimal(item_in.discount_amount, "discount_amount")
@@ -592,6 +598,7 @@ def create_order_tx(
             discount_amount=item_disc,
             tax_amount=line_tax,
             line_total=line_total,
+            selected_options_json=item_in.selected_options,
         )
         db.add(order_item)
         db.flush()

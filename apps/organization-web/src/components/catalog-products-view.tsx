@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import type { CategoryRecord } from "./catalog-categories-view";
+import type { OptionGroupRecord } from "./catalog-options-view";
 import { BeInput } from "./motion/input";
 import { BeMultiSelect } from "./motion/multi-select";
 import { OverflowActions, type OverflowActionItem } from "./motion/overflow-actions";
@@ -48,6 +49,8 @@ export interface ProductVariantRow {
   is_default: boolean;
   status: string;
   barcodes?: { id: string; barcode: string; is_primary: boolean }[];
+  option_group_ids?: string[];
+  option_groups?: OptionGroupRecord[];
 }
 
 export interface ProductImageRow {
@@ -83,12 +86,14 @@ interface DraftVariant {
   default_price: string;
   barcode: string;
   is_default: boolean;
+  option_group_ids: string[];
   isNew?: boolean;
 }
 
 interface CatalogProductsViewProps {
   products: ProductRecord[];
   categories: CategoryRecord[];
+  optionGroups: OptionGroupRecord[];
   accessToken: string | null;
   apiFetch: (path: string, options?: RequestInit, token?: string) => Promise<any>;
   onRefresh: () => Promise<void>;
@@ -239,6 +244,7 @@ function SmoothPriceRangeSlider({
 export function CatalogProductsView({
   products,
   categories,
+  optionGroups,
   accessToken,
   apiFetch,
   onRefresh,
@@ -482,6 +488,7 @@ export function CatalogProductsView({
         default_price: "35000",
         barcode: "",
         is_default: true,
+        option_group_ids: [],
         isNew: true,
       },
     ]);
@@ -526,6 +533,7 @@ export function CatalogProductsView({
         default_price: String(Math.round(Number(v.default_price || 0))),
         barcode: v.barcodes?.[0]?.barcode || "",
         is_default: v.is_default,
+        option_group_ids: v.option_group_ids || [],
         isNew: false,
       }))
     );
@@ -627,6 +635,7 @@ export function CatalogProductsView({
         default_price: "39000",
         barcode: "",
         is_default: prev.length === 0,
+        option_group_ids: [],
         isNew: true,
       },
     ]);
@@ -784,6 +793,7 @@ export function CatalogProductsView({
                 barcodes: v.barcode.trim()
                   ? [{ barcode: v.barcode.trim(), is_primary: true }]
                   : [],
+                option_group_ids: v.option_group_ids,
               })),
             }),
           },
@@ -825,6 +835,7 @@ export function CatalogProductsView({
                   barcodes: v.barcode.trim()
                     ? [{ barcode: v.barcode.trim(), is_primary: true }]
                     : [],
+                  option_group_ids: v.option_group_ids,
                 }),
               },
               accessToken || undefined
@@ -842,6 +853,7 @@ export function CatalogProductsView({
                   default_price: v.default_price.trim() || "0",
                   is_default: v.is_default,
                   barcode: v.barcode.trim(),
+                  option_group_ids: v.option_group_ids,
                 }),
               },
               accessToken || undefined
@@ -1375,6 +1387,44 @@ export function CatalogProductsView({
                             }}
                             disabled={activeVar.is_default}
                             ariaLabel="Đặt làm biến thể mặc định"
+                          />
+                        </div>
+
+                        {/* Row 4: Option Groups / Toppings attached to this variant */}
+                        <div className="space-y-2 pt-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                              Nhóm tùy chọn đi kèm ({activeVar.option_group_ids.length} đã gắn)
+                            </span>
+                            {variants.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const ids = [...activeVar.option_group_ids];
+                                  setVariants((prev) =>
+                                    prev.map((v) => ({ ...v, option_group_ids: ids }))
+                                  );
+                                  notify("info", `Đã áp dụng ${ids.length} nhóm tùy chọn cho tất cả ${variants.length} biến thể.`);
+                                }}
+                                className="text-[11px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                              >
+                                Áp dụng cho tất cả biến thể
+                              </button>
+                            )}
+                          </div>
+                          <BeMultiSelect
+                            options={optionGroups.map((og) => ({
+                              value: og.id,
+                              label: `${og.name} (${
+                                og.selection_mode === "single" ? "Chọn 1" : "Chọn nhiều"
+                              }${og.is_required ? " · Bắt buộc" : ""})`,
+                            }))}
+                            values={activeVar.option_group_ids}
+                            onChange={(next) =>
+                              updateDraftVariant(safeVarIdx, { option_group_ids: next })
+                            }
+                            placeholder="Chọn nhóm Topping, Mức đường, Đồ ăn kèm..."
+                            emptyText="Chưa có nhóm tùy chọn nào. Tạo tại mục Quản lý Tùy chọn."
                           />
                         </div>
                       </motion.div>
