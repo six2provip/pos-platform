@@ -62,6 +62,7 @@ import { ShimmerButton } from "@/components/ui/shimmer-button";
 import { Terminal } from "@/components/ui/terminal";
 import { PosLcdSimulator } from "@/components/pos-lcd-simulator";
 import { SixDigitPinInput } from "@/components/ui/six-digit-pin-input";
+import { ThemeSegmentedToggle, ThemeToggle } from "@/components/motion/theme-toggle";
 import {
   Skeleton,
   OverviewSkeleton,
@@ -1893,40 +1894,37 @@ export default function OrganizationWorkspace({
   }
 
   // ==========================================================================
-  // VIEW 2: CAL.COM-STYLE SIDEBAR + CLEAN WHITE WORKSPACE
+  // VIEW 2: SHOPIFY POS CLEAN & SMOOTH WORKSPACE + BEUI CIRCLE BLUR THEME
   // ==========================================================================
   return (
-    <div className="flex min-h-screen bg-white text-neutral-900">
+    <div className="flex min-h-screen bg-[#F4F5F7] text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100 transition-colors">
       {/* ================================================================== */}
-      {/* LEFT SIDEBAR (CAL.COM EXACT LAYOUT)                                */}
+      {/* LEFT SIDEBAR (CLEAN PILL MENU + DARK STATUS CARD + THEME TOGGLE)   */}
       {/* ================================================================== */}
-      <aside className="flex w-[240px] shrink-0 flex-col justify-between border-r border-neutral-200 bg-[#F5F6F8] px-3.5 py-4 select-none">
+      <aside className="flex w-[244px] shrink-0 flex-col justify-between border-r border-neutral-200/80 bg-white px-3.5 py-5 select-none dark:border-neutral-800 dark:bg-neutral-900">
         <div>
-          {/* Top Brand + Quick Search Icon */}
-          <div className="flex items-center justify-between px-2 pb-4">
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-bold tracking-tight text-neutral-900">
-                POS.com
-              </span>
-              <span
-                suppressHydrationWarning
-                className="rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-semibold text-neutral-700"
-              >
-                {currentOrg?.code || "DEMO"}
-              </span>
+          {/* Top Brand */}
+          <div className="flex items-center justify-between px-2 pb-5">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-neutral-900 text-xs font-black text-white shadow-sm dark:bg-white dark:text-neutral-900">
+                P
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-base font-extrabold tracking-tight text-neutral-900 dark:text-white">
+                  POS.com
+                </span>
+                <span
+                  suppressHydrationWarning
+                  className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                >
+                  {currentOrg?.code || "DEMO"}
+                </span>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => navigateToTab("pos")}
-              title="Tìm nhanh sản phẩm POS"
-              className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-200/70 hover:text-neutral-900"
-            >
-              <Search className="h-4 w-4" />
-            </button>
           </div>
 
-          {/* Primary Navigation Items with real URLs */}
-          <nav className="space-y-0.5">
+          {/* Primary Navigation Items (Clean Rounded Pill Active State) */}
+          <nav className="space-y-1">
             {[
               { id: "overview", label: "Tổng quan", icon: Layers, path: "/overview" },
               {
@@ -1967,22 +1965,30 @@ export default function OrganizationWorkspace({
                     e.preventDefault();
                     navigateToTab(item.id as NavTab);
                   }}
-                  className={`flex w-full items-center justify-between rounded-md px-2.5 py-2 text-[13px] transition-colors ${
+                  className={`flex w-full items-center justify-between rounded-full px-3.5 py-2.5 text-[13px] transition-all ${
                     isActive
-                      ? "bg-neutral-200/85 font-semibold text-neutral-900"
-                      : "font-medium text-neutral-600 hover:bg-neutral-200/50 hover:text-neutral-900"
+                      ? "bg-neutral-900 font-semibold text-white shadow-sm dark:bg-white dark:text-neutral-900"
+                      : "font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
                   }`}
                 >
                   <span className="flex items-center gap-2.5">
                     <Icon
                       className={`h-4 w-4 ${
-                        isActive ? "text-neutral-900" : "text-neutral-500"
+                        isActive
+                          ? "text-white dark:text-neutral-900"
+                          : "text-neutral-400 dark:text-neutral-500"
                       }`}
                     />
                     {item.label}
                   </span>
                   {item.badge && (
-                    <span className="rounded bg-neutral-900 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        isActive
+                          ? "bg-white/20 text-white dark:bg-neutral-900/15 dark:text-neutral-900"
+                          : "bg-neutral-900 text-white dark:bg-neutral-700"
+                      }`}
+                    >
                       {item.badge}
                     </span>
                   )}
@@ -1992,116 +1998,124 @@ export default function OrganizationWorkspace({
           </nav>
         </div>
 
-        {/* Bottom Sidebar Card (Cal.com "Dynamic booking links" style) + User Profile */}
+        {/* Bottom Dark Status Card + beUI Circle Blur Light/Dark Switcher */}
         <div className="space-y-3 pt-4">
-          {/* Stacked Effect Promo/Status Card */}
-          <div className="relative">
-            <div className="mx-2 h-1.5 rounded-t-lg border border-b-0 border-neutral-200 bg-white/70" />
-            <div className="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-sm">
-              <div className="text-xs font-semibold text-neutral-900">
-                Đồng bộ Offline-First POS
+          <div className="rounded-2xl bg-gradient-to-br from-neutral-900 via-neutral-900 to-neutral-800 p-4 text-white shadow-md dark:from-neutral-800 dark:to-neutral-950 dark:border dark:border-neutral-700/60">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-extrabold tracking-tight">
+                POS.com Cloud Sync
               </div>
-              <p className="mt-1 text-[11px] leading-relaxed text-neutral-500">
-                Bán hàng ngay cả khi đứt cáp Internet với hàng đợi Idempotent
-                Outbox.
-              </p>
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  offlineMode ? "bg-amber-400" : "bg-emerald-400"
+                }`}
+              />
+            </div>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-neutral-300">
+              {offlineMode
+                ? `Đang ngoại tuyến • ${outboxQueue.length} đơn hàng chờ đồng bộ.`
+                : "Quản lý bán hàng, tồn kho và máy POS tập trung trong một nơi."}
+            </p>
 
-              {/* Mini visual preview block */}
-              <div className="mt-2.5 flex items-center justify-between rounded-lg bg-neutral-100 px-2.5 py-2">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`h-2 w-2 rounded-full ${
-                      offlineMode ? "bg-amber-500" : "bg-emerald-500"
-                    }`}
-                  />
-                  <span className="text-[11px] font-medium text-neutral-700">
-                    {offlineMode
-                      ? `Offline (${outboxQueue.length} đơn chờ)`
-                      : "Trực tuyến (Cloud Sync)"}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setOfflineMode((prev) => !prev)}
-                  className="rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-neutral-800 shadow-sm border border-neutral-200"
-                >
-                  Đổi
-                </button>
-              </div>
-
-              <div className="mt-2.5 flex items-center justify-between text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => navigateToTab("pos")}
-                  className="font-semibold text-neutral-900 hover:underline"
-                >
-                  Mở POS ngay
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void refreshWorkspaceData()}
-                  className="text-neutral-400 hover:text-neutral-700"
-                >
-                  Làm mới
-                </button>
-              </div>
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => navigateToTab("pos")}
+                className="rounded-full bg-white px-3 py-1.5 text-[11px] font-bold text-neutral-900 transition-transform hover:scale-[1.02]"
+              >
+                Mở POS ngay
+              </button>
+              <button
+                type="button"
+                onClick={() => setOfflineMode((prev) => !prev)}
+                className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-white/20"
+              >
+                {offlineMode ? "Bật mạng" : "Ngoại tuyến"}
+              </button>
             </div>
           </div>
 
-          {/* Quick Link to Standalone POS Terminal */}
-          <div className="pt-2">
+          {/* beUI Theme Toggle (Circle blur) */}
+          <ThemeSegmentedToggle start="bottom-left" />
+        </div>
+      </aside>
+
+      {/* ================================================================== */}
+      {/* RIGHT MAIN SHELL (TOP SEARCH BAR + CLEAN WORKSPACE CANVAS)         */}
+      {/* ================================================================== */}
+      <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
+        {/* Top Clean Header Bar (Shopify POS style) */}
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-neutral-200/70 bg-white/85 px-7 backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/85">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigateToTab("pos")}
+              className="flex items-center gap-3 rounded-full border border-neutral-200 bg-neutral-50/80 py-1.5 pl-3.5 pr-1.5 text-xs text-neutral-400 transition-colors hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800"
+            >
+              <Search className="h-3.5 w-3.5 text-neutral-400" />
+              <span className="w-40 text-left">Tìm kiếm nhanh...</span>
+              <span className="rounded-full bg-neutral-900 px-2.5 py-1 text-[10px] font-semibold text-white dark:bg-neutral-700">
+                ⌘ + Space
+              </span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2.5">
             <a
               href="/terminal"
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-neutral-800 hover:bg-neutral-100 hover:border-neutral-300 transition-colors shadow-sm"
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
             >
               <MonitorSmartphone className="h-3.5 w-3.5 text-emerald-600" />
-              <span className="truncate">Máy POS Terminal</span>
-              <ArrowUpRight className="h-3 w-3 ml-auto text-neutral-400" />
+              <span>Máy POS Terminal</span>
             </a>
-          </div>
 
-          {/* User Profile Footer */}
-          <div className="flex items-center justify-between rounded-lg px-2 py-1.5 hover:bg-neutral-200/60">
-            <div className="flex items-center gap-2.5 min-w-0">
+            <ThemeToggle variant="circle-blur" start="top-right" className="rounded-full" />
+
+            <button
+              type="button"
+              onClick={() => void refreshWorkspaceData()}
+              title="Làm mới dữ liệu"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </button>
+
+            <div className="flex items-center gap-2.5 rounded-full border border-neutral-200 bg-white py-1 pl-1.5 pr-3 dark:border-neutral-700 dark:bg-neutral-800">
               <div
                 suppressHydrationWarning
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-xs font-semibold text-white"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-xs font-bold text-white dark:bg-emerald-500"
               >
                 {(currentUser?.email?.[0] || "A").toUpperCase()}
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 leading-tight">
                 <div
                   suppressHydrationWarning
-                  className="truncate text-xs font-semibold text-neutral-900"
+                  className="truncate text-xs font-bold text-neutral-900 dark:text-white max-w-[140px]"
                 >
                   {currentUser?.full_name || "Quản trị viên Tổ chức"}
                 </div>
                 <div
                   suppressHydrationWarning
-                  className="truncate text-[11px] text-neutral-500"
+                  className="truncate text-[10px] text-neutral-500 dark:text-neutral-400"
                 >
                   pos.com/{currentOrg?.code?.toLowerCase() || "demo"}
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                title="Đăng xuất"
+                className="ml-1 rounded-full p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-700 dark:hover:text-white"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={handleLogout}
-              title="Đăng xuất"
-              className="rounded p-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-900"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-            </button>
           </div>
-        </div>
-      </aside>
+        </header>
 
-      {/* ================================================================== */}
-      {/* MAIN CONTENT AREA (CLEAN WHITE CANVAS)                             */}
-      {/* ================================================================== */}
-      <main className="flex-1 overflow-y-auto bg-white px-8 py-7">
+        <main className="flex-1 overflow-y-auto px-7 py-6">
         {/* Global Notification Bar */}
         {banner && (
           <div className="mb-6 flex items-center justify-between rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-800 shadow-sm">
@@ -3310,15 +3324,16 @@ export default function OrganizationWorkspace({
     </AnimatePresence>
   )}
       </main>
+      </div>
 
       {/* ================================================================== */}
-      {/* CLEAN CENTERED MODAL DIALOG (EXACT CAL.COM SCREENSHOT 5 STYLE)     */}
+      {/* CLEAN CENTERED MODAL DIALOG                                        */}
       {/* ================================================================== */}
       {activeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-[1px] p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/50 backdrop-blur-[2px] p-4">
           <BlurFade
             delay={0.01}
-            className="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-6 shadow-2xl"
+            className="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-6 shadow-2xl dark:border-neutral-800 dark:bg-neutral-900"
           >
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
