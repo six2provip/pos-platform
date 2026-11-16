@@ -79,9 +79,10 @@ interface CatalogProductsViewProps {
   formatMoney: (val: number | string) => string;
 }
 
-const DEFAULT_PAGE_SIZE = 8;
+const DEFAULT_PAGE_SIZE = 10;
 const ROW_HEIGHT = 54;
 const THEAD_HEIGHT = 38;
+const PAGINATION_FOOTER_HEIGHT = 52;
 type EditorTab = "general" | "images" | "variants";
 
 export function CatalogProductsView({
@@ -150,27 +151,37 @@ export function CatalogProductsView({
     });
   }, [products, search, filterCatId, filterStatus]);
 
-  // Dynamically compute rows per page so the table fits 100% of any screen resolution without scroll
+  // Dynamically compute rows per page from actual viewport space so the unified
+  // table+pagination card fills 100% of any screen resolution without page scroll
   useEffect(() => {
     const el = tableContainerRef.current;
     if (!el || editorOpen) return;
 
     const updatePageSize = () => {
-      const available = el.clientHeight - THEAD_HEIGHT;
-      if (available <= 0) return;
-      const next = Math.max(5, Math.floor(available / ROW_HEIGHT));
+      const rect = el.getBoundingClientRect();
+      const bottomPadding = 16; // matches <main> py-4 bottom padding
+      const availableCardHeight = Math.max(
+        el.clientHeight,
+        window.innerHeight - rect.top - bottomPadding
+      );
+      const availableRows =
+        availableCardHeight - THEAD_HEIGHT - PAGINATION_FOOTER_HEIGHT;
+      if (availableRows <= 0) return;
+      const next = Math.max(6, Math.min(20, Math.floor(availableRows / ROW_HEIGHT)));
       setPageSize((prev) => (prev === next ? prev : next));
     };
 
     updatePageSize();
+    const rafId = requestAnimationFrame(updatePageSize);
     const observer = new ResizeObserver(updatePageSize);
     observer.observe(el);
     window.addEventListener("resize", updatePageSize);
     return () => {
+      cancelAnimationFrame(rafId);
       observer.disconnect();
       window.removeEventListener("resize", updatePageSize);
     };
-  }, [editorOpen]);
+  }, [editorOpen, filtered.length]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -981,7 +992,7 @@ export function CatalogProductsView({
   // RESPONSIVE FIT-TO-VIEWPORT TABLE VIEW + BEUI ANIMATED PAGINATION (NO SCROLL)
   // ===========================================================================
   return (
-    <div className="flex flex-1 min-h-0 flex-col gap-3">
+    <div className="flex h-full flex-1 min-h-0 flex-col gap-3">
       {/* Compact Header */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
@@ -1041,31 +1052,32 @@ export function CatalogProductsView({
         </select>
       </div>
 
-      {/* Fixed-layout Table: dynamically fills viewport height with strict truncation */}
+      {/* Unified Table + Pinned Pagination Section: fills viewport height, zero jumping */}
       <div
         ref={tableContainerRef}
-        className="flex-1 min-h-0 overflow-visible rounded-2xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
+        className="flex flex-1 min-h-0 flex-col justify-between overflow-visible rounded-2xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
       >
-        <table className="w-full table-fixed text-left text-xs">
-          <thead>
-            <tr className="border-b border-neutral-200/80 bg-neutral-50/70 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-400">
-              <th className="w-[28%] px-4 py-2.5">Sản phẩm</th>
-              <th className="w-[24%] px-3 py-2.5">Danh mục</th>
-              <th className="w-[17%] px-3 py-2.5">Biến thể</th>
-              <th className="w-[14%] px-3 py-2.5">Khoảng giá</th>
-              <th className="w-[9%] whitespace-nowrap px-3 py-2.5">Trạng thái</th>
-              <th className="w-[8%] whitespace-nowrap px-3 py-2.5 text-right">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {pagedProducts.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-xs text-neutral-500">
-                  Không có sản phẩm nào phù hợp.
-                </td>
+        <div className="min-h-0 flex-1 overflow-visible">
+          <table className="w-full table-fixed text-left text-xs">
+            <thead>
+              <tr className="border-b border-neutral-200/80 bg-neutral-50/70 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-400">
+                <th className="w-[28%] px-4 py-2.5">Sản phẩm</th>
+                <th className="w-[24%] px-3 py-2.5">Danh mục</th>
+                <th className="w-[17%] px-3 py-2.5">Biến thể</th>
+                <th className="w-[14%] px-3 py-2.5">Khoảng giá</th>
+                <th className="w-[9%] whitespace-nowrap px-3 py-2.5">Trạng thái</th>
+                <th className="w-[8%] whitespace-nowrap px-3 py-2.5 text-right">Thao tác</th>
               </tr>
-            ) : (
-              pagedProducts.map((p, rowIdx) => {
+            </thead>
+            <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+              {pagedProducts.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center text-xs text-neutral-500">
+                    Không có sản phẩm nào phù hợp.
+                  </td>
+                </tr>
+              ) : (
+                pagedProducts.map((p, rowIdx) => {
                 const prices = (p.variants || []).map((v) => Number(v.default_price || 0));
                 const minPrice = prices.length ? Math.min(...prices) : 0;
                 const maxPrice = prices.length ? Math.max(...prices) : 0;
@@ -1255,21 +1267,22 @@ export function CatalogProductsView({
                 );
               })
             )}
-          </tbody>
-        </table>
-      </div>
+            </tbody>
+          </table>
+        </div>
 
-      {/* Footer with beUI Animated Pagination */}
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-white px-4 py-2 dark:border-neutral-800 dark:bg-neutral-900">
-        <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
-          Trang <strong className="text-neutral-900 dark:text-white">{safePage}</strong> / {totalPages} • Tổng {filtered.length} sản phẩm
-        </span>
+        {/* Pinned Footer inside same card with beUI Animated Pagination */}
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-200/80 bg-neutral-50/50 px-4 py-2.5 dark:border-neutral-800 dark:bg-neutral-900/60">
+          <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+            Trang <strong className="text-neutral-900 dark:text-white">{safePage}</strong> / {totalPages} • Tổng {filtered.length} sản phẩm
+          </span>
 
-        <AnimatedPagination
-          totalPages={totalPages}
-          page={safePage}
-          onPageChange={setPage}
-        />
+          <AnimatedPagination
+            totalPages={totalPages}
+            page={safePage}
+            onPageChange={setPage}
+          />
+        </div>
       </div>
     </div>
   );
