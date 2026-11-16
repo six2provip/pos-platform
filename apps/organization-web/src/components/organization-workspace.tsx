@@ -2239,44 +2239,8 @@ export default function OrganizationWorkspace({
           </nav>
         </div>
 
-        {/* Bottom Dark Status Card + beUI Circle Blur Light/Dark Switcher + User Profile */}
+        {/* Bottom beUI Circle Blur Light/Dark Switcher + User Profile */}
         <div className="space-y-2.5 pt-3">
-          <div className="rounded-2xl bg-gradient-to-br from-neutral-900 via-neutral-900 to-neutral-800 p-3.5 text-white shadow-md dark:from-neutral-800 dark:to-neutral-950 dark:border dark:border-neutral-700/60">
-            <div className="flex items-center justify-between">
-              <div className="text-xs font-extrabold tracking-tight">
-                POS.com Cloud Sync
-              </div>
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  offlineMode ? "bg-amber-400" : "bg-emerald-400"
-                }`}
-              />
-            </div>
-            <p className="mt-1 text-[11px] leading-relaxed text-neutral-300">
-              {offlineMode
-                ? `Đang ngoại tuyến • ${outboxQueue.length} đơn hàng chờ đồng bộ.`
-                : "Quản lý bán hàng, tồn kho và máy POS tập trung trong một nơi."}
-            </p>
-
-            <div className="mt-2.5 flex items-center gap-2">
-              <a
-                href="/terminal"
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-full bg-white px-3 py-1.5 text-[11px] font-bold text-neutral-900 transition-transform hover:scale-[1.02]"
-              >
-                Mở Máy POS
-              </a>
-              <button
-                type="button"
-                onClick={() => setOfflineMode((prev) => !prev)}
-                className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-white/20"
-              >
-                {offlineMode ? "Bật mạng" : "Ngoại tuyến"}
-              </button>
-            </div>
-          </div>
-
           {/* beUI Theme Toggle (Circle blur) */}
           <ThemeSegmentedToggle start="bottom-left" />
 
