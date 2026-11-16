@@ -102,7 +102,6 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   Map<String, dynamic>? _device;
   Map<String, dynamic>? _store;
   Map<String, dynamic>? _org;
-  String? _deviceToken;
 
   // Security & Offline Guard
   bool _isRevoked = false;
@@ -162,7 +161,6 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
       _device = jsonDecode(devStr) as Map<String, dynamic>;
       _store = jsonDecode(storeStr) as Map<String, dynamic>;
       if (orgStr != null) _org = jsonDecode(orgStr) as Map<String, dynamic>;
-      _deviceToken = token;
       _api.deviceToken = token;
       _api.organizationId = _org?['id']?.toString();
       _api.storeId = _store?['id']?.toString();
@@ -249,7 +247,6 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
             _device = dev;
             _store = st;
             _org = org;
-            _deviceToken = token;
             _isPaired = true;
           });
 
@@ -655,7 +652,6 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
       _device = null;
       _store = null;
       _org = null;
-      _deviceToken = null;
       _api.deviceToken = null;
       _variants = [];
       _orders = [];
