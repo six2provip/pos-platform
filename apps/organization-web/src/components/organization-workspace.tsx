@@ -2360,6 +2360,7 @@ export default function OrganizationWorkspace({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.12, ease: "easeOut" }}
+              className="flex flex-1 flex-col min-h-0"
             >
               {/* ================================================================ */}
               {/* TAB 1: OVERVIEW (CAL.COM TEAMS HERO + 6-CARD FEATURE GRID)       */}

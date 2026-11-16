@@ -949,7 +949,7 @@ export function CatalogProductsView({
         transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
         onSubmit={handleSaveProduct}
         noValidate
-        className="flex h-full flex-1 min-h-0 flex-col gap-3"
+        className="flex h-full flex-1 min-h-0 flex-col gap-3 overflow-hidden"
       >
         {/* Section 1: Clean Page Title Header */}
         <div className="flex shrink-0 items-center justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-white px-5 py-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
@@ -1196,11 +1196,11 @@ export function CatalogProductsView({
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 8 }}
                 transition={{ duration: 0.16 }}
-                className="grid grid-cols-1 gap-5 lg:grid-cols-12"
+                className="grid grid-cols-1 gap-5 lg:h-full lg:min-h-0 lg:grid-cols-12"
               >
                 {/* Left 3 cols: Master Variant List (compact width, clean divider) */}
-                <div className="flex flex-col lg:col-span-3 lg:border-r lg:border-neutral-200/70 lg:pr-5 dark:lg:border-neutral-800">
-                  <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="flex flex-col lg:col-span-3 lg:h-full lg:min-h-0 lg:border-r lg:border-neutral-200/70 lg:pr-5 dark:lg:border-neutral-800">
+                  <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
                     <div>
                       <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
                         Biến thể ({variants.length})
@@ -1219,7 +1219,7 @@ export function CatalogProductsView({
                     </button>
                   </div>
 
-                  <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-[340px] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto pr-1">
                     <AnimatePresence initial={false}>
                       {variants.map((v, idx) => {
                         const isSelected = idx === safeVarIdx;
@@ -1272,7 +1272,7 @@ export function CatalogProductsView({
                 </div>
 
                 {/* Right 9 cols: Detail Form for Active Variant (clean flat surface) */}
-                <div className="lg:col-span-9 lg:pl-1">
+                <div className="lg:col-span-9 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pl-1 lg:pr-1">
                   {activeVar && (
                     <AnimatePresence mode="wait">
                       <motion.div
@@ -1702,7 +1702,7 @@ export function CatalogProductsView({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-      className="flex h-full flex-1 min-h-0 flex-col gap-3"
+      className="flex h-full flex-1 min-h-0 flex-col gap-3 overflow-hidden"
     >
       {/* Compact Header */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
