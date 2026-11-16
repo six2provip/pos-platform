@@ -198,7 +198,7 @@ export function OverflowActions({
       <motion.div
         layout
         transition={transition}
-        className={`relative inline-flex items-center overflow-hidden rounded-full border border-neutral-200/90 bg-neutral-900/95 shadow-2xl backdrop-blur-md dark:border-neutral-700 dark:bg-neutral-900/95 ${TRACK_SIZE_CLASS[size]}`}
+        className={`relative inline-flex items-center overflow-hidden rounded-full border border-neutral-200/90 bg-white/95 shadow-[0_12px_36px_rgba(0,0,0,0.12)] backdrop-blur-md dark:border-neutral-700/80 dark:bg-neutral-900/95 dark:shadow-2xl ${TRACK_SIZE_CLASS[size]}`}
       >
         <motion.div
           layout
@@ -309,10 +309,10 @@ function ActionButton({
 
   const variantCls =
     item.variant === "primary"
-      ? "bg-white text-neutral-900 font-bold hover:bg-neutral-100"
+      ? "bg-neutral-900 text-white font-bold hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
       : item.variant === "danger"
-        ? "bg-rose-500/20 text-rose-200 font-semibold hover:bg-rose-500/30"
-        : "bg-white/10 text-white font-semibold hover:bg-white/20";
+        ? "bg-rose-50 text-rose-600 font-semibold hover:bg-rose-100 dark:bg-rose-500/20 dark:text-rose-200 dark:hover:bg-rose-500/30"
+        : "bg-neutral-100 text-neutral-800 font-semibold hover:bg-neutral-200/80 dark:bg-white/10 dark:text-white dark:hover:bg-white/20";
 
   return (
     <motion.span
@@ -349,3 +349,4 @@ function ActionButton({
     </motion.span>
   );
 }
+
