@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -80,7 +81,8 @@ class PosTerminalRoot extends StatefulWidget {
 }
 
 class _PosTerminalRootState extends State<PosTerminalRoot> {
-  static const String _defaultServerUrl = 'http://192.168.1.14:13000';
+  static String get _defaultServerUrl =>
+      kIsWeb ? 'http://127.0.0.1:18000' : 'http://192.168.1.14:13000';
   static const int _maxOfflineOrders = 30;
   static const int _maxOfflineAmount = 5000000;
   static const int _defaultGraceSeconds = 7200;

@@ -1,12 +1,17 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import 'drift_schema.dart';
 
-/// Local SQLite database manager for Offline-First POS Mobile.
+/// Local SQLite (Android/iOS) + SharedPreferences (Web Preview) storage manager.
 class LocalPosDb {
   LocalPosDb._();
   static final LocalPosDb instance = LocalPosDb._();
+
+  static const String _webCatalogKey = 'pos_web_catalog_variants';
+  static const String _webOutboxKey = 'pos_web_outbox_events';
 
   Database? _db;
 
@@ -40,6 +45,12 @@ class LocalPosDb {
     String organizationId,
     List<Map<String, dynamic>> items,
   ) async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_webCatalogKey, jsonEncode(items));
+      return;
+    }
+
     final db = await database;
     final now = DateTime.now().toIso8601String();
     await db.transaction((txn) async {
@@ -81,6 +92,14 @@ class LocalPosDb {
   }
 
   Future<List<Map<String, dynamic>>> loadCatalogVariants() async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_webCatalogKey);
+      if (raw == null || raw.isEmpty) return [];
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+
     final db = await database;
     final rows = await db.rawQuery('''
       SELECT v.id AS variantId, v.product_id AS productId, v.variant_name AS variantName,
@@ -118,10 +137,6 @@ class LocalPosDb {
     required int changeAmount,
     required List<Map<String, dynamic>> items,
   }) async {
-    final db = await database;
-    final countRows = await db.rawQuery('SELECT COUNT(*) AS cnt FROM local_outbox_events');
-    final seq = (Sqflite.firstIntValue(countRows) ?? 0) + 1;
-
     final payload = {
       'client_order_id': clientOrderId,
       'currency_code': 'VND',
@@ -134,6 +149,38 @@ class LocalPosDb {
         }
       ],
     };
+
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      final outbox = await loadPendingOutboxEvents();
+      outbox.add({
+        'event_id': eventId,
+        'event_type': 'order.created',
+        'idempotency_key': idempotencyKey,
+        'occurred_at': occurredAt,
+        'total_amount': totalAmount,
+        'payload': payload,
+      });
+      await prefs.setString(_webOutboxKey, jsonEncode(outbox));
+
+      final catalog = await loadCatalogVariants();
+      for (final item in items) {
+        final vid = item['product_variant_id']?.toString() ?? '';
+        final qty = (double.tryParse(item['quantity']?.toString() ?? '0') ?? 0).round();
+        for (final v in catalog) {
+          if (v['variantId'] == vid && qty > 0) {
+            final curr = (v['onHand'] as int?) ?? 0;
+            v['onHand'] = curr > qty ? curr - qty : 0;
+          }
+        }
+      }
+      await prefs.setString(_webCatalogKey, jsonEncode(catalog));
+      return;
+    }
+
+    final db = await database;
+    final countRows = await db.rawQuery('SELECT COUNT(*) AS cnt FROM local_outbox_events');
+    final seq = (Sqflite.firstIntValue(countRows) ?? 0) + 1;
 
     await db.transaction((txn) async {
       await txn.insert(
@@ -193,6 +240,14 @@ class LocalPosDb {
   }
 
   Future<List<Map<String, dynamic>>> loadPendingOutboxEvents() async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_webOutboxKey);
+      if (raw == null || raw.isEmpty) return [];
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+
     final db = await database;
     final rows = await db.query(
       'local_outbox_events',
@@ -214,6 +269,15 @@ class LocalPosDb {
 
   Future<void> markOutboxEventsAccepted(List<String> eventIds) async {
     if (eventIds.isEmpty) return;
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      final outbox = await loadPendingOutboxEvents();
+      final idSet = eventIds.toSet();
+      final remaining = outbox.where((e) => !idSet.contains(e['event_id']?.toString())).toList();
+      await prefs.setString(_webOutboxKey, jsonEncode(remaining));
+      return;
+    }
+
     final db = await database;
     final now = DateTime.now().toIso8601String();
     await db.transaction((txn) async {
@@ -229,6 +293,13 @@ class LocalPosDb {
   }
 
   Future<void> clearAll() async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_webCatalogKey);
+      await prefs.remove(_webOutboxKey);
+      return;
+    }
+
     final db = await database;
     await db.transaction((txn) async {
       await txn.delete('local_product_variants');
