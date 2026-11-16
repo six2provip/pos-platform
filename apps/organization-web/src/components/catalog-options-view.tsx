@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   Check,
@@ -42,6 +42,7 @@ export interface OptionGroupRecord {
 }
 
 interface DraftOptionItem {
+  key: string;
   name: string;
   price_delta: string;
   is_default: boolean;
@@ -73,13 +74,20 @@ export function CatalogOptionsView({
   const [submitted, setSubmitted] = useState(false);
 
   const [name, setName] = useState("");
-  const [code, setCode] = useState("");
-  const [description, setDescription] = useState("");
   const [selectionMode, setSelectionMode] = useState<"single" | "multiple">("single");
   const [isRequired, setIsRequired] = useState(false);
   const [minSelections, setMinSelections] = useState("0");
   const [maxSelections, setMaxSelections] = useState("");
   const [items, setItems] = useState<DraftOptionItem[]>([]);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setModalOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [modalOpen]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -87,7 +95,6 @@ export function CatalogOptionsView({
     return optionGroups.filter(
       (g) =>
         g.name.toLowerCase().includes(q) ||
-        (g.code || "").toLowerCase().includes(q) ||
         g.items.some((i) => i.name.toLowerCase().includes(q))
     );
   }, [optionGroups, search]);
@@ -96,14 +103,18 @@ export function CatalogOptionsView({
     setEditingGroup(null);
     setSubmitted(false);
     setName("");
-    setCode("");
-    setDescription("");
     setSelectionMode("single");
     setIsRequired(false);
     setMinSelections("0");
     setMaxSelections("");
     setItems([
-      { name: "Lựa chọn 1", price_delta: "0", is_default: true, status: "active" },
+      {
+        key: `opt-${Date.now()}-0`,
+        name: "Lựa chọn 1",
+        price_delta: "0",
+        is_default: true,
+        status: "active",
+      },
     ]);
     setModalOpen(true);
   };
@@ -112,8 +123,6 @@ export function CatalogOptionsView({
     setEditingGroup(grp);
     setSubmitted(false);
     setName(grp.name);
-    setCode(grp.code || "");
-    setDescription(grp.description || "");
     setSelectionMode(grp.selection_mode);
     setIsRequired(grp.is_required);
     setMinSelections(String(grp.min_selections ?? 0));
@@ -124,13 +133,22 @@ export function CatalogOptionsView({
     );
     setItems(
       grp.items.length > 0
-        ? grp.items.map((it) => ({
+        ? grp.items.map((it, i) => ({
+            key: it.id || `opt-${i}`,
             name: it.name,
             price_delta: String(Math.round(Number(it.price_delta || 0))),
             is_default: it.is_default,
             status: it.status || "active",
           }))
-        : [{ name: "Lựa chọn 1", price_delta: "0", is_default: false, status: "active" }]
+        : [
+            {
+              key: `opt-${Date.now()}-0`,
+              name: "Lựa chọn 1",
+              price_delta: "0",
+              is_default: false,
+              status: "active",
+            },
+          ]
     );
     setModalOpen(true);
   };
@@ -139,6 +157,7 @@ export function CatalogOptionsView({
     setItems((prev) => [
       ...prev,
       {
+        key: `opt-${Date.now()}-${prev.length}`,
         name: "",
         price_delta: "0",
         is_default: false,
@@ -201,9 +220,7 @@ export function CatalogOptionsView({
     setSaving(true);
     try {
       const payload = {
-        code: code.trim() || undefined,
         name: name.trim(),
-        description: description.trim() || undefined,
         selection_mode: selectionMode,
         is_required: isRequired,
         min_selections: minSel,
@@ -274,14 +291,15 @@ export function CatalogOptionsView({
           </p>
         </div>
 
-        <button
+        <motion.button
           type="button"
+          whileTap={{ scale: 0.97 }}
           onClick={openCreate}
           className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
         >
           <Plus className="h-3.5 w-3.5" />
           Thêm Nhóm Tùy Chọn
-        </button>
+        </motion.button>
       </div>
 
       {/* Search Bar */}
@@ -292,7 +310,7 @@ export function CatalogOptionsView({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Tìm tên nhóm tùy chọn, mã nhóm, tên topping..."
+            placeholder="Tìm tên nhóm tùy chọn, tên topping..."
             className="w-full bg-transparent text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-white"
           />
         </div>
@@ -305,9 +323,9 @@ export function CatalogOptionsView({
             <tr className="border-b border-neutral-200/80 bg-neutral-50/70 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-400">
               <th className="w-[24%] px-4 py-2.5">Nhóm tùy chọn</th>
               <th className="w-[15%] px-3 py-2.5">Chế độ</th>
-              <th className="w-[14%] px-3 py-2.5">Quy tắc</th>
-              <th className="w-[33%] px-3 py-2.5">Các lựa chọn con</th>
-              <th className="w-[14%] px-3 py-2.5 text-right">Thao tác</th>
+              <th className="w-[15%] px-3 py-2.5">Quy tắc</th>
+              <th className="w-[34%] px-3 py-2.5">Các lựa chọn con</th>
+              <th className="w-[12%] px-3 py-2.5 text-right">Thao tác</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -319,9 +337,16 @@ export function CatalogOptionsView({
                 </td>
               </tr>
             ) : (
-              filtered.map((grp) => (
-                <tr
+              filtered.map((grp, idx) => (
+                <motion.tr
                   key={grp.id}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    duration: 0.2,
+                    delay: Math.min(idx * 0.025, 0.2),
+                    ease: [0.16, 1, 0.3, 1],
+                  }}
                   className="transition-colors hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40"
                 >
                   <td className="px-4 py-3">
@@ -331,11 +356,6 @@ export function CatalogOptionsView({
                     >
                       {grp.name}
                     </div>
-                    {grp.code && (
-                      <div className="truncate text-[10px] font-medium text-neutral-400">
-                        {grp.code}
-                      </div>
-                    )}
                   </td>
                   <td className="px-3 py-3">
                     <span
@@ -345,7 +365,7 @@ export function CatalogOptionsView({
                           : "bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300"
                       }`}
                     >
-                      {grp.selection_mode === "single" ? "Chọn 1" : "Chọn nhiều"}
+                      {grp.selection_mode === "single" ? "Chỉ chọn 1" : "Chọn nhiều"}
                     </span>
                   </td>
                   <td className="px-3 py-3">
@@ -362,8 +382,8 @@ export function CatalogOptionsView({
                       <span className="text-[10px] text-neutral-400">
                         {grp.selection_mode === "single"
                           ? "Tối đa 1"
-                          : `Min ${grp.min_selections} · Max ${
-                              grp.max_selections ?? "∞"
+                          : `Tối thiểu ${grp.min_selections} · Tối đa ${
+                              grp.max_selections ?? "Không GH"
                             }`}
                       </span>
                     </div>
@@ -375,9 +395,9 @@ export function CatalogOptionsView({
                           key={it.id || i}
                           className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
                         >
-                          <span className="max-w-[90px] truncate">{it.name}</span>
+                          <span className="max-w-[95px] truncate">{it.name}</span>
                           {Number(it.price_delta) > 0 && (
-                            <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                            <span className="tabular-nums font-bold text-emerald-600 dark:text-emerald-400">
                               +{formatPrice(it.price_delta)}
                             </span>
                           )}
@@ -410,14 +430,14 @@ export function CatalogOptionsView({
                       </button>
                     </div>
                   </td>
-                </tr>
+                </motion.tr>
               ))
             )}
           </tbody>
         </table>
       </div>
 
-      {/* Create / Edit Option Group Modal */}
+      {/* Horizontal Split Modal (beUI Spring + Blur Backdrop) */}
       <AnimatePresence>
         {modalOpen && (
           <>
@@ -425,77 +445,97 @@ export function CatalogOptionsView({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
               onClick={() => setModalOpen(false)}
-              className="fixed inset-0 z-[80] bg-black/25 backdrop-blur-sm"
+              className="fixed inset-0 z-[80] bg-black/25 [backdrop-filter:blur(10px)_saturate(140%)] [-webkit-backdrop-filter:blur(10px)_saturate(140%)]"
             />
             <div className="pointer-events-none fixed inset-4 z-[81] flex items-center justify-center">
               <motion.form
                 onSubmit={handleSave}
                 noValidate
-                initial={{ opacity: 0, y: 18, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 12, scale: 0.97 }}
-                transition={{ type: "spring", stiffness: 420, damping: 38, mass: 0.55 }}
-                className="pointer-events-auto flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950"
+                initial={{ opacity: 0, y: 20, scale: 0.96, filter: "blur(4px)" }}
+                animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+                exit={{
+                  opacity: 0,
+                  y: 16,
+                  scale: 0.97,
+                  filter: "blur(4px)",
+                  transition: { duration: 0.16, ease: [0.16, 1, 0.3, 1] },
+                }}
+                transition={{
+                  type: "spring",
+                  stiffness: 420,
+                  damping: 38,
+                  mass: 0.55,
+                }}
+                className="pointer-events-auto flex max-h-[86vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-neutral-200/90 bg-neutral-100/95 p-1.5 shadow-2xl dark:border-neutral-700/80 dark:bg-neutral-900/95"
               >
-                <div className="flex items-center justify-between border-b border-neutral-200/80 px-6 py-4 dark:border-neutral-800">
+                {/* Outer Modal Header */}
+                <div className="flex items-center justify-between px-4 py-2.5">
                   <div>
-                    <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                    <h3 className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
                       {editingGroup
                         ? `Chỉnh sửa nhóm: ${editingGroup.name}`
                         : "Tạo Nhóm Tùy Chọn Mới"}
                     </h3>
-                    <p className="text-[11px] text-neutral-500">
-                      Thiết lập luật chọn 1 / chọn nhiều, bắt buộc / không bắt buộc và mức giá cộng thêm.
-                    </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setModalOpen(false)}
-                    className="grid h-8 w-8 place-items-center rounded-full text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800"
+                    className="grid h-7 w-7 place-items-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-200/70 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
                   >
                     <X className="h-4 w-4" />
                   </button>
                 </div>
 
-                <div className="flex-1 space-y-5 overflow-y-auto p-6">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <BeInput
-                      className="sm:col-span-2"
-                      label="Tên nhóm tùy chọn *"
-                      value={name}
-                      onChange={setName}
-                      placeholder="VD: Chọn Topping, Mức đường..."
-                      success={Boolean(name.trim())}
-                      error={
-                        submitted && !name.trim()
-                          ? "Vui lòng nhập tên nhóm."
-                          : undefined
-                      }
-                    />
-                    <BeInput
-                      label="Mã nhóm (tùy chọn)"
-                      value={code}
-                      onChange={setCode}
-                      placeholder="VD: TOPPING"
-                    />
-                  </div>
+                {/* Inner Horizontal 2-Column Card */}
+                <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-[20px] border border-neutral-200/70 bg-white dark:border-neutral-800 dark:bg-neutral-950">
+                  <div className="grid flex-1 min-h-0 grid-cols-1 gap-6 overflow-y-auto p-6 lg:grid-cols-12">
+                    {/* Left 5 cols: Group Info & Rules */}
+                    <div className="space-y-4 lg:col-span-5 lg:border-r lg:border-neutral-200/70 lg:pr-6 dark:lg:border-neutral-800">
+                      <div>
+                        <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
+                          Thông tin & Quy tắc
+                        </h4>
+                        <p className="text-[11px] text-neutral-400">
+                          Thiết lập cách khách hàng hoặc thu ngân chọn tùy chọn trên POS.
+                        </p>
+                      </div>
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <BeSelect
-                      label="Chế độ chọn"
-                      value={selectionMode}
-                      onValueChange={(val) =>
-                        setSelectionMode(val as "single" | "multiple")
-                      }
-                      options={[
-                        { value: "single", label: "Chỉ chọn 1 (Radio)" },
-                        { value: "multiple", label: "Chọn nhiều (Checkbox)" },
-                      ]}
-                    />
+                      <BeInput
+                        label="Tên nhóm tùy chọn *"
+                        value={name}
+                        onChange={setName}
+                        placeholder="VD: Chọn Topping, Mức đường..."
+                        success={Boolean(name.trim())}
+                        error={
+                          submitted && !name.trim()
+                            ? "Vui lòng nhập tên nhóm."
+                            : undefined
+                        }
+                      />
 
-                    <div className="flex items-end">
-                      <div className="flex h-10 w-full items-center justify-between rounded-xl border border-neutral-300 bg-white px-3.5 dark:border-neutral-700 dark:bg-neutral-800">
+                      <BeSelect
+                        label="Chế độ chọn"
+                        value={selectionMode}
+                        onValueChange={(val) =>
+                          setSelectionMode(val as "single" | "multiple")
+                        }
+                        options={[
+                          { value: "single", label: "Chỉ chọn 1" },
+                          { value: "multiple", label: "Chọn nhiều" },
+                        ]}
+                      />
+
+                      <div className="flex items-center justify-between rounded-xl bg-neutral-50/90 px-3.5 py-2.5 dark:bg-neutral-900">
+                        <div>
+                          <div className="text-xs font-semibold text-neutral-900 dark:text-white">
+                            Bắt buộc chọn
+                          </div>
+                          <div className="text-[11px] text-neutral-400">
+                            Phải chọn trước khi thêm món vào đơn
+                          </div>
+                        </div>
                         <BeSwitch
                           checked={isRequired}
                           onCheckedChange={(checked) => {
@@ -504,129 +544,150 @@ export function CatalogOptionsView({
                               setMinSelections("1");
                             }
                           }}
-                          label="Bắt buộc chọn"
-                          className="w-full"
+                          ariaLabel="Bắt buộc chọn"
                         />
                       </div>
-                    </div>
 
-                    {selectionMode === "multiple" ? (
-                      <div className="grid grid-cols-2 gap-2">
-                        <BeInput
-                          type="number"
-                          label="Tối thiểu"
-                          value={minSelections}
-                          onChange={setMinSelections}
-                          placeholder="0"
-                        />
-                        <BeInput
-                          type="number"
-                          label="Tối đa"
-                          value={maxSelections}
-                          onChange={setMaxSelections}
-                          placeholder="Không GH"
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex items-end">
-                        <div className="flex h-10 w-full items-center rounded-xl bg-neutral-50 px-3 text-[11px] text-neutral-500 dark:bg-neutral-900">
-                          Chế độ chọn 1 tự động giới hạn tối đa 1 lựa chọn.
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Option Items List */}
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-neutral-900 dark:text-white">
-                        Danh sách lựa chọn ({items.length})
-                      </span>
-                      <button
-                        type="button"
-                        onClick={addDraftItem}
-                        className="inline-flex items-center gap-1 rounded-full bg-neutral-900 px-3 py-1 text-[11px] font-bold text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900"
-                      >
-                        <Plus className="h-3 w-3" />
-                        Thêm lựa chọn
-                      </button>
-                    </div>
-
-                    <div className="space-y-2">
-                      {items.map((it, idx) => (
-                        <div
-                          key={idx}
-                          className="grid grid-cols-12 items-center gap-2 rounded-xl bg-neutral-50/80 p-2 dark:bg-neutral-900/60"
-                        >
-                          <div className="col-span-5">
-                            <BeInput
-                              value={it.name}
-                              onChange={(val) =>
-                                updateDraftItem(idx, { name: val })
-                              }
-                              placeholder={`Lựa chọn #${idx + 1}`}
-                              fieldClassName="h-9 rounded-lg"
-                            />
-                          </div>
-                          <div className="col-span-4">
+                      <AnimatePresence initial={false}>
+                        {selectionMode === "multiple" && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.18 }}
+                            className="grid grid-cols-2 gap-3 overflow-hidden pt-1"
+                          >
                             <BeInput
                               type="number"
-                              value={it.price_delta}
-                              onChange={(val) =>
-                                updateDraftItem(idx, { price_delta: val })
-                              }
-                              placeholder="Giá cộng thêm (0)"
-                              fieldClassName="h-9 rounded-lg"
+                              label="Chọn tối thiểu"
+                              value={minSelections}
+                              onChange={setMinSelections}
+                              placeholder="0"
                             />
-                          </div>
-                          <div className="col-span-2 flex items-center justify-center">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateDraftItem(idx, { is_default: !it.is_default })
-                              }
-                              className={`rounded-full px-2.5 py-1 text-[10px] font-bold transition-colors ${
-                                it.is_default
-                                  ? "bg-blue-600 text-white"
-                                  : "bg-neutral-200 text-neutral-600 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-300"
-                              }`}
-                            >
-                              {it.is_default ? "Mặc định ✓" : "Mặc định"}
-                            </button>
-                          </div>
-                          <div className="col-span-1 text-right">
-                            {items.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => removeDraftItem(idx)}
-                                className="rounded-lg p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                          </div>
+                            <BeInput
+                              type="number"
+                              label="Chọn tối đa"
+                              value={maxSelections}
+                              onChange={setMaxSelections}
+                              placeholder="Không giới hạn"
+                            />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+
+                    {/* Right 7 cols: Scrollable Option Items List */}
+                    <div className="flex min-h-0 flex-col lg:col-span-7">
+                      <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
+                        <div>
+                          <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
+                            Danh sách lựa chọn ({items.length})
+                          </h4>
+                          <p className="text-[11px] text-neutral-400">
+                            Thêm tên lựa chọn và giá cộng thêm (nhập 0 nếu miễn phí).
+                          </p>
                         </div>
-                      ))}
+                        <motion.button
+                          type="button"
+                          whileTap={{ scale: 0.96 }}
+                          onClick={addDraftItem}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-neutral-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900"
+                        >
+                          <Plus className="h-3 w-3" />
+                          Thêm lựa chọn
+                        </motion.button>
+                      </div>
+
+                      <div className="flex-1 space-y-2 overflow-y-auto pr-1 max-h-[340px]">
+                        <AnimatePresence initial={false}>
+                          {items.map((it, idx) => (
+                            <motion.div
+                              key={it.key}
+                              layout
+                              initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                              className="grid grid-cols-12 items-center gap-2 rounded-xl bg-neutral-50/90 p-2 dark:bg-neutral-900/70"
+                            >
+                              <div className="col-span-5">
+                                <BeInput
+                                  value={it.name}
+                                  onChange={(val) =>
+                                    updateDraftItem(idx, { name: val })
+                                  }
+                                  placeholder={`Tên lựa chọn #${idx + 1}`}
+                                  error={
+                                    submitted && !it.name.trim()
+                                      ? true
+                                      : undefined
+                                  }
+                                  fieldClassName="h-9 rounded-lg"
+                                />
+                              </div>
+                              <div className="col-span-4">
+                                <BeInput
+                                  type="number"
+                                  value={it.price_delta}
+                                  onChange={(val) =>
+                                    updateDraftItem(idx, { price_delta: val })
+                                  }
+                                  placeholder="Giá + thêm"
+                                  fieldClassName="h-9 rounded-lg tabular-nums"
+                                />
+                              </div>
+                              <div className="col-span-2 flex items-center justify-center">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateDraftItem(idx, { is_default: !it.is_default })
+                                  }
+                                  className={`rounded-full px-2.5 py-1 text-[10px] font-bold transition-colors ${
+                                    it.is_default
+                                      ? "bg-blue-600 text-white shadow-xs"
+                                      : "bg-neutral-200/80 text-neutral-600 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-300"
+                                  }`}
+                                >
+                                  {it.is_default ? "Mặc định ✓" : "Mặc định"}
+                                </button>
+                              </div>
+                              <div className="col-span-1 text-right">
+                                {items.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeDraftItem(idx)}
+                                    className="rounded-lg p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center justify-end gap-2 border-t border-neutral-200/80 px-6 py-3.5 dark:border-neutral-800">
-                  <button
-                    type="button"
-                    onClick={() => setModalOpen(false)}
-                    className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"
-                  >
-                    Hủy
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    {saving ? "Đang lưu..." : "Lưu Nhóm Tùy Chọn"}
-                  </button>
+                  {/* Modal Footer */}
+                  <div className="flex shrink-0 items-center justify-end gap-2 border-t border-neutral-200/80 px-6 py-3.5 dark:border-neutral-800">
+                    <button
+                      type="button"
+                      onClick={() => setModalOpen(false)}
+                      className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"
+                    >
+                      Hủy
+                    </button>
+                    <motion.button
+                      type="submit"
+                      whileTap={{ scale: 0.97 }}
+                      disabled={saving}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      {saving ? "Đang lưu..." : "Lưu Nhóm Tùy Chọn"}
+                    </motion.button>
+                  </div>
                 </div>
               </motion.form>
             </div>
