@@ -1057,7 +1057,10 @@ export function CatalogProductsView({
         ref={tableContainerRef}
         className="flex flex-1 min-h-0 flex-col justify-between overflow-visible rounded-2xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
       >
-        <div className="min-h-0 flex-1 overflow-visible">
+        <div
+          style={{ minHeight: THEAD_HEIGHT + pageSize * ROW_HEIGHT }}
+          className="min-h-0 flex-1 overflow-visible"
+        >
           <table className="w-full table-fixed text-left text-xs">
             <thead>
               <tr className="border-b border-neutral-200/80 bg-neutral-50/70 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-400">
