@@ -2134,7 +2134,7 @@ export default function OrganizationWorkspace({
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto px-7 py-6">
+        <main className="flex-1 overflow-y-auto px-7 py-4">
         {/* Global Notification Bar */}
         {banner && (
           <div className="mb-6 flex items-center justify-between rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-800 shadow-sm">
