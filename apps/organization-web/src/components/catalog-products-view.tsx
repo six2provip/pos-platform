@@ -1129,8 +1129,8 @@ export function CatalogProductsView({
                     </div>
                   </div>
 
-                  {/* Right 5 cols: beUI Multi-Select Category Picker */}
-                  <div className="flex flex-col justify-between rounded-2xl border border-neutral-200/80 bg-neutral-50/70 p-4 lg:col-span-5 dark:border-neutral-800 dark:bg-neutral-800/40">
+                  {/* Right 5 cols: beUI Multi-Select Category Picker (clean divider, no nested border box) */}
+                  <div className="flex flex-col justify-start lg:col-span-5 lg:border-l lg:border-neutral-200/70 lg:pl-6 dark:lg:border-neutral-800">
                     <BeMultiSelect
                       label={`Gắn Danh Mục (${selectedCatIds.length} đã chọn)`}
                       helperText="1 sản phẩm có thể thuộc nhiều danh mục cùng lúc. Gõ để tìm nhanh."
@@ -1184,8 +1184,8 @@ export function CatalogProductsView({
                 transition={{ duration: 0.16 }}
                 className="grid grid-cols-1 gap-5 lg:grid-cols-12"
               >
-                {/* Left 4 cols: Master Variant List */}
-                <div className="flex flex-col rounded-2xl border border-neutral-200/80 bg-neutral-50/70 p-4 lg:col-span-4 dark:border-neutral-800 dark:bg-neutral-800/40">
+                {/* Left 4 cols: Master Variant List (clean divider, no nested box border) */}
+                <div className="flex flex-col lg:col-span-4 lg:border-r lg:border-neutral-200/70 lg:pr-6 dark:lg:border-neutral-800">
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <div>
                       <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
@@ -1257,8 +1257,8 @@ export function CatalogProductsView({
                   </div>
                 </div>
 
-                {/* Right 8 cols: Detail Form for Active Variant */}
-                <div className="rounded-2xl border border-neutral-200/80 bg-white p-5 lg:col-span-8 dark:border-neutral-800 dark:bg-neutral-900/60">
+                {/* Right 8 cols: Detail Form for Active Variant (clean flat surface) */}
+                <div className="lg:col-span-8 lg:pl-1">
                   {activeVar && (
                     <AnimatePresence mode="wait">
                       <motion.div
@@ -1359,7 +1359,7 @@ export function CatalogProductsView({
                         </div>
 
                         {/* Row 3: Default Variant Switch */}
-                        <div className="flex items-center justify-between rounded-xl border border-neutral-200/80 bg-neutral-50/70 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-800/40">
+                        <div className="flex items-center justify-between rounded-xl bg-neutral-50/90 px-4 py-3 dark:bg-neutral-800/50">
                           <div>
                             <div className="text-xs font-bold text-neutral-900 dark:text-white">
                               Đặt làm biến thể mặc định
