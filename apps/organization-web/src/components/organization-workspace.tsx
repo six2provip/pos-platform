@@ -279,6 +279,13 @@ export default function OrganizationWorkspace({
   }, [defaultTab, pathname]);
 
   const [activeTab, setActiveTab] = useState<NavTab>(effectiveTab);
+  const [catalogMenuOpen, setCatalogMenuOpen] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (activeTab === "categories" || activeTab === "products") {
+      setCatalogMenuOpen(true);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (effectiveTab && effectiveTab !== activeTab) {
@@ -1921,7 +1928,7 @@ export default function OrganizationWorkspace({
       {/* ================================================================== */}
       <aside className="flex w-[244px] shrink-0 flex-col justify-between overflow-y-auto border-r border-neutral-200/80 bg-white px-3.5 py-5 select-none dark:border-neutral-800 dark:bg-neutral-900">
         <div>
-          {/* Top Brand */}
+          {/* Top Brand + Quick Refresh */}
           <div className="flex items-center justify-between px-2 pb-5">
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-neutral-900 text-xs font-black text-white shadow-sm dark:bg-white dark:text-neutral-900">
@@ -1939,9 +1946,17 @@ export default function OrganizationWorkspace({
                 </span>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => void refreshWorkspaceData()}
+              title="Làm mới dữ liệu"
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-neutral-200 bg-neutral-50 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:text-white"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </button>
           </div>
 
-          {/* Primary Navigation Items (Clean Rounded Pill Active State) */}
+          {/* Primary Navigation Items with Collapsible Catalog Submenu */}
           <nav className="space-y-1">
             {[
               { id: "overview", label: "Tổng quan", icon: Layers, path: "/overview" },
@@ -1955,14 +1970,159 @@ export default function OrganizationWorkspace({
                     ? `${outboxQueue.length} chờ`
                     : undefined,
               },
-              {
-                id: "categories",
-                label: "Quản lý Danh mục",
-                icon: FolderTree,
-                path: "/categories",
-                badge: categories.length > 0 ? `${categories.length}` : undefined,
-              },
-              { id: "products", label: "Quản lý Sản phẩm", icon: Link2, path: "/products" },
+            ].map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <Link
+                  key={item.id}
+                  href={item.path}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigateToTab(item.id as NavTab);
+                  }}
+                  className={`flex w-full items-center justify-between rounded-full px-3.5 py-2.5 text-[13px] transition-all ${
+                    isActive
+                      ? "bg-neutral-900 font-semibold text-white shadow-sm dark:bg-white dark:text-neutral-900"
+                      : "font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Icon
+                      className={`h-4 w-4 ${
+                        isActive
+                          ? "text-white dark:text-neutral-900"
+                          : "text-neutral-400 dark:text-neutral-500"
+                      }`}
+                    />
+                    {item.label}
+                  </span>
+                  {item.badge && (
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        isActive
+                          ? "bg-white/20 text-white dark:bg-neutral-900/15 dark:text-neutral-900"
+                          : "bg-neutral-900 text-white dark:bg-neutral-700"
+                      }`}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+
+            {/* Grouped Catalog Module: Parent Menu + Submenu */}
+            <div>
+              {(() => {
+                const isCatalogActive =
+                  activeTab === "categories" || activeTab === "products";
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setCatalogMenuOpen((prev) => !prev)}
+                    className={`flex w-full items-center justify-between rounded-full px-3.5 py-2.5 text-[13px] transition-all ${
+                      isCatalogActive
+                        ? "bg-neutral-100 font-semibold text-neutral-900 dark:bg-neutral-800 dark:text-white"
+                        : "font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <Package
+                        className={`h-4 w-4 ${
+                          isCatalogActive
+                            ? "text-neutral-900 dark:text-white"
+                            : "text-neutral-400 dark:text-neutral-500"
+                        }`}
+                      />
+                      Sản phẩm & Danh mục
+                    </span>
+                    <ChevronRight
+                      className={`h-3.5 w-3.5 text-neutral-400 transition-transform duration-200 ${
+                        catalogMenuOpen ? "rotate-90" : ""
+                      }`}
+                    />
+                  </button>
+                );
+              })()}
+
+              <AnimatePresence initial={false}>
+                {catalogMenuOpen && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.18, ease: "easeOut" }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mt-1 ml-5 space-y-1 border-l border-neutral-200 pl-2.5 dark:border-neutral-800">
+                      {[
+                        {
+                          id: "categories",
+                          label: "Quản lý Danh mục",
+                          icon: FolderTree,
+                          path: "/categories",
+                          badge:
+                            categories.length > 0
+                              ? `${categories.length}`
+                              : undefined,
+                        },
+                        {
+                          id: "products",
+                          label: "Quản lý Sản phẩm",
+                          icon: Link2,
+                          path: "/products",
+                          badge:
+                            products.length > 0 ? `${products.length}` : undefined,
+                        },
+                      ].map((sub) => {
+                        const SubIcon = sub.icon;
+                        const subActive = activeTab === sub.id;
+                        return (
+                          <Link
+                            key={sub.id}
+                            href={sub.path}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              navigateToTab(sub.id as NavTab);
+                            }}
+                            className={`flex w-full items-center justify-between rounded-full px-3 py-2 text-[12px] transition-all ${
+                              subActive
+                                ? "bg-neutral-900 font-semibold text-white shadow-sm dark:bg-white dark:text-neutral-900"
+                                : "font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+                            }`}
+                          >
+                            <span className="flex items-center gap-2">
+                              <SubIcon
+                                className={`h-3.5 w-3.5 ${
+                                  subActive
+                                    ? "text-white dark:text-neutral-900"
+                                    : "text-neutral-400 dark:text-neutral-500"
+                                }`}
+                              />
+                              {sub.label}
+                            </span>
+                            {sub.badge && (
+                              <span
+                                className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                                  subActive
+                                    ? "bg-white/20 text-white dark:bg-neutral-900/15 dark:text-neutral-900"
+                                    : "bg-neutral-200 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200"
+                                }`}
+                              >
+                                {sub.badge}
+                              </span>
+                            )}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {[
               { id: "inventory", label: "Tồn kho & Sổ cái", icon: Boxes, path: "/inventory" },
               {
                 id: "stores",
@@ -2016,9 +2176,9 @@ export default function OrganizationWorkspace({
           </nav>
         </div>
 
-        {/* Bottom Dark Status Card + beUI Circle Blur Light/Dark Switcher */}
-        <div className="space-y-3 pt-4">
-          <div className="rounded-2xl bg-gradient-to-br from-neutral-900 via-neutral-900 to-neutral-800 p-4 text-white shadow-md dark:from-neutral-800 dark:to-neutral-950 dark:border dark:border-neutral-700/60">
+        {/* Bottom Dark Status Card + beUI Circle Blur Light/Dark Switcher + User Profile */}
+        <div className="space-y-2.5 pt-3">
+          <div className="rounded-2xl bg-gradient-to-br from-neutral-900 via-neutral-900 to-neutral-800 p-3.5 text-white shadow-md dark:from-neutral-800 dark:to-neutral-950 dark:border dark:border-neutral-700/60">
             <div className="flex items-center justify-between">
               <div className="text-xs font-extrabold tracking-tight">
                 POS.com Cloud Sync
@@ -2029,13 +2189,13 @@ export default function OrganizationWorkspace({
                 }`}
               />
             </div>
-            <p className="mt-1.5 text-[11px] leading-relaxed text-neutral-300">
+            <p className="mt-1 text-[11px] leading-relaxed text-neutral-300">
               {offlineMode
                 ? `Đang ngoại tuyến • ${outboxQueue.length} đơn hàng chờ đồng bộ.`
                 : "Quản lý bán hàng, tồn kho và máy POS tập trung trong một nơi."}
             </p>
 
-            <div className="mt-3 flex items-center gap-2">
+            <div className="mt-2.5 flex items-center gap-2">
               <a
                 href="/terminal"
                 target="_blank"
@@ -2056,52 +2216,10 @@ export default function OrganizationWorkspace({
 
           {/* beUI Theme Toggle (Circle blur) */}
           <ThemeSegmentedToggle start="bottom-left" />
-        </div>
-      </aside>
 
-      {/* ================================================================== */}
-      {/* RIGHT MAIN SHELL (TOP SEARCH BAR + CLEAN WORKSPACE CANVAS)         */}
-      {/* ================================================================== */}
-      <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
-        {/* Top Clean Header Bar (Shopify POS style) */}
-        <header className="flex h-16 shrink-0 items-center justify-between border-b border-neutral-200/70 bg-white/85 px-7 backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/85">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => navigateToTab("products")}
-              className="flex items-center gap-3 rounded-full border border-neutral-200 bg-neutral-50/80 py-1.5 pl-3.5 pr-1.5 text-xs text-neutral-400 transition-colors hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800"
-            >
-              <Search className="h-3.5 w-3.5 text-neutral-400" />
-              <span className="w-40 text-left">Tìm kiếm nhanh...</span>
-              <span className="rounded-full bg-neutral-900 px-2.5 py-1 text-[10px] font-semibold text-white dark:bg-neutral-700">
-                ⌘ + Space
-              </span>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            <a
-              href="/terminal"
-              target="_blank"
-              rel="noreferrer"
-              className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
-            >
-              <MonitorSmartphone className="h-3.5 w-3.5 text-emerald-600" />
-              <span>Máy POS Terminal</span>
-            </a>
-
-            <ThemeToggle variant="circle-blur" start="top-right" className="rounded-full" />
-
-            <button
-              type="button"
-              onClick={() => void refreshWorkspaceData()}
-              title="Làm mới dữ liệu"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </button>
-
-            <div className="flex items-center gap-2.5 rounded-full border border-neutral-200 bg-white py-1 pl-1.5 pr-3 dark:border-neutral-700 dark:bg-neutral-800">
+          {/* User Profile moved below Light/Dark Toggle */}
+          <div className="flex items-center justify-between gap-2 rounded-2xl border border-neutral-200/80 bg-neutral-50/80 px-2.5 py-2 dark:border-neutral-800 dark:bg-neutral-800/60">
+            <div className="flex min-w-0 items-center gap-2">
               <div
                 suppressHydrationWarning
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-xs font-bold text-white dark:bg-emerald-500"
@@ -2111,7 +2229,7 @@ export default function OrganizationWorkspace({
               <div className="min-w-0 leading-tight">
                 <div
                   suppressHydrationWarning
-                  className="truncate text-xs font-bold text-neutral-900 dark:text-white max-w-[140px]"
+                  className="truncate text-[11px] font-bold text-neutral-900 dark:text-white"
                 >
                   {currentUser?.full_name || "Quản trị viên Tổ chức"}
                 </div>
@@ -2122,18 +2240,23 @@ export default function OrganizationWorkspace({
                   pos.com/{currentOrg?.code?.toLowerCase() || "demo"}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleLogout}
-                title="Đăng xuất"
-                className="ml-1 rounded-full p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-700 dark:hover:text-white"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-              </button>
             </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Đăng xuất"
+              className="shrink-0 rounded-full p-1.5 text-neutral-400 transition-colors hover:bg-neutral-200/70 hover:text-neutral-900 dark:hover:bg-neutral-700 dark:hover:text-white"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
           </div>
-        </header>
+        </div>
+      </aside>
 
+      {/* ================================================================== */}
+      {/* RIGHT MAIN SHELL (FULL-HEIGHT CLEAN WORKSPACE CANVAS)              */}
+      {/* ================================================================== */}
+      <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
         <main className="flex flex-1 flex-col min-h-0 overflow-y-auto px-7 py-4">
         {/* Global Notification Bar */}
         {banner && (
