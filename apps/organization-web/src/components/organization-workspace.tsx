@@ -1928,13 +1928,6 @@ export default function OrganizationWorkspace({
             {[
               { id: "overview", label: "Tổng quan", icon: Layers, path: "/overview" },
               {
-                id: "pos",
-                label: "Quầy Bán Hàng POS",
-                icon: ShoppingCart,
-                path: "/pos",
-                badge: cart.length > 0 ? `${cart.length}` : undefined,
-              },
-              {
                 id: "orders",
                 label: "Hóa đơn & Đồng bộ",
                 icon: Calendar,
@@ -2018,13 +2011,14 @@ export default function OrganizationWorkspace({
             </p>
 
             <div className="mt-3 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => navigateToTab("pos")}
+              <a
+                href="/terminal"
+                target="_blank"
+                rel="noreferrer"
                 className="rounded-full bg-white px-3 py-1.5 text-[11px] font-bold text-neutral-900 transition-transform hover:scale-[1.02]"
               >
-                Mở POS ngay
-              </button>
+                Mở Máy POS
+              </a>
               <button
                 type="button"
                 onClick={() => setOfflineMode((prev) => !prev)}
@@ -2049,7 +2043,7 @@ export default function OrganizationWorkspace({
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => navigateToTab("pos")}
+              onClick={() => navigateToTab("products")}
               className="flex items-center gap-3 rounded-full border border-neutral-200 bg-neutral-50/80 py-1.5 pl-3.5 pr-1.5 text-xs text-neutral-400 transition-colors hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800"
             >
               <Search className="h-3.5 w-3.5 text-neutral-400" />
@@ -2204,7 +2198,7 @@ export default function OrganizationWorkspace({
                     suốt ngay cả khi mất kết nối Internet.
                   </p>
                   <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                    <ShimmerButton onClick={() => navigateToTab("pos")}>
+                    <ShimmerButton onClick={() => window.open("/terminal", "_blank", "noopener,noreferrer")}>
                       Mở Quầy Bán Hàng POS
                     </ShimmerButton>
                     <RippleButton
@@ -2317,7 +2311,7 @@ export default function OrganizationWorkspace({
                 iconColorClass="text-rose-500"
                 badge={`${orders.length} đơn hoàn tất`}
                 cta="Mở Quầy Bán Hàng POS"
-                onAction={() => navigateToTab("pos")}
+                onAction={() => window.open("/terminal", "_blank", "noopener,noreferrer")}
               />
 
               <BentoCard
@@ -2543,7 +2537,7 @@ export default function OrganizationWorkspace({
                     Đồng bộ {outboxQueue.length} đơn Offline
                   </ShimmerButton>
                 )}
-                <RippleButton onClick={() => navigateToTab("pos")}>
+                <RippleButton onClick={() => window.open("/terminal", "_blank", "noopener,noreferrer")}>
                   + Tạo Hóa Đơn Mới
                 </RippleButton>
               </div>
