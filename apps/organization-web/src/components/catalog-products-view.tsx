@@ -1,7 +1,13 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import {
+  AnimatePresence,
+  motion,
+  useMotionValue,
+  useSpring,
+  useTransform,
+} from "motion/react";
 import {
   ArrowLeft,
   Check,
@@ -87,6 +93,137 @@ const THEAD_HEIGHT = 38;
 const PAGINATION_FOOTER_HEIGHT = 52;
 type EditorTab = "general" | "images" | "variants";
 
+function SmoothPriceRangeSlider({
+  min,
+  max,
+  step = 1000,
+  value,
+  onChange,
+}: {
+  min: number;
+  max: number;
+  step?: number;
+  value: [number, number];
+  onChange: (next: [number, number]) => void;
+}) {
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const [dragging, setDragging] = useState<"min" | "max" | null>(null);
+
+  const safeSpan = Math.max(1, max - min);
+  const rawMinPct = ((value[0] - min) / safeSpan) * 100;
+  const rawMaxPct = ((value[1] - min) / safeSpan) * 100;
+
+  const minTarget = useMotionValue(rawMinPct);
+  const maxTarget = useMotionValue(rawMaxPct);
+
+  const smoothMin = useSpring(minTarget, { stiffness: 520, damping: 42, mass: 0.45 });
+  const smoothMax = useSpring(maxTarget, { stiffness: 520, damping: 42, mass: 0.45 });
+
+  useEffect(() => {
+    minTarget.set(rawMinPct);
+    maxTarget.set(rawMaxPct);
+  }, [rawMinPct, rawMaxPct, minTarget, maxTarget]);
+
+  const leftPct = useTransform(smoothMin, (v) => `${v}%`);
+  const rightPct = useTransform(smoothMax, (v) => `${100 - v}%`);
+  const maxLeftPct = useTransform(smoothMax, (v) => `${v}%`);
+
+  const calcValueFromClientX = (clientX: number) => {
+    const el = trackRef.current;
+    if (!el) return value[0];
+    const rect = el.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / Math.max(1, rect.width)));
+    const raw = min + ratio * safeSpan;
+    return Math.round(raw / step) * step;
+  };
+
+  useEffect(() => {
+    if (!dragging) return;
+    const handleMove = (e: PointerEvent) => {
+      const nextVal = calcValueFromClientX(e.clientX);
+      if (dragging === "min") {
+        const clamped = Math.min(Math.max(min, nextVal), value[1] - step);
+        onChange([clamped, value[1]]);
+      } else {
+        const clamped = Math.max(Math.min(max, nextVal), value[0] + step);
+        onChange([value[0], clamped]);
+      }
+    };
+    const handleUp = () => setDragging(null);
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+  }, [dragging, value, min, max, step, onChange]);
+
+  const handleTrackPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const nextVal = calcValueFromClientX(e.clientX);
+    const distMin = Math.abs(nextVal - value[0]);
+    const distMax = Math.abs(nextVal - value[1]);
+    const targetThumb: "min" | "max" = distMin <= distMax ? "min" : "max";
+    if (targetThumb === "min") {
+      onChange([Math.min(Math.max(min, nextVal), value[1] - step), value[1]]);
+    } else {
+      onChange([value[0], Math.max(Math.min(max, nextVal), value[0] + step)]);
+    }
+    setDragging(targetThumb);
+  };
+
+  return (
+    <div
+      ref={trackRef}
+      onPointerDown={handleTrackPointerDown}
+      className="relative mt-4 mb-3 flex h-6 cursor-pointer touch-none select-none items-center"
+    >
+      {/* Background Track */}
+      <div className="h-1.5 w-full rounded-full bg-neutral-200 dark:bg-neutral-800" />
+      {/* Smooth Spring Active Fill */}
+      <motion.div
+        style={{ left: leftPct, right: rightPct }}
+        className="absolute h-1.5 rounded-full bg-neutral-900 dark:bg-white"
+      />
+      {/* Min Thumb */}
+      <motion.div
+        role="slider"
+        aria-label="Giá tối thiểu"
+        aria-valuemin={min}
+        aria-valuemax={value[1]}
+        aria-valuenow={value[0]}
+        style={{ left: leftPct }}
+        animate={{ scale: dragging === "min" ? 1.22 : 1 }}
+        transition={{ type: "spring", stiffness: 500, damping: 30 }}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          setDragging("min");
+        }}
+        className={`absolute -ml-2.5 h-5 w-5 rounded-full border-2 border-white bg-neutral-900 shadow-md dark:border-neutral-950 dark:bg-white ${
+          dragging === "min" ? "ring-4 ring-neutral-900/15 dark:ring-white/20" : ""
+        }`}
+      />
+      {/* Max Thumb */}
+      <motion.div
+        role="slider"
+        aria-label="Giá tối đa"
+        aria-valuemin={value[0]}
+        aria-valuemax={max}
+        aria-valuenow={value[1]}
+        style={{ left: maxLeftPct }}
+        animate={{ scale: dragging === "max" ? 1.22 : 1 }}
+        transition={{ type: "spring", stiffness: 500, damping: 30 }}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          setDragging("max");
+        }}
+        className={`absolute -ml-2.5 h-5 w-5 rounded-full border-2 border-white bg-neutral-900 shadow-md dark:border-neutral-950 dark:bg-white ${
+          dragging === "max" ? "ring-4 ring-neutral-900/15 dark:ring-white/20" : ""
+        }`}
+      />
+    </div>
+  );
+}
+
 export function CatalogProductsView({
   products,
   categories,
@@ -108,6 +245,9 @@ export function CatalogProductsView({
   const [draftStatus, setDraftStatus] = useState("all");
   const [draftType, setDraftType] = useState("all");
   const [draftPriceRange, setDraftPriceRange] = useState<[number, number]>([0, 200000]);
+  const [catSearch, setCatSearch] = useState("");
+  const [showAllCats, setShowAllCats] = useState(false);
+  const [listEpoch, setListEpoch] = useState(0);
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
@@ -214,6 +354,8 @@ export function CatalogProductsView({
     setDraftStatus(filterStatus);
     setDraftType(filterType);
     setDraftPriceRange(priceRange ?? [0, maxCatalogPrice]);
+    setCatSearch("");
+    setShowAllCats(false);
     setFilterModalOpen(true);
   };
 
@@ -227,6 +369,7 @@ export function CatalogProductsView({
         : null
     );
     setFilterModalOpen(false);
+    setListEpoch((k) => k + 1);
   };
 
   const clearDraftFilters = () => {
@@ -234,6 +377,7 @@ export function CatalogProductsView({
     setDraftStatus("all");
     setDraftType("all");
     setDraftPriceRange([0, maxCatalogPrice]);
+    setCatSearch("");
   };
 
   useEffect(() => {
@@ -1086,7 +1230,12 @@ export function CatalogProductsView({
   // RESPONSIVE FIT-TO-VIEWPORT TABLE VIEW + BEUI ANIMATED PAGINATION (NO SCROLL)
   // ===========================================================================
   return (
-    <div className="flex h-full flex-1 min-h-0 flex-col gap-3">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+      className="flex h-full flex-1 min-h-0 flex-col gap-3"
+    >
       {/* Compact Header */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
@@ -1129,6 +1278,7 @@ export function CatalogProductsView({
               setFilterStatus("all");
               setFilterType("all");
               setPriceRange(null);
+              setListEpoch((k) => k + 1);
             }}
             className="inline-flex items-center gap-1 rounded-xl border border-neutral-200 bg-neutral-50 px-2.5 py-1.5 text-[11px] font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
           >
@@ -1183,7 +1333,10 @@ export function CatalogProductsView({
                 <th className="w-[8%] whitespace-nowrap px-3 py-2.5 text-right">Thao tác</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+            <tbody
+              key={`${listEpoch}-${safePage}`}
+              className="divide-y divide-neutral-100 dark:divide-neutral-800"
+            >
               {pagedProducts.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-12 text-center text-xs text-neutral-500">
@@ -1209,8 +1362,15 @@ export function CatalogProductsView({
                   pagedProducts.length > 2 && rowIdx >= pagedProducts.length - 2;
 
                 return (
-                  <tr
+                  <motion.tr
                     key={p.id}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.22,
+                      delay: Math.min(rowIdx * 0.025, 0.25),
+                      ease: [0.16, 1, 0.3, 1],
+                    }}
                     className="h-[54px] transition-colors hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40"
                   >
                     {/* Product Name + Code + Thumbnail */}
@@ -1377,7 +1537,7 @@ export function CatalogProductsView({
                         )}
                       </AnimatePresence>
                     </td>
-                  </tr>
+                  </motion.tr>
                 );
               })
             )}
@@ -1466,41 +1626,14 @@ export function CatalogProductsView({
                       Kéo thanh trượt hoặc nhập giá tối thiểu / tối đa để lọc nhanh.
                     </p>
 
-                    {/* Dual Slider Track */}
-                    <div className="relative mt-4 mb-3 flex h-5 items-center">
-                      <div className="h-1 w-full rounded-full bg-neutral-200 dark:bg-neutral-800" />
-                      <div
-                        className="absolute h-1 rounded-full bg-neutral-900 dark:bg-white"
-                        style={{
-                          left: `${(draftPriceRange[0] / maxCatalogPrice) * 100}%`,
-                          right: `${100 - (draftPriceRange[1] / maxCatalogPrice) * 100}%`,
-                        }}
-                      />
-                      <input
-                        type="range"
-                        min={0}
-                        max={maxCatalogPrice}
-                        step={5000}
-                        value={draftPriceRange[0]}
-                        onChange={(e) => {
-                          const val = Math.min(Number(e.target.value), draftPriceRange[1] - 5000);
-                          setDraftPriceRange([Math.max(0, val), draftPriceRange[1]]);
-                        }}
-                        className="pointer-events-none absolute inset-0 h-full w-full appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-neutral-900 [&::-webkit-slider-thumb]:shadow-md dark:[&::-webkit-slider-thumb]:bg-white"
-                      />
-                      <input
-                        type="range"
-                        min={0}
-                        max={maxCatalogPrice}
-                        step={5000}
-                        value={draftPriceRange[1]}
-                        onChange={(e) => {
-                          const val = Math.max(Number(e.target.value), draftPriceRange[0] + 5000);
-                          setDraftPriceRange([draftPriceRange[0], Math.min(maxCatalogPrice, val)]);
-                        }}
-                        className="pointer-events-none absolute inset-0 h-full w-full appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-neutral-900 [&::-webkit-slider-thumb]:shadow-md dark:[&::-webkit-slider-thumb]:bg-white"
-                      />
-                    </div>
+                    {/* Smooth Spring Dual Range Slider */}
+                    <SmoothPriceRangeSlider
+                      min={0}
+                      max={maxCatalogPrice}
+                      step={1000}
+                      value={draftPriceRange}
+                      onChange={setDraftPriceRange}
+                    />
 
                     <div className="grid grid-cols-2 gap-2.5">
                       <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-neutral-50/70 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
@@ -1574,54 +1707,114 @@ export function CatalogProductsView({
 
                   <div className="border-t border-dashed border-neutral-200 dark:border-neutral-800" />
 
-                  {/* 3. Danh mục (Multi-select chips) */}
+                  {/* 3. Danh mục (Multi-select chips with search + expand/collapse + bounded scroll) */}
                   <div>
-                    <div className="mb-2 flex items-center justify-between">
+                    <div className="mb-2 flex items-center justify-between gap-2">
                       <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
                         Danh mục sản phẩm
                       </h3>
                       <span className="text-[11px] text-neutral-400">
                         {draftCatIds.length === 0
-                          ? "Tất cả danh mục"
+                          ? `Tất cả (${categories.length})`
                           : `Đã chọn ${draftCatIds.length}`}
                       </span>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setDraftCatIds([])}
-                        className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all ${
-                          draftCatIds.length === 0
-                            ? "border-neutral-900 bg-white text-neutral-900 ring-1 ring-neutral-900 dark:border-white dark:bg-neutral-900 dark:text-white dark:ring-white"
-                            : "border-neutral-200 bg-neutral-50/70 text-neutral-600 hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300"
-                        }`}
-                      >
-                        Tất cả
-                      </button>
-                      {categories.map((cat) => {
-                        const active = draftCatIds.includes(cat.id);
-                        return (
+
+                    {categories.length > 6 && (
+                      <div className="mb-2 flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50/70 px-2.5 py-1.5 dark:border-neutral-800 dark:bg-neutral-900">
+                        <Search className="h-3 w-3 shrink-0 text-neutral-400" />
+                        <input
+                          type="text"
+                          value={catSearch}
+                          onChange={(e) => setCatSearch(e.target.value)}
+                          placeholder="Tìm nhanh danh mục..."
+                          className="w-full bg-transparent text-[11px] text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-white"
+                        />
+                        {catSearch && (
                           <button
-                            key={cat.id}
                             type="button"
-                            onClick={() =>
-                              setDraftCatIds((prev) =>
-                                prev.includes(cat.id)
-                                  ? prev.filter((id) => id !== cat.id)
-                                  : [...prev, cat.id]
-                              )
-                            }
-                            className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all ${
-                              active
-                                ? "border-neutral-900 bg-white text-neutral-900 ring-1 ring-neutral-900 dark:border-white dark:bg-neutral-900 dark:text-white dark:ring-white"
-                                : "border-neutral-200 bg-neutral-50/70 text-neutral-600 hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300"
-                            }`}
+                            onClick={() => setCatSearch("")}
+                            className="text-neutral-400 hover:text-neutral-700"
                           >
-                            {cat.name}
+                            <X className="h-3 w-3" />
                           </button>
-                        );
-                      })}
-                    </div>
+                        )}
+                      </div>
+                    )}
+
+                    {(() => {
+                      const cq = catSearch.trim().toLowerCase();
+                      const matchedCats = cq
+                        ? categories.filter((c) => c.name.toLowerCase().includes(cq))
+                        : categories;
+                      const limit = 8;
+                      const isSearching = cq.length > 0;
+                      const visibleCats =
+                        isSearching || showAllCats
+                          ? matchedCats
+                          : matchedCats.slice(0, limit);
+                      const hiddenCount = Math.max(0, matchedCats.length - visibleCats.length);
+
+                      return (
+                        <>
+                          <div className="flex max-h-[140px] flex-wrap gap-2 overflow-y-auto pr-1">
+                            {!isSearching && (
+                              <button
+                                type="button"
+                                onClick={() => setDraftCatIds([])}
+                                className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all ${
+                                  draftCatIds.length === 0
+                                    ? "border-neutral-900 bg-white text-neutral-900 ring-1 ring-neutral-900 dark:border-white dark:bg-neutral-900 dark:text-white dark:ring-white"
+                                    : "border-neutral-200 bg-neutral-50/70 text-neutral-600 hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300"
+                                }`}
+                              >
+                                Tất cả
+                              </button>
+                            )}
+                            {visibleCats.map((cat) => {
+                              const active = draftCatIds.includes(cat.id);
+                              return (
+                                <button
+                                  key={cat.id}
+                                  type="button"
+                                  title={cat.name}
+                                  onClick={() =>
+                                    setDraftCatIds((prev) =>
+                                      prev.includes(cat.id)
+                                        ? prev.filter((id) => id !== cat.id)
+                                        : [...prev, cat.id]
+                                    )
+                                  }
+                                  className={`max-w-[170px] truncate rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all ${
+                                    active
+                                      ? "border-neutral-900 bg-white text-neutral-900 ring-1 ring-neutral-900 dark:border-white dark:bg-neutral-900 dark:text-white dark:ring-white"
+                                      : "border-neutral-200 bg-neutral-50/70 text-neutral-600 hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300"
+                                  }`}
+                                >
+                                  {cat.name}
+                                </button>
+                              );
+                            })}
+                            {matchedCats.length === 0 && (
+                              <span className="py-1 text-[11px] text-neutral-400">
+                                Không tìm thấy danh mục phù hợp.
+                              </span>
+                            )}
+                          </div>
+                          {!isSearching && matchedCats.length > limit && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAllCats((prev) => !prev)}
+                              className="mt-2 text-[11px] font-semibold text-neutral-600 underline-offset-2 hover:text-neutral-900 hover:underline dark:text-neutral-400 dark:hover:text-white"
+                            >
+                              {showAllCats
+                                ? "Thu gọn danh mục"
+                                : `Xem thêm (+${hiddenCount} danh mục)`}
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* 4. Loại hàng hóa */}
@@ -1629,7 +1822,7 @@ export function CatalogProductsView({
                     <h3 className="mb-2 text-xs font-semibold text-neutral-600 dark:text-neutral-400">
                       Loại hàng hóa
                     </h3>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex max-h-[92px] flex-wrap gap-2 overflow-y-auto pr-1">
                       {[
                         { id: "all", label: "Tất cả" },
                         { id: "stocked", label: "Hàng có tồn kho" },
@@ -1641,8 +1834,9 @@ export function CatalogProductsView({
                           <button
                             key={tp.id}
                             type="button"
+                            title={tp.label}
                             onClick={() => setDraftType(tp.id)}
-                            className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all ${
+                            className={`max-w-[190px] truncate rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all ${
                               active
                                 ? "border-neutral-900 bg-white text-neutral-900 ring-1 ring-neutral-900 dark:border-white dark:bg-neutral-900 dark:text-white dark:ring-white"
                                 : "border-neutral-200 bg-neutral-50/70 text-neutral-600 hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300"
@@ -1680,6 +1874,6 @@ export function CatalogProductsView({
           </>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 }
