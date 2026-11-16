@@ -1697,8 +1697,16 @@ def create_option_group(
     org_id = principal.organization.id
     mode = body.selection_mode if body.selection_mode in ("single", "multiple") else "single"
     min_sel = body.min_selections
+    if min_sel < 0:
+        raise ValidationAppError(
+            code="INVALID_SELECTION_BOUNDS",
+            message="min_selections must be >= 0.",
+        )
     if body.is_required and min_sel < 1:
-        min_sel = 1
+        raise ValidationAppError(
+            code="INVALID_SELECTION_BOUNDS",
+            message="When is_required is true, min_selections must be >= 1.",
+        )
     max_sel = 1 if mode == "single" else body.max_selections
     if max_sel is not None and max_sel < min_sel:
         raise ValidationAppError(
@@ -1777,9 +1785,17 @@ def update_option_group(
     if body.is_required is not None:
         grp.is_required = body.is_required
     if body.min_selections is not None:
+        if body.min_selections < 0:
+            raise ValidationAppError(
+                code="INVALID_SELECTION_BOUNDS",
+                message="min_selections must be >= 0.",
+            )
         grp.min_selections = body.min_selections
     if grp.is_required and grp.min_selections < 1:
-        grp.min_selections = 1
+        raise ValidationAppError(
+            code="INVALID_SELECTION_BOUNDS",
+            message="When is_required is true, min_selections must be >= 1.",
+        )
     if grp.selection_mode == "single":
         grp.max_selections = 1
     elif "max_selections" in body.model_fields_set:

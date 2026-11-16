@@ -202,18 +202,35 @@ export function CatalogOptionsView({
       return;
     }
 
-    const minSel = isRequired
-      ? Math.max(1, Number(minSelections || 1))
-      : Math.max(0, Number(minSelections || 0));
-    const maxSel =
-      selectionMode === "single"
-        ? 1
-        : maxSelections.trim() !== ""
-          ? Math.max(1, Number(maxSelections))
-          : null;
+    const rawMin = Number(minSelections);
+    if (minSelections.trim() === "" || Number.isNaN(rawMin) || rawMin < 0) {
+      notify("error", "Số lượng chọn tối thiểu không được nhỏ hơn 0.");
+      return;
+    }
+    if (isRequired && rawMin < 1) {
+      notify("error", "Khi bật Bắt buộc chọn, số lượng tối thiểu phải từ 1 trở lên.");
+      return;
+    }
+
+    const minSel = isRequired ? Math.max(1, Math.floor(rawMin)) : Math.floor(rawMin);
+    let maxSel: number | null = null;
+    if (selectionMode === "single") {
+      maxSel = 1;
+    } else if (maxSelections.trim() !== "") {
+      const rawMax = Number(maxSelections);
+      if (Number.isNaN(rawMax) || rawMax < 1) {
+        notify("error", "Số lượng chọn tối đa phải lớn hơn hoặc bằng 1.");
+        return;
+      }
+      maxSel = Math.floor(rawMax);
+    }
 
     if (maxSel !== null && maxSel < minSel) {
       notify("error", "Số lượng chọn tối đa phải lớn hơn hoặc bằng tối thiểu.");
+      return;
+    }
+    if (validItems.some((it) => Number(it.price_delta || 0) < 0)) {
+      notify("error", "Giá cộng thêm không được là số âm.");
       return;
     }
 
@@ -543,8 +560,12 @@ export function CatalogOptionsView({
                           checked={isRequired}
                           onCheckedChange={(checked) => {
                             setIsRequired(checked);
-                            if (checked && Number(minSelections) < 1) {
-                              setMinSelections("1");
+                            if (checked) {
+                              if (Number(minSelections || 0) < 1) {
+                                setMinSelections("1");
+                              }
+                            } else {
+                              setMinSelections("0");
                             }
                           }}
                           ariaLabel="Bắt buộc chọn"
@@ -562,16 +583,49 @@ export function CatalogOptionsView({
                           >
                             <BeInput
                               type="number"
+                              min={isRequired ? 1 : 0}
                               label="Chọn tối thiểu"
                               value={minSelections}
-                              onChange={setMinSelections}
-                              placeholder="0"
+                              onChange={(val) => {
+                                if (val === "") {
+                                  setMinSelections(isRequired ? "1" : "0");
+                                  return;
+                                }
+                                const num = Math.floor(Number(val));
+                                if (Number.isNaN(num)) return;
+                                const floorLimit = isRequired ? 1 : 0;
+                                setMinSelections(String(Math.max(floorLimit, num)));
+                              }}
+                              error={
+                                Number(minSelections || 0) < (isRequired ? 1 : 0)
+                                  ? isRequired
+                                    ? "Tối thiểu phải ≥ 1"
+                                    : "Không được < 0"
+                                  : undefined
+                              }
+                              placeholder={isRequired ? "1" : "0"}
                             />
                             <BeInput
                               type="number"
+                              min={isRequired ? 1 : 1}
                               label="Chọn tối đa"
                               value={maxSelections}
-                              onChange={setMaxSelections}
+                              onChange={(val) => {
+                                if (val === "") {
+                                  setMaxSelections("");
+                                  return;
+                                }
+                                const num = Math.floor(Number(val));
+                                if (Number.isNaN(num)) return;
+                                setMaxSelections(String(Math.max(0, num)));
+                              }}
+                              error={
+                                maxSelections.trim() !== "" &&
+                                (Number(maxSelections) < 1 ||
+                                  Number(maxSelections) < Number(minSelections || 0))
+                                  ? "Tối đa phải ≥ tối thiểu"
+                                  : undefined
+                              }
                               placeholder="Không giới hạn"
                             />
                           </motion.div>
@@ -639,10 +693,18 @@ export function CatalogOptionsView({
                               <div className="col-span-4">
                                 <BeInput
                                   type="number"
+                                  min={0}
                                   value={it.price_delta}
-                                  onChange={(val) =>
-                                    updateDraftItem(idx, { price_delta: val })
-                                  }
+                                  onChange={(val) => {
+                                    if (val === "") {
+                                      updateDraftItem(idx, { price_delta: "0" });
+                                      return;
+                                    }
+                                    const num = Math.max(0, Number(val));
+                                    if (!Number.isNaN(num)) {
+                                      updateDraftItem(idx, { price_delta: String(num) });
+                                    }
+                                  }}
                                   placeholder="0"
                                   fieldClassName="h-9 rounded-xl tabular-nums"
                                 />
