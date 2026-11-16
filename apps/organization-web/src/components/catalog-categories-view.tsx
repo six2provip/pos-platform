@@ -222,7 +222,7 @@ export function CatalogCategoriesView({
                         <span>{cat.name}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
+                    <td className="px-4 py-3 text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
                       {cat.code || "--"}
                     </td>
                     <td className="px-4 py-3 text-neutral-600 dark:text-neutral-300">
@@ -233,7 +233,7 @@ export function CatalogCategoriesView({
                         {cat.product_count ?? 0}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-center font-mono text-neutral-600 dark:text-neutral-300">
+                    <td className="px-4 py-3 text-center tabular-nums text-neutral-600 dark:text-neutral-300">
                       {cat.sort_order}
                     </td>
                     <td className="px-4 py-3">
@@ -316,7 +316,7 @@ export function CatalogCategoriesView({
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
                     placeholder="VD: TRA-TRAI-CAY"
-                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 font-mono text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
                   />
                 </div>
                 <div>

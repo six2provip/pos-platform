@@ -93,6 +93,9 @@ const THEAD_HEIGHT = 38;
 const PAGINATION_FOOTER_HEIGHT = 52;
 type EditorTab = "general" | "images" | "variants";
 
+const formatPriceNumber = (val: number | string) =>
+  new Intl.NumberFormat("vi-VN").format(Math.round(Number(val || 0)));
+
 function SmoothPriceRangeSlider({
   min,
   max,
@@ -886,7 +889,7 @@ export function CatalogProductsView({
                         disabled={Boolean(editingProd)}
                         value={prodCode}
                         onChange={(e) => setProdCode(e.target.value)}
-                        className="w-full rounded-xl border border-neutral-300 px-3.5 py-2 font-mono text-xs text-neutral-900 disabled:bg-neutral-100 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                        className="w-full rounded-xl border border-neutral-300 px-3.5 py-2 text-xs text-neutral-900 disabled:bg-neutral-100 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
                       />
                     </div>
                   </div>
@@ -1168,7 +1171,7 @@ export function CatalogProductsView({
                               onChange={(e) =>
                                 updateDraftVariant(idx, { sku: e.target.value })
                               }
-                              className="w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                              className="w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
                             />
                           </td>
                           <td className="px-3 py-2">
@@ -1355,8 +1358,8 @@ export function CatalogProductsView({
                 const variantNames = (p.variants || []).map((v) => v.variant_name).join(", ");
                 const priceText =
                   minPrice === maxPrice
-                    ? formatMoney(minPrice)
-                    : `${formatMoney(minPrice)} – ${formatMoney(maxPrice)}`;
+                    ? formatPriceNumber(minPrice)
+                    : `${formatPriceNumber(minPrice)} – ${formatPriceNumber(maxPrice)}`;
 
                 const openUpward =
                   pagedProducts.length > 2 && rowIdx >= pagedProducts.length - 2;
@@ -1402,7 +1405,7 @@ export function CatalogProductsView({
                           </div>
                           <div
                             title={p.product_code}
-                            className="truncate font-mono text-[10px] text-neutral-400"
+                            className="truncate text-[10px] font-medium text-neutral-400"
                           >
                             {p.product_code}
                           </div>
@@ -1460,7 +1463,7 @@ export function CatalogProductsView({
                     <td className="px-3 py-2">
                       <div
                         title={priceText}
-                        className="truncate font-bold text-neutral-900 dark:text-white"
+                        className="truncate tabular-nums font-bold text-neutral-900 dark:text-white"
                       >
                         {priceText}
                       </div>
@@ -1618,8 +1621,8 @@ export function CatalogProductsView({
                       <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
                         Khoảng giá bán
                       </h3>
-                      <span className="text-[11px] text-neutral-500">
-                        {formatMoney(draftPriceRange[0])} – {formatMoney(draftPriceRange[1])}
+                      <span className="tabular-nums text-[11px] text-neutral-500">
+                        {formatPriceNumber(draftPriceRange[0])} – {formatPriceNumber(draftPriceRange[1])}
                       </span>
                     </div>
                     <p className="mt-0.5 text-[11px] text-neutral-400">
@@ -1637,14 +1640,14 @@ export function CatalogProductsView({
 
                     <div className="grid grid-cols-2 gap-2.5">
                       <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-neutral-50/70 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
-                        <span className="text-xs font-bold text-neutral-900 dark:text-white">
-                          {formatMoney(draftPriceRange[0])}
+                        <span className="tabular-nums text-xs font-bold text-neutral-900 dark:text-white">
+                          {formatPriceNumber(draftPriceRange[0])}
                         </span>
                         <span className="text-[11px] text-neutral-400">Giá tối thiểu</span>
                       </div>
                       <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-neutral-50/70 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
-                        <span className="text-xs font-bold text-neutral-900 dark:text-white">
-                          {formatMoney(draftPriceRange[1])}
+                        <span className="tabular-nums text-xs font-bold text-neutral-900 dark:text-white">
+                          {formatPriceNumber(draftPriceRange[1])}
                         </span>
                         <span className="text-[11px] text-neutral-400">Giá tối đa</span>
                       </div>
