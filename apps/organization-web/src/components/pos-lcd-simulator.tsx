@@ -62,6 +62,7 @@ import { PosViewStock } from "./pos-view-stock";
 import { PosViewStats } from "./pos-view-stats";
 import { PosViewNotifications } from "./pos-view-notifications";
 import { PosViewSettings } from "./pos-view-settings";
+import { ThemeSegmentedToggle, ThemeToggle } from "./motion/theme-toggle";
 
 export type {
   CategoryId,
@@ -1344,91 +1345,148 @@ export function PosLcdSimulator({
               : "w-[445px] h-[840px]"
           }`}
         >
-          {/* LANDSCAPE 16:9 VIEW */}
+          {/* LANDSCAPE 16:9 VIEW (SHOPIFY POS CLEAN & SMOOTH SHELL) */}
           {orientation === "landscape" ? (
-            <div className="flex h-full w-full bg-[#F6F8FA]">
-              {/* Left Mini Icon Rail */}
-              <aside className="flex w-[68px] shrink-0 flex-col items-center justify-between border-r border-neutral-200/80 bg-white py-4">
-                <div className="flex flex-col items-center gap-5">
-                  <motion.div
-                    whileHover={{ rotate: 8, scale: 1.06 }}
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#059669] text-white shadow-md shadow-emerald-600/25"
-                  >
-                    <Utensils className="h-5 w-5" />
-                  </motion.div>
+            <div className="flex h-full w-full bg-[#F4F5F7] dark:bg-neutral-950 transition-colors">
+              {/* Left Full Clean Sidebar */}
+              <aside className="flex w-[224px] shrink-0 flex-col justify-between border-r border-neutral-200/80 bg-white px-3.5 py-4 dark:border-neutral-800 dark:bg-neutral-900">
+                <div className="space-y-4 overflow-y-auto pr-0.5">
+                  {/* Brand Header */}
+                  <div className="flex items-center gap-2.5 px-1.5">
+                    <motion.div
+                      whileHover={{ rotate: 6, scale: 1.05 }}
+                      className="flex h-8 w-8 items-center justify-center rounded-xl bg-neutral-900 text-white shadow-sm dark:bg-white dark:text-neutral-900"
+                    >
+                      <Utensils className="h-4 w-4" />
+                    </motion.div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-extrabold tracking-tight text-neutral-900 dark:text-white">
+                        POS.com
+                      </div>
+                      <div className="truncate text-[10px] font-medium text-neutral-400">
+                        {storeCode} • Thu ngân
+                      </div>
+                    </div>
+                  </div>
 
-                  <nav className="flex flex-col items-center gap-2.5">
+                  {/* Clean Pill Navigation Menu */}
+                  <nav className="space-y-1">
                     {[
-                      { id: "home", icon: Home, tooltip: "Sơ đồ bàn" },
-                      { id: "pos", icon: LayoutGrid, tooltip: "Bán hàng POS" },
-                      { id: "orders", icon: Printer, tooltip: "Lịch sử hóa đơn" },
-                      { id: "customers", icon: Users, tooltip: "Khách hàng thân thiết" },
-                      { id: "stock", icon: Box, tooltip: "Tồn kho quầy" },
-                      { id: "stats", icon: PieChart, tooltip: "Báo cáo ca" },
+                      { id: "pos", icon: LayoutGrid, label: "Bán hàng POS" },
+                      { id: "home", icon: Home, label: "Sơ đồ bàn" },
+                      { id: "orders", icon: Printer, label: "Đơn hàng" },
+                      { id: "stock", icon: Box, label: "Tồn kho" },
+                      { id: "customers", icon: Users, label: "Khách hàng" },
+                      { id: "stats", icon: PieChart, label: "Báo cáo ca" },
+                      { id: "notifications", icon: Bell, label: "Thông báo" },
+                      { id: "settings", icon: Settings, label: "Cài đặt quầy" },
                     ].map((nav) => {
                       const Icon = nav.icon;
                       const isActive = activeMenuTab === nav.id;
                       return (
-                        <motion.button
-                          whileHover={{ scale: 1.08 }}
-                          whileTap={{ scale: 0.92 }}
+                        <button
                           key={nav.id}
                           type="button"
                           onClick={() => setActiveMenuTab(nav.id as PosMenuTab)}
-                          title={nav.tooltip}
-                          className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${
+                          className={`flex w-full items-center gap-2.5 rounded-full px-3.5 py-2 text-xs font-semibold transition-all ${
                             isActive
-                              ? "bg-[#E6F6F0] text-[#059669]"
-                              : "text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                              ? "bg-neutral-900 text-white shadow-sm dark:bg-white dark:text-neutral-900"
+                              : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
                           }`}
                         >
-                          <Icon className="h-4 w-4" />
-                        </motion.button>
+                          <Icon className="h-4 w-4 shrink-0" />
+                          <span className="truncate">{nav.label}</span>
+                        </button>
                       );
                     })}
                   </nav>
                 </div>
 
-                <div className="flex flex-col items-center gap-3">
-                  <motion.button
-                    whileTap={{ scale: 0.9 }}
-                    type="button"
-                    onClick={() => setActiveMenuTab("notifications")}
-                    className={`flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${
-                      activeMenuTab === "notifications"
-                        ? "bg-[#E6F6F0] text-[#059669]"
-                        : "text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
-                    }`}
-                  >
-                    <Bell className="h-4 w-4" />
-                  </motion.button>
-
-                  <motion.button
-                    whileTap={{ scale: 0.9 }}
-                    type="button"
-                    onClick={() => setActiveMenuTab("settings")}
-                    className={`flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${
-                      activeMenuTab === "settings"
-                        ? "bg-[#E6F6F0] text-[#059669]"
-                        : "text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
-                    }`}
-                  >
-                    <Settings className="h-4 w-4" />
-                  </motion.button>
-
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-xs font-extrabold text-amber-900 ring-2 ring-[#E6F6F0]">
-                    TN
+                {/* Bottom Dark Promo/Status Card + beUI Circle Blur Theme Toggle */}
+                <div className="space-y-2.5 pt-3">
+                  <div className="rounded-2xl bg-gradient-to-br from-neutral-900 to-neutral-800 p-3.5 text-white shadow-md dark:from-neutral-800 dark:to-neutral-950 dark:border dark:border-neutral-700/60">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold tracking-tight">
+                        {activeCashSession ? "Ca đang mở" : "Chưa mở ca"}
+                      </span>
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          offlineMode ? "bg-amber-400" : "bg-emerald-400"
+                        }`}
+                      />
+                    </div>
+                    <p className="mt-1 text-[10px] leading-relaxed text-neutral-300">
+                      {offlineMode
+                        ? `Đang ngoại tuyến • ${outboxQueue.length} đơn chờ đồng bộ`
+                        : "Đồng bộ đám mây sẵn sàng. Bán hàng nhanh & mượt."}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={
+                        activeCashSession
+                          ? () => setActiveMenuTab("stats")
+                          : onOpenCashSession
+                      }
+                      className="mt-2.5 inline-flex items-center rounded-full bg-white px-3 py-1 text-[10px] font-bold text-neutral-900 transition-transform hover:scale-[1.02]"
+                    >
+                      {activeCashSession ? "Xem báo cáo ca" : "Mở ca ngay"}
+                    </button>
                   </div>
+
+                  {/* beUI Theme Toggle (Circle blur) */}
+                  <ThemeSegmentedToggle start="bottom-left" />
                 </div>
               </aside>
 
-              {/* Center Dynamic Workspace */}
-              <div className="flex flex-1 flex-col overflow-hidden px-6 py-5">
-                {renderTabContent(false)}
+              {/* Center Dynamic Workspace with Clean Top Header */}
+              <div className="flex flex-1 flex-col overflow-hidden">
+                <div className="flex h-14 shrink-0 items-center justify-between border-b border-neutral-200/70 bg-white/80 px-5 backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/80">
+                  <div className="flex items-center gap-2 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs text-neutral-400 dark:border-neutral-700 dark:bg-neutral-800">
+                    <Search className="h-3.5 w-3.5" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Tìm nhanh món, SKU..."
+                      className="w-40 bg-transparent text-xs text-neutral-800 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-100"
+                    />
+                    <span className="rounded-full bg-neutral-900 px-2 py-0.5 text-[10px] font-semibold text-white dark:bg-neutral-700">
+                      ⌘ + Space
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <ThemeToggle variant="circle-blur" start="top-right" />
+                    <button
+                      type="button"
+                      onClick={() => setActiveMenuTab("notifications")}
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                    >
+                      <Bell className="h-3.5 w-3.5" />
+                    </button>
+                    <div className="flex items-center gap-2 rounded-full border border-neutral-200 bg-white py-1 pl-1.5 pr-3 dark:border-neutral-700 dark:bg-neutral-800">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900 text-[10px] font-bold text-white dark:bg-emerald-500">
+                        TN
+                      </div>
+                      <div className="leading-tight">
+                        <div className="text-[11px] font-bold text-neutral-900 dark:text-white">
+                          Thu ngân Quầy
+                        </div>
+                        <div className="text-[9px] text-neutral-400 truncate max-w-[110px]">
+                          {storeName}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-1 flex-col overflow-hidden px-5 py-4">
+                  {renderTabContent(false)}
+                </div>
               </div>
 
               {/* Right Order Details Panel */}
-              <div className="w-[340px] shrink-0 border-l border-neutral-200/80 bg-white">
+              <div className="w-[320px] shrink-0 border-l border-neutral-200/80 bg-white dark:border-neutral-800 dark:bg-neutral-900">
                 {renderOrderDetailsPanel(false)}
               </div>
             </div>

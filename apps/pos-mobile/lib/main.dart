@@ -34,24 +34,41 @@ String formatVnd(num amount) {
   return '${buf.toString()}₫';
 }
 
+final ValueNotifier<ThemeMode> posThemeModeNotifier = ValueNotifier(ThemeMode.light);
+
 class PosApkApp extends StatelessWidget {
   const PosApkApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Máy POS Android',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: kCanvasBg,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: kEmeraldPrimary,
-          primary: kEmeraldPrimary,
-          surface: Colors.white,
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: posThemeModeNotifier,
+      builder: (_, mode, __) => MaterialApp(
+        title: 'Máy POS Android',
+        debugShowCheckedModeBanner: false,
+        themeMode: mode,
+        theme: ThemeData(
+          useMaterial3: true,
+          scaffoldBackgroundColor: const Color(0xFFF4F5F7),
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF18181B),
+            primary: const Color(0xFF18181B),
+            surface: Colors.white,
+          ),
         ),
+        darkTheme: ThemeData(
+          useMaterial3: true,
+          brightness: Brightness.dark,
+          scaffoldBackgroundColor: const Color(0xFF0B0F17),
+          colorScheme: ColorScheme.fromSeed(
+            brightness: Brightness.dark,
+            seedColor: kEmeraldPrimary,
+            primary: kEmeraldPrimary,
+            surface: const Color(0xFF111827),
+          ),
+        ),
+        home: const PosTerminalRoot(),
       ),
-      home: const PosTerminalRoot(),
     );
   }
 }
@@ -1099,7 +1116,14 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
             child: isWide
                 ? Row(
                     children: [
-                      Expanded(flex: 3, child: _buildCatalogPane(filteredVariants)),
+                      _buildWideSidebar(),
+                      const VerticalDivider(width: 1),
+                      Expanded(
+                        flex: 3,
+                        child: _mobileTabIndex == 2
+                            ? _buildOrdersPane()
+                            : _buildCatalogPane(filteredVariants),
+                      ),
                       const VerticalDivider(width: 1),
                       Expanded(flex: 2, child: _buildCartPane()),
                     ],
@@ -1133,6 +1157,198 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                 const NavigationDestination(icon: Icon(Icons.receipt_long), label: 'Hóa đơn'),
               ],
             ),
+    );
+  }
+
+  Widget _buildWideSidebar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final items = [
+      (idx: 0, icon: Icons.grid_view_rounded, label: 'Bán hàng POS'),
+      (idx: 2, icon: Icons.receipt_long_rounded, label: 'Đơn hàng'),
+    ];
+
+    return Container(
+      width: 214,
+      color: isDark ? const Color(0xFF111827) : Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white : const Color(0xFF18181B),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.storefront_rounded,
+                  size: 18,
+                  color: isDark ? const Color(0xFF18181B) : Colors.white,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'POS.com',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                    ),
+                    Text(
+                      _store?['code']?.toString() ?? 'CHI NHÁNH',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.white54 : Colors.black45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          for (final nav in items)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: () => setState(() => _mobileTabIndex = nav.idx),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: _mobileTabIndex == nav.idx
+                        ? (isDark ? Colors.white : const Color(0xFF18181B))
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        nav.icon,
+                        size: 18,
+                        color: _mobileTabIndex == nav.idx
+                            ? (isDark ? const Color(0xFF18181B) : Colors.white)
+                            : (isDark ? Colors.white60 : Colors.black54),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        nav.label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: _mobileTabIndex == nav.idx
+                              ? (isDark ? const Color(0xFF18181B) : Colors.white)
+                              : (isDark ? Colors.white70 : Colors.black87),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF0B0F17) : const Color(0xFF18181B),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _activeCashSession != null ? 'Ca đang mở' : 'Chưa mở ca',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _offlineMode
+                      ? 'Ngoại tuyến • ${_outboxQueue.length} đơn chờ'
+                      : 'Đồng bộ đám mây sẵn sàng',
+                  style: const TextStyle(color: Colors.white60, fontSize: 11),
+                ),
+                if (_activeCashSession == null) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                      ),
+                      onPressed: _openCashSession,
+                      child: const Text('Mở ca ngay', style: TextStyle(fontSize: 11)),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF0B0F17) : const Color(0xFFF3F4F6),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => posThemeModeNotifier.value = ThemeMode.light,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      decoration: BoxDecoration(
+                        color: !isDark ? Colors.white : Colors.transparent,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Sáng',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: !isDark ? Colors.black : Colors.white60,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => posThemeModeNotifier.value = ThemeMode.dark,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1F2937) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Tối',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white : Colors.black54,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
