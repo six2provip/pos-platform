@@ -7,3 +7,4 @@ void main() {
     expect(app, isNotNull);
   });
 }
+
