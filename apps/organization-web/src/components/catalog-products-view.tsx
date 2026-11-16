@@ -520,7 +520,7 @@ export function CatalogProductsView({
         id: v.id,
         variant_code: v.variant_code,
         variant_name: v.variant_name,
-        sku: v.sku || "",
+        sku: v.sku || v.variant_code || "",
         unit_name: v.unit_name || "Cái",
         default_cost: v.default_cost ? String(Math.round(Number(v.default_cost))) : "",
         default_price: String(Math.round(Number(v.default_price || 0))),
@@ -674,6 +674,7 @@ export function CatalogProductsView({
     }
     const invalidVariants = variants.map((v) => ({
       nameErr: !v.variant_name.trim() ? "Nhập tên biến thể" : "",
+      skuErr: !v.sku.trim() ? "Nhập mã SKU" : "",
       priceErr:
         v.default_price.trim() === "" ||
         Number.isNaN(Number(v.default_price)) ||
@@ -683,7 +684,7 @@ export function CatalogProductsView({
     }));
     const valid =
       variants.length > 0 &&
-      invalidVariants.every((iv) => !iv.nameErr && !iv.priceErr);
+      invalidVariants.every((iv) => !iv.nameErr && !iv.skuErr && !iv.priceErr);
     return { valid, errors: { invalidVariants } };
   };
 
@@ -747,7 +748,7 @@ export function CatalogProductsView({
     }
     if (!varVal.valid) {
       setEditorTab("variants");
-      notify("error", "Vui lòng kiểm tra lại Tên biến thể và Giá bán ở bước Biến thể.");
+      notify("error", "Vui lòng điền đầy đủ Tên biến thể, Mã SKU và Giá bán ở bước Biến thể.");
       return;
     }
 
@@ -1171,6 +1172,7 @@ export function CatalogProductsView({
               const activeVar = variants[safeVarIdx];
               const activeErr = varValidation.errors.invalidVariants?.[safeVarIdx];
               const showNameErr = Boolean(touchedSteps.variants && activeErr?.nameErr);
+              const showSkuErr = Boolean(touchedSteps.variants && activeErr?.skuErr);
               const showPriceErr = Boolean(touchedSteps.variants && activeErr?.priceErr);
 
               return (
@@ -1209,7 +1211,8 @@ export function CatalogProductsView({
                         const isSelected = idx === safeVarIdx;
                         const rowErr = varValidation.errors.invalidVariants?.[idx];
                         const hasErr = Boolean(
-                          touchedSteps.variants && (rowErr?.nameErr || rowErr?.priceErr)
+                          touchedSteps.variants &&
+                            (rowErr?.nameErr || rowErr?.skuErr || rowErr?.priceErr)
                         );
                         return (
                           <motion.button
@@ -1300,12 +1303,14 @@ export function CatalogProductsView({
                             error={showNameErr ? activeErr?.nameErr : undefined}
                           />
                           <BeInput
-                            label="Mã SKU (tùy chọn)"
+                            label="Mã SKU *"
                             value={activeVar.sku}
                             onChange={(val) =>
                               updateDraftVariant(safeVarIdx, { sku: val })
                             }
                             placeholder="VD: SKU-TS-M"
+                            success={Boolean(activeVar.sku.trim())}
+                            error={showSkuErr ? activeErr?.skuErr : undefined}
                           />
                           <BeInput
                             label="Đơn vị tính"

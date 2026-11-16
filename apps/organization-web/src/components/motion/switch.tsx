@@ -69,24 +69,21 @@ export function BeSwitch({
           onPointerUp={() => setIsPressed(false)}
           onPointerLeave={() => setIsPressed(false)}
           initial={false}
-          className={`group inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full px-0.5 outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-blue-600/30 disabled:cursor-not-allowed disabled:opacity-60 ${
+          className={`group inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full px-0.5 outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-blue-600/30 disabled:cursor-default ${
             checked
-              ? "justify-end bg-neutral-900 dark:bg-white"
-              : "justify-start bg-neutral-300 dark:bg-neutral-700"
+              ? "justify-end bg-blue-600 shadow-inner dark:bg-blue-500"
+              : "justify-start bg-neutral-300 disabled:opacity-60 dark:bg-neutral-700"
           }`}
         >
           <motion.div
             ref={thumbRef}
             layout
             animate={{ scale: squish ? 0.9 : 1 }}
-            className={`pointer-events-none block h-5 w-5 rounded-full shadow-md ${
-              checked
-                ? "bg-white dark:bg-neutral-900"
-                : "bg-white dark:bg-neutral-200"
-            }`}
+            className="pointer-events-none block h-5 w-5 rounded-full bg-white shadow-md"
           />
         </motion.button>
       </span>
     </MotionConfig>
   );
 }
+
