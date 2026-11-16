@@ -941,74 +941,85 @@ export function CatalogProductsView({
           </span>
         </div>
 
-        {/* Section 2: Dedicated Process Stepper Section (Blue=Active, Green=Done, Gray=Pending, Red=Error) */}
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-white px-5 py-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-          <div className="flex flex-1 flex-wrap items-center gap-2">
-            {stepsMeta.map((step, idx) => {
-              const status = getStepVisualStatus(step.id);
-              const badgeCls =
-                status === "active"
-                  ? "bg-blue-600 text-white ring-4 ring-blue-600/15"
-                  : status === "completed"
-                    ? "bg-emerald-600 text-white"
-                    : status === "error"
-                      ? "bg-rose-600 text-white ring-4 ring-rose-600/15"
-                      : "bg-neutral-200 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400";
-              const pillCls =
-                status === "active"
-                  ? "border-blue-500/50 bg-blue-50/80 text-blue-700 dark:border-blue-500/40 dark:bg-blue-950/40 dark:text-blue-300"
-                  : status === "completed"
-                    ? "border-emerald-500/40 bg-emerald-50/70 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-300"
-                    : status === "error"
-                      ? "border-rose-500/50 bg-rose-50/80 text-rose-700 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-300"
-                      : "border-neutral-200 bg-neutral-50/60 text-neutral-500 hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-800/40 dark:text-neutral-400";
+        {/* Section 2: Centered Process Stepper Card (Image #2 style + 4-color validation) */}
+        <div className="shrink-0 rounded-2xl border border-neutral-200/80 bg-white px-6 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+          <div className="mx-auto w-full max-w-3xl">
+            <div className="grid grid-cols-3 gap-4">
+              {stepsMeta.map((step) => {
+                const status = getStepVisualStatus(step.id);
+                const circleCls =
+                  status === "active"
+                    ? "bg-blue-600 text-white ring-4 ring-blue-600/15 shadow-sm"
+                    : status === "completed"
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : status === "error"
+                        ? "bg-rose-600 text-white ring-4 ring-rose-600/15 shadow-sm"
+                        : "border-2 border-neutral-300 bg-white text-neutral-500 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-400";
+                const labelCls =
+                  status === "active"
+                    ? "text-blue-700 font-bold dark:text-blue-300"
+                    : status === "completed"
+                      ? "text-emerald-700 font-semibold dark:text-emerald-300"
+                      : status === "error"
+                        ? "text-rose-600 font-bold dark:text-rose-400"
+                        : "text-neutral-500 font-medium dark:text-neutral-400";
 
-              return (
-                <React.Fragment key={step.id}>
+                return (
                   <button
+                    key={step.id}
                     type="button"
                     onClick={() => goToStep(step.id)}
-                    className={`flex items-center gap-2.5 rounded-full border px-3.5 py-1.5 text-left transition-all ${pillCls}`}
+                    className="group flex flex-col items-center text-center focus:outline-none"
                   >
                     <span
-                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-colors ${badgeCls}`}
+                      className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-all group-hover:scale-105 ${circleCls}`}
                     >
                       {status === "completed" ? (
-                        <Check className="h-3 w-3" />
+                        <Check className="h-4 w-4" />
                       ) : status === "error" ? (
-                        <AlertCircle className="h-3 w-3" />
+                        <AlertCircle className="h-4 w-4" />
                       ) : (
                         step.num
                       )}
                     </span>
-                    <div className="leading-tight">
-                      <div className="text-xs font-bold">{step.title}</div>
-                      <div className="text-[10px] opacity-75">{step.subtitle}</div>
-                    </div>
+                    <span className={`mt-2 text-xs transition-colors ${labelCls}`}>
+                      {step.title}
+                    </span>
+                    <span className="mt-0.5 text-[10px] text-neutral-400">
+                      {step.subtitle}
+                    </span>
                   </button>
-                  {idx < stepsMeta.length - 1 && (
-                    <div
-                      className={`hidden h-[2px] flex-1 min-w-[20px] max-w-[64px] rounded-full sm:block transition-colors ${
-                        status === "completed"
-                          ? "bg-emerald-500"
-                          : status === "error"
-                            ? "bg-rose-400"
-                            : status === "active"
-                              ? "bg-blue-400"
-                              : "bg-neutral-200 dark:bg-neutral-700"
-                      }`}
-                    />
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
 
-          <div className="hidden xl:flex items-center gap-3 text-[11px] text-neutral-500">
-            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-600" /> Đang làm</span>
-            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-600" /> Hoàn thành</span>
-            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-neutral-300 dark:bg-neutral-600" /> Chưa làm</span>
-            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-rose-600" /> Thiếu thông tin</span>
+            {/* Sleek Animated Progress Bar underneath */}
+            <div className="mt-3.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200/80 dark:bg-neutral-800">
+              <motion.div
+                initial={false}
+                animate={{
+                  width: `${((currentStepIdx + 1) / stepsMeta.length) * 100}%`,
+                }}
+                transition={{ type: "spring", stiffness: 340, damping: 32 }}
+                className={`h-full rounded-full transition-colors ${
+                  touchedSteps[editorTab] && !getStepValidation(editorTab).valid
+                    ? "bg-rose-600"
+                    : currentStepIdx === stepsMeta.length - 1 &&
+                        getStepValidation("variants").valid &&
+                        getStepValidation("general").valid
+                      ? "bg-emerald-600"
+                      : "bg-blue-600"
+                }`}
+              />
+            </div>
+
+            {/* Compact 4-Color Legend */}
+            <div className="mt-2.5 flex flex-wrap items-center justify-center gap-4 text-[10px] text-neutral-400">
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-600" /> Đang làm</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-600" /> Hoàn thành</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full border border-neutral-400 bg-white dark:bg-neutral-900" /> Chưa làm</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-600" /> Thiếu thông tin</span>
+            </div>
           </div>
         </div>
 
