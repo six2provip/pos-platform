@@ -45,6 +45,18 @@ def create_app(
                             "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS selected_options_json JSONB"
                         )
                     )
+                    conn.execute(
+                        text(
+                            "ALTER TABLE devices ADD COLUMN IF NOT EXISTS serial_number VARCHAR(120)"
+                        )
+                    )
+                    conn.execute(
+                        text(
+                            "CREATE UNIQUE INDEX IF NOT EXISTS ux_devices_serial_number_active "
+                            "ON devices (serial_number) "
+                            "WHERE serial_number IS NOT NULL AND deleted_at IS NULL"
+                        )
+                    )
         except Exception:
             pass
 

@@ -6,6 +6,8 @@ Reference:
 
 from __future__ import annotations
 
+import secrets
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
@@ -26,7 +28,7 @@ from app.core.config import Settings
 from app.core.envelope import PaginationMeta, ok_response
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.deployment.profile import enforce_store_limit
-from app.infrastructure.models import CatalogChangeLog, Store, StoreSetting
+from app.infrastructure.models import CatalogChangeLog, Device, DeviceToken, Store, StoreSetting
 from app.modules.audit.service import record_audit_event
 from app.modules.organizations.service import validate_non_secret_settings
 
@@ -36,12 +38,13 @@ router = APIRouter(prefix="/stores", tags=["Stores"])
 class CreateStoreRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    code: str = Field(min_length=1, max_length=50)
+    code: Optional[str] = Field(default=None, max_length=50)
     name: str = Field(min_length=1, max_length=200)
     address_line: Optional[str] = Field(default=None, max_length=300)
     phone: Optional[str] = Field(default=None, max_length=40)
     timezone: Optional[str] = Field(default=None, max_length=64)
     currency_code: Optional[str] = Field(default=None, min_length=3, max_length=3)
+    status: str = Field(default="active", pattern="^(active|inactive)$")
 
 
 class UpdateStoreRequest(BaseModel):
@@ -51,6 +54,7 @@ class UpdateStoreRequest(BaseModel):
     address_line: Optional[str] = Field(default=None, max_length=300)
     phone: Optional[str] = Field(default=None, max_length=40)
     timezone: Optional[str] = Field(default=None, max_length=64)
+    status: Optional[str] = Field(default=None, pattern="^(active|inactive)$")
 
 
 class UpdateStoreSettingsRequest(BaseModel):
@@ -113,17 +117,27 @@ def create_store(
     org = principal.organization
     enforce_store_limit(db, settings, org)
 
-    norm_code = body.code.strip().upper()
-    existing = (
-        db.query(Store)
-        .filter(Store.organization_id == org.id, Store.code == norm_code)
-        .first()
-    )
-    if existing is not None:
-        raise ConflictError(
-            code="STORE_CODE_EXISTS",
-            message=f"Store with code '{norm_code}' already exists in this organization.",
+    norm_code = (body.code or "").strip().upper()
+    if not norm_code:
+        norm_code = f"CN-{secrets.token_hex(3).upper()}"
+        while (
+            db.query(Store)
+            .filter(Store.organization_id == org.id, Store.code == norm_code)
+            .first()
+            is not None
+        ):
+            norm_code = f"CN-{secrets.token_hex(3).upper()}"
+    else:
+        existing = (
+            db.query(Store)
+            .filter(Store.organization_id == org.id, Store.code == norm_code)
+            .first()
         )
+        if existing is not None:
+            raise ConflictError(
+                code="STORE_CODE_EXISTS",
+                message=f"Store with code '{norm_code}' already exists in this organization.",
+            )
 
     store = Store(
         organization_id=org.id,
@@ -133,7 +147,7 @@ def create_store(
         phone=body.phone,
         timezone=body.timezone or org.timezone,
         currency_code=(body.currency_code or org.default_currency).upper(),
-        status="active",
+        status=body.status,
         created_by=principal.user.id,
         updated_by=principal.user.id,
     )
@@ -215,6 +229,83 @@ def update_store(
     db.commit()
     db.refresh(store)
     return ok_response(_serialize_store(store), request_id=request_id)
+
+
+@router.delete("/{store_id}")
+def delete_store(
+    store_id: str,
+    principal: UserPrincipal = Depends(require_permission("stores.disable")),
+    db: Session = Depends(get_db),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    """Delete (archive) a store only if it has no active POS/Kiosk devices."""
+    store = verify_store_access(db, principal, requested_store_id=store_id)
+    assert store is not None
+
+    active_devices_count = (
+        db.query(Device)
+        .filter(
+            Device.organization_id == principal.organization.id,
+            Device.store_id == store.id,
+            Device.deleted_at.is_(None),
+            Device.status == "active",
+        )
+        .count()
+    )
+    if active_devices_count > 0:
+        raise ConflictError(
+            code="STORE_HAS_ACTIVE_DEVICES",
+            message=(
+                f"Chi nhánh đang có {active_devices_count} thiết bị hoạt động. "
+                "Vui lòng tắt hoặc xóa toàn bộ thiết bị trước khi xóa chi nhánh."
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    # Soft-delete any remaining inactive/pending devices of this store
+    remaining_devices = (
+        db.query(Device)
+        .filter(
+            Device.organization_id == principal.organization.id,
+            Device.store_id == store.id,
+            Device.deleted_at.is_(None),
+        )
+        .all()
+    )
+    for dev in remaining_devices:
+        dev.deleted_at = now
+        dev.status = "revoked"
+        tokens = (
+            db.query(DeviceToken)
+            .filter(
+                DeviceToken.organization_id == principal.organization.id,
+                DeviceToken.device_id == dev.id,
+                DeviceToken.revoked_at.is_(None),
+            )
+            .all()
+        )
+        for tok in tokens:
+            tok.revoked_at = now
+            tok.revoke_reason = "store_deleted"
+
+    store.status = "archived"
+    store.deleted_at = now
+    store.updated_by = principal.user.id
+
+    record_audit_event(
+        db,
+        action="store.deleted",
+        entity_type="store",
+        actor_type="user",
+        actor_id=principal.user.id,
+        organization_id=principal.organization.id,
+        store_id=store.id,
+        entity_id=store.id,
+        request_id=request_id,
+        metadata={"code": store.code, "name": store.name},
+    )
+    db.commit()
+    return ok_response({"id": store.id, "deleted": True}, request_id=request_id)
 
 
 @router.post("/{store_id}/deactivate")

@@ -65,6 +65,9 @@ import { Terminal } from "@/components/ui/terminal";
 import { PosLcdSimulator } from "@/components/pos-lcd-simulator";
 import { SixDigitPinInput } from "@/components/ui/six-digit-pin-input";
 import { ThemeSegmentedToggle, ThemeToggle } from "@/components/motion/theme-toggle";
+import { BeInput } from "@/components/motion/input";
+import { BeSelect } from "@/components/motion/select";
+import { StoresMasterDetailView } from "@/components/stores-master-detail-view";
 import {
   CatalogCategoriesView,
   type CategoryRecord,
@@ -93,6 +96,8 @@ interface StoreItem {
   id: string;
   code: string;
   name: string;
+  address_line?: string | null;
+  phone?: string | null;
   timezone: string;
   currency_code: string;
   status: string;
@@ -130,6 +135,7 @@ interface PosDeviceItem {
   id: string;
   store_id: string;
   device_code: string;
+  serial_number?: string | null;
   name: string;
   device_type: string;
   status: string;
@@ -335,6 +341,10 @@ export default function OrganizationWorkspace({
     "general" | "stores" | "appearance" | "capabilities"
   >("general");
   const [activeModal, setActiveModal] = useState<ModalType>(null);
+  const [kioskStoreId, setKioskStoreId] = useState("");
+  const [kioskName, setKioskName] = useState("");
+  const [kioskSerial, setKioskSerial] = useState("");
+  const [kioskType, setKioskType] = useState("android_kiosk");
   const [loading, setLoading] = useState(false);
   const [banner, setBanner] = useState<{
     type: "success" | "error" | "info";
@@ -352,6 +362,7 @@ export default function OrganizationWorkspace({
     Record<string, InventoryBalanceItem>
   >({});
   const [devices, setDevices] = useState<PosDeviceItem[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [optionGroups, setOptionGroups] = useState<OptionGroupRecord[]>([]);
   const [viewingStoreDevicesId, setViewingStoreDevicesId] = useState<string | null>(null);
@@ -550,9 +561,6 @@ export default function OrganizationWorkspace({
         const activeStore =
           preferStoreId ||
           (normalizedStores.length > 0 ? normalizedStores[0].id : "");
-        if (preferStoreId) {
-          setSelectedStoreId(preferStoreId);
-        }
 
         const normalizedProducts: ProductItem[] = Array.isArray(prodList)
           ? prodList
@@ -565,32 +573,37 @@ export default function OrganizationWorkspace({
         setOrders(normalizedOrders);
 
         if (activeStore) {
-          const [invList, devList] = await Promise.all([
-            apiFetch(
-              `/api/v1/inventory?store_id=${encodeURIComponent(activeStore)}`,
-              {},
-              tk
-            ).catch(() => []),
-            apiFetch(
-              `/api/v1/devices?store_id=${encodeURIComponent(activeStore)}`,
-              {},
-              tk
-            ).catch(() => []),
-          ]);
+          setDevicesLoading(true);
+          try {
+            const [invList, devList] = await Promise.all([
+              apiFetch(
+                `/api/v1/inventory?store_id=${encodeURIComponent(activeStore)}`,
+                {},
+                tk
+              ).catch(() => []),
+              apiFetch(
+                `/api/v1/devices?store_id=${encodeURIComponent(activeStore)}`,
+                {},
+                tk
+              ).catch(() => []),
+            ]);
 
-          const balances: InventoryBalanceItem[] = Array.isArray(invList)
-            ? invList
-            : invList?.items || [];
-          const map: Record<string, InventoryBalanceItem> = {};
-          balances.forEach((b) => {
-            map[b.product_variant_id] = b;
-          });
-          setInventoryMap(map);
+            const balances: InventoryBalanceItem[] = Array.isArray(invList)
+              ? invList
+              : invList?.items || [];
+            const map: Record<string, InventoryBalanceItem> = {};
+            balances.forEach((b) => {
+              map[b.product_variant_id] = b;
+            });
+            setInventoryMap(map);
 
-          const devItems: PosDeviceItem[] = Array.isArray(devList)
-            ? devList
-            : devList?.items || [];
-          setDevices(devItems);
+            const devItems: PosDeviceItem[] = Array.isArray(devList)
+              ? devList
+              : devList?.items || [];
+            setDevices(devItems);
+          } finally {
+            setDevicesLoading(false);
+          }
         }
       } catch (err: any) {
         notify("error", err.message || "Không thể tải dữ liệu cửa hàng");
@@ -1071,16 +1084,58 @@ export default function OrganizationWorkspace({
     }
   };
 
+  const storeFetchSeqRef = React.useRef(0);
+  const fetchStoreScopedData = useCallback(
+    async (tk: string, storeId: string) => {
+      const seq = ++storeFetchSeqRef.current;
+      setDevicesLoading(true);
+      try {
+        const [invList, devList] = await Promise.all([
+          apiFetch(
+            `/api/v1/inventory?store_id=${encodeURIComponent(storeId)}`,
+            {},
+            tk
+          ).catch(() => []),
+          apiFetch(
+            `/api/v1/devices?store_id=${encodeURIComponent(storeId)}`,
+            {},
+            tk
+          ).catch(() => []),
+        ]);
+        if (seq !== storeFetchSeqRef.current) return;
+
+        const balances: InventoryBalanceItem[] = Array.isArray(invList)
+          ? invList
+          : invList?.items || [];
+        const map: Record<string, InventoryBalanceItem> = {};
+        balances.forEach((b) => {
+          map[b.product_variant_id] = b;
+        });
+        setInventoryMap(map);
+
+        const devItems: PosDeviceItem[] = Array.isArray(devList)
+          ? devList
+          : devList?.items || [];
+        setDevices(devItems);
+      } finally {
+        if (seq === storeFetchSeqRef.current) {
+          setDevicesLoading(false);
+        }
+      }
+    },
+    [apiFetch]
+  );
+
   const isMountedStoreRef = React.useRef(false);
   useEffect(() => {
     if (isMountedStoreRef.current) {
       if (accessToken && selectedStoreId) {
-        void refreshWorkspaceData(accessToken, selectedStoreId);
+        void fetchStoreScopedData(accessToken, selectedStoreId);
       }
     } else {
       isMountedStoreRef.current = true;
     }
-  }, [selectedStoreId, accessToken, refreshWorkspaceData]);
+  }, [selectedStoreId, accessToken, fetchStoreScopedData]);
 
   const allVariants = useMemo(() => {
     const list: {
@@ -1585,6 +1640,128 @@ export default function OrganizationWorkspace({
     }
   };
 
+  const handleUpdateStore = async (
+    storeId: string,
+    payload: {
+      name: string;
+      address_line?: string | null;
+      phone?: string | null;
+      status: "active" | "inactive";
+    }
+  ) => {
+    if (!accessToken) return;
+    try {
+      await apiFetch(`/api/v1/stores/${storeId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      notify("success", `Đã cập nhật chi nhánh "${payload.name}"!`);
+      await refreshWorkspaceData(accessToken, selectedStoreId);
+    } catch (err: any) {
+      notify("error", err?.message || "Không thể cập nhật chi nhánh");
+      throw err;
+    }
+  };
+
+  const handleDeleteStore = async (storeId: string) => {
+    if (!accessToken) return;
+    try {
+      await apiFetch(`/api/v1/stores/${storeId}`, {
+        method: "DELETE",
+      });
+      notify("success", "Đã xóa chi nhánh thành công!");
+      const remaining = stores.filter((s) => s.id !== storeId);
+      const nextStoreId = remaining[0]?.id || "";
+      setSelectedStoreId(nextStoreId);
+      if (typeof window !== "undefined") {
+        if (nextStoreId) {
+          localStorage.setItem("pos_selected_store_id", nextStoreId);
+        } else {
+          localStorage.removeItem("pos_selected_store_id");
+        }
+      }
+      await refreshWorkspaceData(accessToken, nextStoreId);
+    } catch (err: any) {
+      notify("error", err?.message || "Không thể xóa chi nhánh");
+      throw err;
+    }
+  };
+
+  const handleCreateSerialDevice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!accessToken || !kioskStoreId || !kioskName.trim() || !kioskSerial.trim()) return;
+    setLoading(true);
+    try {
+      await apiFetch(`/api/v1/stores/${kioskStoreId}/devices`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: kioskName.trim(),
+          serial_number: kioskSerial.trim().toUpperCase(),
+          device_type: kioskType,
+          platform: kioskType.startsWith("web") ? "web" : "android",
+          activate_immediately: true,
+        }),
+      });
+      notify("success", `Đã gắn máy "${kioskName.trim()}" (S/N: ${kioskSerial.trim().toUpperCase()})!`);
+      setActiveModal(null);
+      setKioskName("");
+      setKioskSerial("");
+      await refreshWorkspaceData(accessToken, selectedStoreId);
+    } catch (err: any) {
+      notify("error", err?.message || "Không thể gắn thiết bị theo Serial Number");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateDevice = async (
+    deviceId: string,
+    payload: {
+      name: string;
+      serial_number?: string | null;
+      status: "active" | "disabled";
+    }
+  ) => {
+    if (!accessToken) return;
+    try {
+      await apiFetch(`/api/v1/devices/${deviceId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      notify("success", `Đã cập nhật thiết bị "${payload.name}"!`);
+      await fetchStoreScopedData(accessToken, selectedStoreId);
+    } catch (err: any) {
+      notify("error", err?.message || "Không thể cập nhật thiết bị");
+      throw err;
+    }
+  };
+
+  const handleToggleDeviceStatus = async (
+    deviceId: string,
+    nextStatus: "active" | "disabled",
+    devName: string
+  ) => {
+    if (!accessToken) return;
+    setLoading(true);
+    try {
+      await apiFetch(`/api/v1/devices/${deviceId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      notify(
+        "success",
+        nextStatus === "active"
+          ? `Đã kích hoạt lại thiết bị "${devName}".`
+          : `Đã khóa thiết bị "${devName}" (mọi token đang mở đã bị thu hồi).`
+      );
+      await refreshWorkspaceData(accessToken, selectedStoreId);
+    } catch (err: any) {
+      notify("error", err?.message || "Không thể cập nhật trạng thái thiết bị");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleRevokeDevice = async (deviceId: string, devName: string) => {
     if (
       !confirm(
@@ -1608,19 +1785,18 @@ export default function OrganizationWorkspace({
   };
 
   const handleDeleteDevice = async (deviceId: string, devName: string) => {
-    if (
-      !confirm(
-        `Bạn có chắc chắn muốn xóa thiết bị "${devName}" khỏi danh sách?`
-      )
-    )
-      return;
     setLoading(true);
     try {
       await apiFetch(`/api/v1/devices/${deviceId}`, { method: "DELETE" });
-      await refreshWorkspaceData();
+      if (accessToken && selectedStoreId) {
+        await fetchStoreScopedData(accessToken, selectedStoreId);
+      } else {
+        await refreshWorkspaceData();
+      }
       notify("success", `Đã xóa thiết bị "${devName}" thành công.`);
     } catch (err: any) {
       notify("error", err.message || "Không thể xóa thiết bị");
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -2212,7 +2388,7 @@ export default function OrganizationWorkspace({
               { id: "inventory", label: "Tồn kho & Sổ cái", icon: Boxes, path: "/inventory" },
               {
                 id: "stores",
-                label: "Chi nhánh",
+                label: "Chi nhánh & Thiết bị",
                 icon: StoreIcon,
                 path: "/stores",
                 badge: stores.length > 0 ? `${stores.length}` : undefined,
@@ -2967,351 +3143,60 @@ export default function OrganizationWorkspace({
         )}
 
         {/* ================================================================ */}
-        {/* TAB 6: STORES & BRANCHES MANAGEMENT                              */}
+        {/* TAB 6: STORES & BRANCHES MANAGEMENT (MASTER-DETAIL)              */}
         {/* ================================================================ */}
         {activeTab === "stores" && (
-          <div>
-            {viewingStoreDevicesId ? (
-              // ==============================================================
-              // VIEW A: BRANCH POS DEVICES PAGE (TRANG THIẾT BỊ CHI NHÁNH)
-              // ==============================================================
-              <div className="space-y-6">
-                <button
-                  type="button"
-                  onClick={() => setViewingStoreDevicesId(null)}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-600 hover:text-neutral-900 transition-colors"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Quay lại danh sách chi nhánh
-                </button>
-
-                {/* Page Header */}
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="rounded bg-neutral-900 px-2 py-0.5 font-mono text-xs font-bold text-white">
-                        {currentStoreObj?.code || "DEMO-S1"}
-                      </span>
-                      <span className="text-xs font-semibold text-neutral-500">
-                        Chi nhánh: {currentStoreObj?.name}
-                      </span>
-                    </div>
-                    <h1 className="text-xl font-bold tracking-tight text-neutral-900">
-                      Thiết Bị & Quầy POS — {currentStoreObj?.name}
-                    </h1>
-                    <p className="mt-0.5 text-sm text-neutral-500">
-                      Quản lý danh sách máy POS Android, quầy thu ngân và ghép nối bảo mật bằng mã PIN 6 chữ số tại chi nhánh này.
-                    </p>
-                  </div>
-
-                  <ShimmerButton
-                    onClick={() => {
-                      if (!currentStoreObj) return;
-                      setSelectedStoreId(currentStoreObj.id);
-                      setPairingStoreId(currentStoreObj.id);
-                      const nextNum = devices.length + 1;
-                      setPairingCodeInput("");
-                      setPairingIpInput("");
-                      setSelectedPairingSessionId(null);
-                      setPairingDeviceCode(`POS-TERMINAL-0${nextNum}`);
-                      setPairingDeviceName(`Máy POS Thu Ngân Quầy ${nextNum}`);
-                      setActiveModal("pair_pos_device");
-                    }}
-                  >
-                    <Radio className="h-3.5 w-3.5" />
-                    + Ghép Nối Máy POS Mới
-                  </ShimmerButton>
-                </div>
-
-                {/* Quick Guide Card */}
-                <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-                  <div className="flex items-start gap-3.5">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-900 text-white">
-                      <Radio className="h-4 w-4" />
-                    </div>
-                    <div className="space-y-1">
-                      <h3 className="text-sm font-bold text-neutral-900">
-                        Quy Trình Ghép Nối Máy POS Theo Địa Chỉ IP Vào Chi Nhánh
-                      </h3>
-                      <p className="text-xs text-neutral-600 leading-relaxed">
-                        1. Mở app <strong>Máy POS Android</strong> (hoặc trang <strong>:13000/terminal</strong>) tại quầy.<br />
-                        2. Màn hình máy POS sẽ tự phát tín hiệu kèm <strong>Địa chỉ IP</strong> của thiết bị.<br />
-                        3. Bấm <strong>&ldquo;+ Ghép Nối Máy POS Mới&rdquo;</strong> ở trên, chọn máy đang chờ (hoặc nhập trực tiếp địa chỉ IP) rồi xác nhận để liên kết vào {currentStoreObj?.name}!
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Devices List of This Store */}
-                <div className="space-y-3">
-                  {devices
-                    .filter((d) => d.store_id === currentStoreObj?.id)
-                    .map((d) => (
-                      <div
-                        key={d.id}
-                        className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-5 shadow-sm"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 text-neutral-800">
-                            <Smartphone className="h-5 w-5" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-bold text-neutral-900">
-                                {d.name}
-                              </span>
-                              <span className="rounded bg-neutral-100 px-2 py-0.5 font-mono text-xs text-neutral-700">
-                                {d.device_code}
-                              </span>
-                            </div>
-                            <p className="mt-0.5 text-xs text-neutral-500">
-                              Nền tảng: {d.device_type} ({d.platform}) • Trạng thái:{" "}
-                              <strong className="text-neutral-900">
-                                {(d.status || "active").toUpperCase()}
-                              </strong>
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2.5">
-                          <span
-                            className={`rounded-md border px-3 py-1 text-xs font-semibold ${
-                              d.status === "active"
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                : "border-amber-200 bg-amber-50 text-amber-700"
-                            }`}
-                          >
-                            {(d.status || "active").toUpperCase()}
-                          </span>
-                          {d.status === "active" && (
-                            <button
-                              type="button"
-                              onClick={() => void handleRevokeDevice(d.id, d.name)}
-                              title="Ngắt kết nối máy POS này"
-                              className="rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-500 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700 transition-colors"
-                            >
-                              Ngắt kết nối
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteDevice(d.id, d.name)}
-                            title="Xóa thiết bị này khỏi chi nhánh"
-                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/70 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-colors"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                            Xóa
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-
-                  {devices.filter((d) => d.store_id === currentStoreObj?.id).length === 0 && (
-                    <div className="rounded-2xl border border-dashed border-neutral-200 bg-white p-12 text-center space-y-3">
-                      <Smartphone className="mx-auto h-8 w-8 text-neutral-400" />
-                      <div className="text-sm font-semibold text-neutral-800">
-                        Chưa có máy POS nào được ghép nối tại chi nhánh này
-                      </div>
-                      <p className="text-xs text-neutral-500 max-w-md mx-auto">
-                        Mở máy POS tại quầy (hoặc mở tab :13000/terminal) lấy mã 6 chữ số và bấm nút bên dưới để ghép nối thiết bị vào {currentStoreObj?.name}!
-                      </p>
-                      <div className="pt-2">
-                        <ShimmerButton
-                          onClick={() => {
-                            if (!currentStoreObj) return;
-                            setSelectedStoreId(currentStoreObj.id);
-                            setPairingStoreId(currentStoreObj.id);
-                            const nextNum = devices.length + 1;
-                            setPairingCodeInput("");
-                            setPairingDeviceCode(`POS-TERMINAL-0${nextNum}`);
-                            setPairingDeviceName(`Máy POS Thu Ngân Quầy ${nextNum}`);
-                            setActiveModal("pair_pos_device");
-                          }}
-                        >
-                          <Radio className="h-3.5 w-3.5" />
-                          + Ghép Nối Máy POS Ngay
-                        </ShimmerButton>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              // ==============================================================
-              // VIEW B: STORES GRID (DANH SÁCH CHI NHÁNH TỔNG QUAN)
-              // ==============================================================
-              <div className="space-y-6">
-                {/* Page Header */}
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h1 className="text-xl font-bold tracking-tight text-neutral-900">
-                      Hệ Thống Chi Nhánh Cửa Hàng
-                    </h1>
-                    <p className="mt-0.5 text-sm text-neutral-500">
-                      Quản lý mạng lưới chi nhánh, cấu hình điểm bán và theo dõi các máy POS trực thuộc chuỗi.
-                    </p>
-                  </div>
-                  <ShimmerButton onClick={() => setActiveModal("create_store")}>
-                    <Plus className="h-3.5 w-3.5" />
-                    + Thêm Chi Nhánh Mới
-                  </ShimmerButton>
-                </div>
-
-                {/* Summary Metric Strip */}
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
-                    <div className="text-[11px] font-medium text-neutral-400 uppercase tracking-wider">
-                      Tổng số chi nhánh
-                    </div>
-                    <div className="mt-1 text-2xl font-bold text-neutral-900">
-                      {stores.length}
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-emerald-600 font-medium">
-                      Đang hoạt động trên toàn chuỗi
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
-                    <div className="text-[11px] font-medium text-neutral-400 uppercase tracking-wider">
-                      Đang chọn làm việc
-                    </div>
-                    <div className="mt-1 text-base font-bold text-neutral-900 truncate">
-                      {currentStoreObj?.name || "Chưa chọn"}
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-neutral-500 font-mono">
-                      Mã: {currentStoreObj?.code || "--"}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
-                    <div className="text-[11px] font-medium text-neutral-400 uppercase tracking-wider">
-                      Múi giờ vận hành
-                    </div>
-                    <div className="mt-1 text-sm font-bold text-neutral-900 truncate">
-                      Asia/Ho_Chi_Minh
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-neutral-500">
-                      Giờ chuẩn Việt Nam (UTC+7)
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
-                    <div className="text-[11px] font-medium text-neutral-400 uppercase tracking-wider">
-                      Đơn vị tiền tệ
-                    </div>
-                    <div className="mt-1 text-xl font-bold text-neutral-900">
-                      VND (₫)
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-neutral-500">
-                      Định dạng giá chuẩn
-                    </div>
-                  </div>
-                </div>
-
-                {/* Branch Cards List */}
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  {stores.map((st) => {
-                    const isWorkingStore = st.id === selectedStoreId;
-                    const storeDevices = devices.filter((d) => d.store_id === st.id);
-                    return (
-                      <div
-                        key={st.id}
-                        className={`rounded-2xl border p-5 transition-all ${
-                          isWorkingStore
-                            ? "border-neutral-900 bg-white shadow-md ring-1 ring-neutral-900"
-                            : "border-neutral-200 bg-white hover:border-neutral-300 shadow-sm"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
-                          <div className="flex items-center gap-2">
-                            <span className="rounded bg-neutral-900 px-2 py-0.5 font-mono text-xs font-bold text-white">
-                              {st.code}
-                            </span>
-                            {isWorkingStore && (
-                              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                Đang làm việc
-                              </span>
-                            )}
-                          </div>
-                          <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                            {(st.status || "active").toUpperCase()}
-                          </span>
-                        </div>
-
-                        <div className="py-4 space-y-1">
-                          <h3 className="text-base font-bold text-neutral-900">
-                            {st.name}
-                          </h3>
-                          <div className="flex items-center gap-4 text-xs text-neutral-500">
-                            <span>Múi giờ: {st.timezone || "Asia/Ho_Chi_Minh"}</span>
-                            <span>•</span>
-                            <span>Tiền tệ: {st.currency_code || "VND"}</span>
-                          </div>
-                          <div className="mt-2 text-xs text-neutral-600">
-                            Thiết bị liên kết:{" "}
-                            <strong className="text-neutral-900">
-                              {storeDevices.length} máy POS
-                            </strong>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-neutral-100">
-                          <div>
-                            {isWorkingStore ? (
-                              <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
-                                <Check className="h-3.5 w-3.5" />
-                                Chi nhánh mặc định
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedStoreId(st.id);
-                                  if (typeof window !== "undefined") {
-                                    localStorage.setItem("pos_selected_store_id", st.id);
-                                  }
-                                  notify("success", `Đã chuyển sang làm việc tại chi nhánh ${st.name}!`);
-                                }}
-                                className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-100 transition-colors"
-                              >
-                                Chọn làm việc
-                              </button>
-                            )}
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedStoreId(st.id);
-                              setViewingStoreDevicesId(st.id);
-                            }}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-50 hover:border-neutral-400 transition-colors shadow-sm"
-                          >
-                            <Smartphone className="h-3.5 w-3.5 text-neutral-600" />
-                            <span>Xem thiết bị ({storeDevices.length} thiết bị)</span>
-                            <ChevronRight className="h-3.5 w-3.5 text-neutral-400" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {stores.length === 0 && (
-                    <div className="col-span-2 rounded-2xl border border-dashed border-neutral-200 p-12 text-center space-y-3">
-                      <StoreIcon className="mx-auto h-8 w-8 text-neutral-400" />
-                      <div className="text-sm font-semibold text-neutral-800">
-                        Chưa có chi nhánh nào được tạo
-                      </div>
-                      <p className="text-xs text-neutral-500">
-                        Bấm nút &ldquo;+ Thêm Chi Nhánh Mới&rdquo; ở góc trên để tạo chi nhánh đầu tiên của chuỗi.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          <StoresMasterDetailView
+            stores={stores}
+            devices={devices}
+            loadingDevices={devicesLoading}
+            selectedStoreId={selectedStoreId}
+            onSelectWorkingStore={(storeId) => {
+              setDevicesLoading(true);
+              setSelectedStoreId(storeId);
+              if (typeof window !== "undefined") {
+                localStorage.setItem("pos_selected_store_id", storeId);
+              }
+            }}
+            onCreateStore={async (payload) => {
+              if (!accessToken) return;
+              try {
+                const res = await apiFetch("/api/v1/stores", {
+                  method: "POST",
+                  body: JSON.stringify(payload),
+                });
+                const createdId = res?.data?.id as string | undefined;
+                if (createdId) {
+                  setSelectedStoreId(createdId);
+                  if (typeof window !== "undefined") {
+                    localStorage.setItem("pos_selected_store_id", createdId);
+                  }
+                }
+                notify("success", `Đã tạo chi nhánh "${payload.name}"!`);
+                await refreshWorkspaceData(accessToken, createdId || selectedStoreId);
+              } catch (err: any) {
+                notify("error", err?.message || "Không thể tạo chi nhánh mới");
+                throw err;
+              }
+            }}
+            onUpdateStore={handleUpdateStore}
+            onDeleteStore={handleDeleteStore}
+            onOpenCreateSerialDevice={(st) => {
+              setSelectedStoreId(st.id);
+              setKioskStoreId(st.id);
+              setKioskName("");
+              setKioskSerial("");
+              setKioskType("android_kiosk");
+              setActiveModal("create_kiosk_device" as any);
+            }}
+            onUpdateDevice={handleUpdateDevice}
+            onToggleDeviceStatus={(deviceId, nextStatus, deviceName) => {
+              void handleToggleDeviceStatus(deviceId, nextStatus, deviceName);
+            }}
+            onDeleteDevice={(deviceId, deviceName) =>
+              handleDeleteDevice(deviceId, deviceName)
+            }
+          />
         )}
 
         {/* ================================================================ */}
@@ -3513,9 +3398,12 @@ export default function OrganizationWorkspace({
                   {activeModal === "pair_pos_device" && (
                     <Radio className="h-5 w-5" />
                   )}
+                  {(activeModal as string) === "create_kiosk_device" && (
+                    <Smartphone className="h-5 w-5" />
+                  )}
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-neutral-900">
+                  <h3 className="text-base font-bold text-neutral-900 dark:text-white">
                     {activeModal === "create_product" &&
                       "Thêm Sản Phẩm & Biến Thể Mới"}
                     {activeModal === "adjust_stock" &&
@@ -3524,10 +3412,12 @@ export default function OrganizationWorkspace({
                       "Thêm Chi Nhánh Cửa Hàng"}
                     {activeModal === "pair_pos_device" &&
                       "Ghép Nối Máy POS Theo Địa Chỉ IP"}
+                    {(activeModal as string) === "create_kiosk_device" &&
+                      "Tạo thiết bị mới"}
                   </h3>
                   {activeModal !== "pair_pos_device" && (
                     <p className="text-xs text-neutral-500">
-                      Chi nhánh áp dụng: {currentStoreObj?.name}
+                      {currentStoreObj?.name}
                     </p>
                   )}
                 </div>
@@ -3689,6 +3579,42 @@ export default function OrganizationWorkspace({
                   <ShimmerButton type="submit" disabled={loading}>
                     Ghi Sổ Cái Tồn Kho
                   </ShimmerButton>
+                </div>
+              </form>
+            )}
+
+            {(activeModal as string) === "create_kiosk_device" && (
+              <form onSubmit={handleCreateSerialDevice} className="mt-5 space-y-4">
+                <BeInput
+                  label="Tên thiết bị / Quầy *"
+                  value={kioskName}
+                  onChange={setKioskName}
+                  placeholder="VD: Kiosk Tự Order Cửa Chính"
+                  success={Boolean(kioskName.trim())}
+                />
+                <BeInput
+                  label="Số sê-ri thiết bị (Serial) *"
+                  value={kioskSerial}
+                  onChange={setKioskSerial}
+                  placeholder="VD: K2-2026-0001"
+                  success={kioskSerial.trim().length >= 4}
+                />
+                <div className="flex justify-end gap-2 pt-3 border-t border-neutral-100 dark:border-neutral-800">
+                  <button
+                    type="button"
+                    onClick={() => setActiveModal(null)}
+                    className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading || !kioskName.trim() || kioskSerial.trim().length < 4}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    {loading ? "Đang lưu..." : "Tạo & Kích Hoạt"}
+                  </button>
                 </div>
               </form>
             )}

@@ -12,7 +12,7 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Header, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
@@ -35,6 +35,7 @@ from app.core.exceptions import (
     ForbiddenError,
     NotFoundError,
     UnauthorizedError,
+    ValidationAppError,
 )
 from app.core.security import (
     create_device_access_token,
@@ -56,13 +57,66 @@ from app.modules.audit.service import record_audit_event
 router = APIRouter(tags=["POS Devices"])
 
 
+_INVALID_SERIAL_VALUES = {
+    "UNKNOWN",
+    "NONE",
+    "NULL",
+    "N/A",
+    "00000000",
+    "0000000000",
+    "123456789",
+    "0123456789ABCDEF",
+    "ANDROID",
+}
+
+
+def normalize_and_validate_serial(raw: Optional[str]) -> Optional[str]:
+    """Normalize and reject empty or generic placeholder hardware serial numbers."""
+    if raw is None:
+        return None
+    norm = raw.strip().upper()
+    if not norm:
+        return None
+    if len(norm) < 4 or norm in _INVALID_SERIAL_VALUES:
+        raise ValidationAppError(
+            code="INVALID_SERIAL_NUMBER",
+            message="Serial number không hợp lệ hoặc là giá trị mặc định không thể định danh thiết bị.",
+        )
+    return norm
+
+
 class CreateDeviceRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    device_code: str = Field(min_length=1, max_length=80)
+    device_code: Optional[str] = Field(default=None, max_length=80)
+    serial_number: Optional[str] = Field(default=None, max_length=120)
     name: str = Field(min_length=1, max_length=160)
-    device_type: str = Field(default="android_pos", max_length=30)
+    device_type: str = Field(default="android_kiosk", max_length=30)
     platform: str = Field(default="android", max_length=30)
+    activate_immediately: bool = True
+
+
+class ActivateBySerialRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    serial_number: str = Field(min_length=4, max_length=120)
+    organization_code: Optional[str] = Field(default=None, max_length=50)
+    app_version: str = Field(default="1.0.0", min_length=1, max_length=40)
+    device_info: Optional[DeviceInfoPayload] = None
+
+
+class UpdateDeviceStatusRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str = Field(..., pattern="^(active|disabled)$")
+
+
+class UpdateDeviceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=160)
+    serial_number: Optional[str] = Field(default=None, max_length=120)
+    status: Optional[str] = Field(default=None, pattern="^(active|disabled)$")
 
 
 class CreateActivationCodeRequest(BaseModel):
@@ -166,6 +220,7 @@ def _serialize_device(device: Device) -> Dict[str, Any]:
         "organization_id": device.organization_id,
         "store_id": device.store_id,
         "device_code": device.device_code,
+        "serial_number": device.serial_number,
         "name": device.name,
         "device_type": device.device_type,
         "status": device.status,
@@ -542,25 +597,50 @@ def create_device(
     org = principal.organization
     enforce_device_limit(db, settings, org)
 
-    norm_code = body.device_code.strip().upper()
-    if (
-        db.query(Device)
-        .filter(Device.organization_id == org.id, Device.device_code == norm_code)
-        .first()
-    ):
-        raise ConflictError(
-            code="DEVICE_CODE_EXISTS",
-            message=f"Device code '{norm_code}' already exists in this organization.",
+    norm_serial = normalize_and_validate_serial(body.serial_number)
+    if norm_serial:
+        existing_serial = (
+            db.query(Device)
+            .filter(Device.serial_number == norm_serial, Device.deleted_at.is_(None))
+            .first()
         )
+        if existing_serial is not None:
+            raise ConflictError(
+                code="SERIAL_NUMBER_ALREADY_BOUND",
+                message=f"Serial number '{norm_serial}' đã được gắn cho thiết bị '{existing_serial.name}'.",
+            )
 
+    raw_code = (body.device_code or "").strip().upper()
+    if not raw_code:
+        raw_code = f"KIOSK-{secrets.token_hex(3).upper()}"
+        while (
+            db.query(Device)
+            .filter(Device.organization_id == org.id, Device.device_code == raw_code)
+            .first()
+            is not None
+        ):
+            raw_code = f"KIOSK-{secrets.token_hex(3).upper()}"
+    else:
+        if (
+            db.query(Device)
+            .filter(Device.organization_id == org.id, Device.device_code == raw_code)
+            .first()
+        ):
+            raise ConflictError(
+                code="DEVICE_CODE_EXISTS",
+                message=f"Device code '{raw_code}' already exists in this organization.",
+            )
+
+    initial_status = "active" if (norm_serial and body.activate_immediately) else "pending"
     device = Device(
         organization_id=org.id,
         store_id=store.id,
-        device_code=norm_code,
+        device_code=raw_code,
+        serial_number=norm_serial,
         name=body.name.strip(),
         device_type=body.device_type,
         platform=body.platform,
-        status="pending",
+        status=initial_status,
         created_by=principal.user.id,
     )
     db.add(device)
@@ -1200,6 +1280,7 @@ def check_device_status(
 @router.post("/devices/me/token/rotate")
 def rotate_device_token(
     body: RotateDeviceTokenRequest,
+    x_device_serial: Optional[str] = Header(default=None, alias="X-Device-Serial"),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
     request_id: str = Depends(get_request_id),
@@ -1240,6 +1321,13 @@ def rotate_device_token(
         raise ForbiddenError(
             code="DEVICE_NOT_ACTIVE", message="POS device is no longer active."
         )
+    if device.serial_number:
+        norm_hdr = (x_device_serial or "").strip().upper()
+        if not norm_hdr or norm_hdr != device.serial_number:
+            raise ForbiddenError(
+                code="DEVICE_SERIAL_MISMATCH",
+                message="X-Device-Serial header is missing or does not match bound hardware serial.",
+            )
 
     token_row.revoked_at = now
     token_row.revoke_reason = "rotated"
@@ -1276,4 +1364,291 @@ def rotate_device_token(
         },
         request_id=request_id,
     )
+
+
+@router.patch("/devices/{device_id}")
+def update_device(
+    device_id: str,
+    body: UpdateDeviceRequest,
+    principal: UserPrincipal = Depends(require_permission("devices.activate")),
+    db: Session = Depends(get_db),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    """Update device name, serial number, and active/disabled status."""
+    org = principal.organization
+    device = (
+        db.query(Device)
+        .filter(
+            Device.organization_id == org.id,
+            Device.id == device_id,
+            Device.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if device is None:
+        raise NotFoundError(code="DEVICE_NOT_FOUND", message="POS device not found.")
+    verify_store_access(db, principal, requested_store_id=device.store_id)
+
+    if body.name is not None:
+        device.name = body.name.strip()
+
+    if "serial_number" in body.model_fields_set:
+        norm_serial = normalize_and_validate_serial(body.serial_number)
+        if norm_serial and norm_serial != device.serial_number:
+            dup = (
+                db.query(Device)
+                .filter(
+                    Device.serial_number == norm_serial,
+                    Device.id != device.id,
+                    Device.deleted_at.is_(None),
+                )
+                .first()
+            )
+            if dup is not None:
+                raise ConflictError(
+                    code="SERIAL_NUMBER_ALREADY_BOUND",
+                    message=f"Serial number '{norm_serial}' đã được gắn cho thiết bị '{dup.name}'.",
+                )
+        device.serial_number = norm_serial
+
+    now = datetime.now(timezone.utc)
+    if body.status is not None:
+        device.status = body.status
+        if body.status == "disabled":
+            active_tokens = (
+                db.query(DeviceToken)
+                .filter(
+                    DeviceToken.organization_id == org.id,
+                    DeviceToken.device_id == device.id,
+                    DeviceToken.revoked_at.is_(None),
+                )
+                .all()
+            )
+            for tok in active_tokens:
+                tok.revoked_at = now
+                tok.revoke_reason = "device_disabled"
+
+    record_audit_event(
+        db,
+        action="device.updated",
+        entity_type="device",
+        actor_type="user",
+        actor_id=principal.user.id,
+        organization_id=org.id,
+        store_id=device.store_id,
+        entity_id=device.id,
+        request_id=request_id,
+        metadata={
+            "name": device.name,
+            "serial_number": device.serial_number,
+            "status": device.status,
+        },
+    )
+    db.commit()
+    db.refresh(device)
+    return ok_response(_serialize_device(device), request_id=request_id)
+
+
+@router.patch("/devices/{device_id}/status")
+def update_device_status(
+    device_id: str,
+    body: UpdateDeviceStatusRequest,
+    principal: UserPrincipal = Depends(require_permission("devices.activate")),
+    db: Session = Depends(get_db),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    """Enable or disable a POS/Kiosk device; disabling immediately revokes active tokens."""
+    org = principal.organization
+    device = (
+        db.query(Device)
+        .filter(
+            Device.organization_id == org.id,
+            Device.id == device_id,
+            Device.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if device is None:
+        raise NotFoundError(code="DEVICE_NOT_FOUND", message="POS device not found.")
+    verify_store_access(db, principal, requested_store_id=device.store_id)
+
+    now = datetime.now(timezone.utc)
+    device.status = body.status
+    if body.status == "disabled":
+        active_tokens = (
+            db.query(DeviceToken)
+            .filter(
+                DeviceToken.organization_id == org.id,
+                DeviceToken.device_id == device.id,
+                DeviceToken.revoked_at.is_(None),
+            )
+            .all()
+        )
+        for tok in active_tokens:
+            tok.revoked_at = now
+            tok.revoke_reason = "device_disabled"
+
+    record_audit_event(
+        db,
+        action=f"device.{body.status}",
+        entity_type="device",
+        actor_type="user",
+        actor_id=principal.user.id,
+        organization_id=org.id,
+        store_id=device.store_id,
+        entity_id=device.id,
+        request_id=request_id,
+        metadata={"serial_number": device.serial_number, "status": body.status},
+    )
+    db.commit()
+    db.refresh(device)
+    return ok_response(_serialize_device(device), request_id=request_id)
+
+
+@router.post("/devices/activate-by-serial")
+def activate_device_by_serial(
+    body: ActivateBySerialRequest,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    """Zero-touch POS/Kiosk activation using hardware Serial Number."""
+    norm_serial = normalize_and_validate_serial(body.serial_number)
+    if not norm_serial:
+        raise ValidationAppError(
+            code="INVALID_SERIAL_NUMBER",
+            message="Serial number không được để trống.",
+        )
+
+    device = (
+        db.query(Device)
+        .filter(Device.serial_number == norm_serial, Device.deleted_at.is_(None))
+        .first()
+    )
+    if device is None:
+        raise NotFoundError(
+            code="SERIAL_NOT_REGISTERED",
+            message=f"Thiết bị có Serial '{norm_serial}' chưa được đăng ký vào chi nhánh nào.",
+        )
+
+    set_rls_tenant_context(db, device.organization_id)
+    org = (
+        db.query(Organization)
+        .filter(
+            Organization.id == device.organization_id,
+            Organization.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if org is None or org.status != "active":
+        raise ForbiddenError(
+            code="ORGANIZATION_INACTIVE",
+            message="Tổ chức của thiết bị này hiện đang tạm khóa hoặc chưa kích hoạt.",
+        )
+    if body.organization_code and org.code.upper() != body.organization_code.strip().upper():
+        raise ForbiddenError(
+            code="ORGANIZATION_MISMATCH",
+            message="Serial number không thuộc tổ chức được yêu cầu.",
+        )
+
+    if device.status in ("disabled", "revoked"):
+        raise ForbiddenError(
+            code="DEVICE_NOT_ACTIVE",
+            message="Thiết bị này đã bị khóa hoặc thu hồi quyền hoạt động.",
+        )
+
+    store = (
+        db.query(Store)
+        .filter(
+            Store.organization_id == org.id,
+            Store.id == device.store_id,
+            Store.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if store is None or store.status != "active":
+        raise ForbiddenError(
+            code="STORE_INACTIVE",
+            message="Chi nhánh gắn với thiết bị này hiện không hoạt động.",
+        )
+
+    now = datetime.now(timezone.utc)
+    # Revoke any older token families so only this hardware session remains valid
+    old_tokens = (
+        db.query(DeviceToken)
+        .filter(
+            DeviceToken.organization_id == org.id,
+            DeviceToken.device_id == device.id,
+            DeviceToken.revoked_at.is_(None),
+        )
+        .all()
+    )
+    for tok in old_tokens:
+        tok.revoked_at = now
+        tok.revoke_reason = "re_activated_by_serial"
+
+    device.status = "active"
+    device.app_version = body.app_version
+    device.last_seen_at = now
+
+    token_family_id = str(uuid.uuid4())
+    raw_refresh = generate_opaque_secret(prefix="drt")
+    db.add(
+        DeviceToken(
+            organization_id=org.id,
+            device_id=device.id,
+            token_hash=hash_opaque_secret(raw_refresh),
+            token_family_id=token_family_id,
+            issued_at=now,
+            expires_at=now + timedelta(days=90),
+            last_used_at=now,
+        )
+    )
+    db.add(
+        DeviceEvent(
+            organization_id=org.id,
+            device_id=device.id,
+            event_type="activated_by_serial",
+            event_metadata={
+                "serial_number": norm_serial,
+                "app_version": body.app_version,
+            },
+            occurred_at=now,
+        )
+    )
+    db.flush()
+
+    access_token = create_device_access_token(
+        settings=settings,
+        device_id=device.id,
+        organization_id=org.id,
+        store_id=store.id,
+        token_family_id=token_family_id,
+        deployment_id=settings.deployment_id,
+        now=now,
+    )
+    db.commit()
+    db.refresh(device)
+
+    return ok_response(
+        {
+            "access_token": access_token,
+            "refresh_token": raw_refresh,
+            "token_type": "Bearer",
+            "expires_in": settings.device_access_token_expire_seconds,
+            "device": _serialize_device(device),
+            "store": {
+                "id": store.id,
+                "code": store.code,
+                "name": store.name,
+            },
+            "organization": {
+                "id": org.id,
+                "code": org.code,
+                "name": org.name,
+            },
+        },
+        request_id=request_id,
+    )
+
 

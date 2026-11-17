@@ -427,6 +427,7 @@ class Device(Base):
     organization_id: Mapped[str] = mapped_column(String(36), nullable=False)
     store_id: Mapped[str] = mapped_column(String(36), nullable=False)
     device_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    serial_number: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     device_type: Mapped[str] = mapped_column(
         String(30), nullable=False, default="android_pos"

@@ -153,6 +153,7 @@ def resolve_user_permissions_and_stores(
 def get_current_principal(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    x_device_serial: Optional[str] = Header(default=None, alias="X-Device-Serial"),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> Principal:
@@ -244,6 +245,13 @@ def get_current_principal(
                 code="DEVICE_NOT_ACTIVE",
                 message="POS device is disabled, revoked, or not active.",
             )
+        if device.serial_number:
+            norm_header_serial = (x_device_serial or "").strip().upper()
+            if not norm_header_serial or norm_header_serial != device.serial_number:
+                raise ForbiddenError(
+                    code="DEVICE_SERIAL_MISMATCH",
+                    message="X-Device-Serial header is missing or does not match bound hardware serial.",
+                )
         if device.store_id != store_id:
             raise ForbiddenError(
                 code="DEVICE_STORE_REASSIGNED",
