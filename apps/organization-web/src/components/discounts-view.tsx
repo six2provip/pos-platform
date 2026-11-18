@@ -15,6 +15,19 @@ import {
   X,
 } from "lucide-react";
 import { BeButton } from "./motion/button";
+import {
+  DateRangePicker,
+  DateRangePickerCalendar,
+  DateRangePickerClear,
+  DateRangePickerContent,
+  DateRangePickerFooter,
+  DateRangePickerGrid,
+  DateRangePickerHeader,
+  DateRangePickerPresets,
+  DateRangePickerSelection,
+  DateRangePickerTrigger,
+  type DateRange,
+} from "./motion/date-range-picker";
 import { BeInput } from "./motion/input";
 import { BeMultiSelect } from "./motion/multi-select";
 import { BeSelect } from "./motion/select";
@@ -48,14 +61,19 @@ interface DiscountsViewProps {
   notify: (type: "success" | "error" | "info", text: string) => void;
 }
 
-function toDatetimeLocalValue(iso?: string | null): string {
+function toYmdLocalValue(iso?: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-    d.getHours()
-  )}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function addDaysYmd(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function formatShortDate(iso?: string | null): string {
@@ -153,8 +171,8 @@ export function DiscountsView({
       String(Math.max(0, Math.round(Number(dc.min_order_amount || 0))))
     );
     setUsageLimitDigits(dc.usage_limit ? String(dc.usage_limit) : "");
-    setStartsAt(toDatetimeLocalValue(dc.starts_at));
-    setEndsAt(toDatetimeLocalValue(dc.ends_at));
+    setStartsAt(toYmdLocalValue(dc.starts_at));
+    setEndsAt(toYmdLocalValue(dc.ends_at));
     setSelectedStoreIds(dc.store_ids || []);
     setIsActive(dc.status === "active");
     setModalOpen(true);
@@ -190,8 +208,13 @@ export function DiscountsView({
             : null,
         min_order_amount: minOrderDigits.trim() || "0",
         usage_limit: usageLimitDigits.trim() ? Number(usageLimitDigits) : null,
-        starts_at: startsAt ? new Date(startsAt).toISOString() : null,
-        ends_at: endsAt ? new Date(endsAt).toISOString() : null,
+        starts_at: startsAt
+          ? new Date(`${startsAt}T00:00:00`).toISOString()
+          : null,
+        ends_at:
+          endsAt || startsAt
+            ? new Date(`${endsAt || startsAt}T23:59:59`).toISOString()
+            : null,
         store_ids: selectedStoreIds,
         status: isActive ? "active" : "inactive",
       };
@@ -703,30 +726,63 @@ export function DiscountsView({
                             }
                           />
 
-                          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-                            <div>
-                              <label className="mb-1.5 block text-xs font-semibold text-neutral-800 dark:text-neutral-200">
-                                Bắt đầu từ
-                              </label>
-                              <input
-                                type="datetime-local"
-                                value={startsAt}
-                                onChange={(e) => setStartsAt(e.target.value)}
-                                className="w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-900 outline-none transition focus:border-neutral-900 focus:ring-2 focus:ring-neutral-900/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:focus:border-neutral-400"
-                              />
-                            </div>
-                            <div>
-                              <label className="mb-1.5 block text-xs font-semibold text-neutral-800 dark:text-neutral-200">
-                                Kết thúc lúc
-                              </label>
-                              <input
-                                type="datetime-local"
-                                value={endsAt}
-                                onChange={(e) => setEndsAt(e.target.value)}
-                                className="w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-900 outline-none transition focus:border-neutral-900 focus:ring-2 focus:ring-neutral-900/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:focus:border-neutral-400"
-                              />
-                            </div>
-                          </div>
+                          <DateRangePicker
+                            label="Khoảng thời gian áp dụng (Bắt đầu từ → Kết thúc lúc)"
+                            locale="vi-VN"
+                            value={
+                              startsAt
+                                ? {
+                                    from: startsAt,
+                                    to: endsAt || undefined,
+                                  }
+                                : null
+                            }
+                            onValueChange={(range: DateRange | null) => {
+                              setStartsAt(range?.from ?? "");
+                              setEndsAt(range?.to ?? "");
+                            }}
+                            presets={[
+                              {
+                                label: "7 ngày",
+                                value: { from: addDaysYmd(0), to: addDaysYmd(6) },
+                              },
+                              {
+                                label: "30 ngày",
+                                value: { from: addDaysYmd(0), to: addDaysYmd(29) },
+                              },
+                              {
+                                label: "90 ngày",
+                                value: { from: addDaysYmd(0), to: addDaysYmd(89) },
+                              },
+                            ]}
+                            closeOnSelect
+                            labels={{
+                              label: "Thời gian áp dụng",
+                              placeholder: "Không giới hạn (chọn ngày bắt đầu → kết thúc)",
+                              startDate: "Bắt đầu từ",
+                              endDate: "Kết thúc lúc",
+                              selectEnd: "Chọn ngày kết thúc",
+                              clear: "Xóa",
+                              clearLabel: "Xóa khoảng thời gian",
+                              chooseMonth: "Chọn tháng",
+                              chooseYear: "Chọn năm",
+                            }}
+                          >
+                            <DateRangePickerTrigger className="w-full justify-between" />
+                            <DateRangePickerContent className="w-[320px]">
+                              <DateRangePickerCalendar className="w-full rounded-none border-0">
+                                <DateRangePickerPresets className="mb-2" />
+                                <DateRangePickerHeader />
+                                <DateRangePickerGrid />
+                                <DateRangePickerFooter>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <DateRangePickerSelection />
+                                    <DateRangePickerClear />
+                                  </div>
+                                </DateRangePickerFooter>
+                              </DateRangePickerCalendar>
+                            </DateRangePickerContent>
+                          </DateRangePicker>
                         </div>
                       </div>
                     </div>
