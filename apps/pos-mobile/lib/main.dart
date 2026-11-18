@@ -174,6 +174,10 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   Timer? _serialPollTimer;
   Timer? _heartbeatTimer;
   Timer? _graceTimer;
+  Timer? _menuNoticeTimer;
+  String? _lastMenuSignature;
+  bool _showMenuUpdatedNotice = false;
+  bool _refreshingMenu = false;
 
   @override
   void initState() {
@@ -195,6 +199,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
     _serialPollTimer?.cancel();
     _heartbeatTimer?.cancel();
     _graceTimer?.cancel();
+    _menuNoticeTimer?.cancel();
   }
 
   Future<String> _resolveHardwareSerial(SharedPreferences prefs) async {
@@ -550,6 +555,25 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
               'Thiết bị này đã bị quản trị viên ngắt kết nối hoặc xóa.';
           _revocationTime = data['revoked_at']?.toString() ?? DateTime.now().toIso8601String();
         });
+        return;
+      }
+
+      final sig = data['menu_signature']?.toString();
+      if (sig != null && sig.isNotEmpty) {
+        if (_lastMenuSignature == null) {
+          _lastMenuSignature = sig;
+        } else if (_lastMenuSignature != sig && !_refreshingMenu) {
+          _lastMenuSignature = sig;
+          _refreshingMenu = true;
+          await _refreshTerminalData();
+          _refreshingMenu = false;
+          if (!mounted) return;
+          _menuNoticeTimer?.cancel();
+          setState(() => _showMenuUpdatedNotice = true);
+          _menuNoticeTimer = Timer(const Duration(seconds: 5), () {
+            if (mounted) setState(() => _showMenuUpdatedNotice = false);
+          });
+        }
       }
     } catch (_) {
       // Network drop handled by offline grace guard
@@ -2524,50 +2548,55 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          if (_offlineMode)
-            Container(
-              width: double.infinity,
-              color: Colors.amber.shade100,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              child: Row(
-                children: [
-                  const Icon(Icons.wifi_off, size: 16, color: Colors.deepOrange),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'CHẾ ĐỘ NGOẠI TUYẾN • Thời hạn còn ${_offlineGraceSeconds ~/ 60}p ${_offlineGraceSeconds % 60}s • Hàng đợi: ${_outboxQueue.length} đơn',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          Expanded(
-            child: isWide
-                ? Row(
+          Column(
+            children: [
+              if (_offlineMode)
+                Container(
+                  width: double.infinity,
+                  color: Colors.amber.shade100,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  child: Row(
                     children: [
-                      _buildWideSidebar(),
-                      const VerticalDivider(width: 1),
+                      const Icon(Icons.wifi_off, size: 16, color: Colors.deepOrange),
+                      const SizedBox(width: 8),
                       Expanded(
-                        child: _mobileTabIndex == 2
-                            ? _buildOrdersPane()
-                            : _buildCatalogPane(filteredProducts),
+                        child: Text(
+                          'CHẾ ĐỘ NGOẠI TUYẾN • Thời hạn còn ${_offlineGraceSeconds ~/ 60}p ${_offlineGraceSeconds % 60}s • Hàng đợi: ${_outboxQueue.length} đơn',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
                       ),
-                      const VerticalDivider(width: 1),
-                      SizedBox(width: 280, child: _buildCartPane()),
-                    ],
-                  )
-                : IndexedStack(
-                    index: _mobileTabIndex,
-                    children: [
-                      _buildCatalogPane(filteredProducts),
-                      _buildCartPane(),
-                      _buildOrdersPane(),
                     ],
                   ),
+                ),
+              Expanded(
+                child: isWide
+                    ? Row(
+                        children: [
+                          _buildWideSidebar(),
+                          const VerticalDivider(width: 1),
+                          Expanded(
+                            child: _mobileTabIndex == 2
+                                ? _buildOrdersPane()
+                                : _buildCatalogPane(filteredProducts),
+                          ),
+                          const VerticalDivider(width: 1),
+                          SizedBox(width: 280, child: _buildCartPane()),
+                        ],
+                      )
+                    : IndexedStack(
+                        index: _mobileTabIndex,
+                        children: [
+                          _buildCatalogPane(filteredProducts),
+                          _buildCartPane(),
+                          _buildOrdersPane(),
+                        ],
+                      ),
+              ),
+            ],
           ),
+          _buildMenuUpdatedToast(),
         ],
       ),
       bottomNavigationBar: isWide
@@ -2588,6 +2617,97 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                 const NavigationDestination(icon: Icon(Icons.receipt_long), label: 'Hóa đơn'),
               ],
             ),
+    );
+  }
+
+  Widget _buildMenuUpdatedToast() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+      top: _showMenuUpdatedNotice ? 14 : -90,
+      right: 16,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 220),
+        opacity: _showMenuUpdatedNotice ? 1.0 : 0.0,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 360),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: kEmeraldPrimary.withOpacity(0.6),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.14),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: kMintSoft,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.sync_rounded,
+                    color: kEmeraldDark,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Menu đã có sự thay đổi',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13.5,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Thực đơn, giá và khuyến mãi mới nhất đã được cập nhật.',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: isDark ? Colors.white70 : Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: () => setState(() => _showMenuUpdatedNotice = false),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: isDark ? Colors.white54 : Colors.grey.shade500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 

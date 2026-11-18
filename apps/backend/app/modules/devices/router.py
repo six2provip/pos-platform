@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Header, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -50,11 +51,13 @@ from app.infrastructure.models import (
     DeviceEvent,
     DeviceProductConfig,
     DeviceToken,
+    DiscountCode,
     Organization,
     OrganizationSetting,
     Product,
     ProductCategory,
     ProductVariant,
+    Promotion,
     Store,
     StoreProductConfig,
 )
@@ -1428,6 +1431,23 @@ def check_device_status(
             },
             request_id=request_id,
         )
+    def _sig_part(model_cls: Any, *filters: Any) -> str:
+        mx, cnt = db.query(func.max(model_cls.updated_at), func.count(model_cls.id)).filter(*filters).one()
+        return f"{mx.isoformat() if mx else '0'}:{cnt}"
+
+    menu_signature = "|".join(
+        [
+            str(device.menu_mode or "inherit"),
+            _sig_part(StoreProductConfig, StoreProductConfig.store_id == device.store_id),
+            _sig_part(DeviceProductConfig, DeviceProductConfig.device_id == device.id),
+            _sig_part(Product, Product.organization_id == device.organization_id),
+            _sig_part(ProductVariant, ProductVariant.organization_id == device.organization_id),
+            _sig_part(ProductCategory, ProductCategory.organization_id == device.organization_id),
+            _sig_part(Promotion, Promotion.organization_id == device.organization_id),
+            _sig_part(DiscountCode, DiscountCode.organization_id == device.organization_id),
+        ]
+    )
+
     return ok_response(
         {
             "device_id": device_id,
@@ -1435,6 +1455,7 @@ def check_device_status(
             "is_active": True,
             "deleted": False,
             "store_id": device.store_id,
+            "menu_signature": menu_signature,
         },
         request_id=request_id,
     )
