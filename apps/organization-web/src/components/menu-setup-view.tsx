@@ -1093,8 +1093,8 @@ export function MenuSetupView({
                   {/* 4-Column Square Product Cards */}
                   <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
                     {deviceMenuLoading ? (
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-                        {[1, 2, 3, 4, 5, 6, 7, 8].map((idx) => (
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-3">
+                        {[1, 2, 3, 4, 5, 6].map((idx) => (
                           <Skeleton
                             key={idx}
                             className="aspect-square w-full rounded-2xl dark:bg-neutral-800"
@@ -1106,11 +1106,7 @@ export function MenuSetupView({
                         Không có món nào khớp bộ lọc.
                       </div>
                     ) : (
-                      <div
-                        className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${
-                          hasChanges ? "xl:grid-cols-3" : "xl:grid-cols-4"
-                        }`}
-                      >
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-3">
                         {filteredDeviceMenuItems.map((item) =>
                           renderProductCard(item, true)
                         )}
@@ -1169,11 +1165,11 @@ export function MenuSetupView({
                 })()}
               </div>
 
-              {/* 4-Column Square Product Cards */}
+              {/* 3-Column Square Product Cards */}
               <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
                 {menuLoading ? (
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-                    {[1, 2, 3, 4, 5, 6, 7, 8].map((idx) => (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-3">
+                    {[1, 2, 3, 4, 5, 6].map((idx) => (
                       <Skeleton
                         key={idx}
                         className="aspect-square w-full rounded-2xl dark:bg-neutral-800"
@@ -1185,11 +1181,7 @@ export function MenuSetupView({
                     Không có sản phẩm nào phù hợp.
                   </div>
                 ) : (
-                  <div
-                    className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${
-                      hasChanges ? "xl:grid-cols-3" : "xl:grid-cols-4"
-                    }`}
-                  >
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-3">
                     {filteredMenuItems.map((item) =>
                       renderProductCard(item, false)
                     )}
@@ -1204,152 +1196,148 @@ export function MenuSetupView({
           )}
           </div>
 
-          {/* Animated Vertical Change Preview Section (only appears when hasChanges) */}
-          <AnimatePresence initial={false}>
-            {hasChanges && (
-              <motion.aside
-                key="change-preview-panel"
-                initial={{ width: 0, opacity: 0, x: 16 }}
-                animate={{ width: 300, opacity: 1, x: 0 }}
-                exit={{ width: 0, opacity: 0, x: 16 }}
-                transition={{ type: "spring", stiffness: 360, damping: 32 }}
-                className="hidden shrink-0 overflow-hidden lg:flex lg:flex-col"
-              >
-                <div className="flex h-full min-h-0 w-[300px] flex-col rounded-2xl border border-neutral-200/80 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-                  <div className="flex shrink-0 items-center justify-between gap-2 border-b border-neutral-200/70 pb-3 dark:border-neutral-800">
-                    <div>
-                      <h3 className="text-xs font-bold text-neutral-900 dark:text-white">
-                        Xem trước thay đổi ({pendingChanges.length})
-                      </h3>
-                      <p className="text-[10px] text-neutral-400">
-                        Chưa lưu vào hệ thống
-                      </p>
-                    </div>
+          {/* Fixed Vertical Change Preview Section */}
+          <aside className="hidden w-[300px] shrink-0 lg:flex lg:flex-col">
+            <div className="flex h-full min-h-0 w-full flex-col rounded-2xl border border-neutral-200/80 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-neutral-200/70 pb-3 dark:border-neutral-800">
+                <div>
+                  <h3 className="text-xs font-bold text-neutral-900 dark:text-white">
+                    Xem trước thay đổi ({pendingChanges.length})
+                  </h3>
+                  <p className="text-[10px] text-neutral-400">
+                    {hasChanges ? "Chưa lưu vào hệ thống" : "Chưa có thay đổi nào"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={!hasChanges}
+                  onClick={revertAllChanges}
+                  className="inline-flex items-center gap-1 rounded-full border border-neutral-200 px-2.5 py-1 text-[10px] font-semibold text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Hoàn tác
+                </button>
+              </div>
+
+              <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                {!hasChanges ? (
+                  <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed border-neutral-200/80 bg-neutral-50/40 p-5 text-center text-[11px] text-neutral-400 dark:border-neutral-800 dark:bg-neutral-950/30">
+                    Bật/tắt trạng thái món hoặc bấm vào thẻ sản phẩm để điều chỉnh giá. Các thay đổi sẽ hiển thị tại đây.
+                  </div>
+                ) : (
+                  <AnimatePresence initial={false}>
+                    {pendingChanges.map((chg) => (
+                      <motion.div
+                        key={chg.id}
+                        layout
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.96 }}
+                        transition={{ duration: 0.16 }}
+                        className="rounded-xl border border-neutral-200/80 bg-neutral-50/70 p-2.5 dark:border-neutral-800 dark:bg-neutral-950/60"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="line-clamp-2 text-[11px] font-bold text-neutral-900 dark:text-white">
+                            {chg.title}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => revertSingleChange(chg)}
+                            title="Hoàn tác mục này"
+                            className="grid h-5 w-5 shrink-0 place-items-center rounded-md text-neutral-400 hover:bg-neutral-200/70 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                          </button>
+                        </div>
+
+                        <div className="mt-1.5 space-y-1 text-[10px]">
+                          {chg.modeChanged && (
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className="rounded bg-neutral-200/80 px-1.5 py-0.5 text-neutral-600 line-through dark:bg-neutral-800 dark:text-neutral-400">
+                                {chg.oldMode}
+                              </span>
+                              <span className="text-neutral-400">→</span>
+                              <span className="rounded bg-blue-50 px-1.5 py-0.5 font-bold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+                                {chg.newMode}
+                              </span>
+                            </div>
+                          )}
+
+                          {chg.availChanged && (
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className="rounded bg-neutral-200/80 px-1.5 py-0.5 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+                                {chg.oldAvail ? "Đang bán" : "Đang ẩn"}
+                              </span>
+                              <span className="text-neutral-400">→</span>
+                              <span
+                                className={`rounded px-1.5 py-0.5 font-bold ${
+                                  chg.newAvail
+                                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                    : "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+                                }`}
+                              >
+                                {chg.newAvail ? "Đang bán" : "Đang ẩn"}
+                              </span>
+                            </div>
+                          )}
+
+                          {chg.priceChanged && (
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className="rounded bg-neutral-200/80 px-1.5 py-0.5 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+                                {chg.oldPrice
+                                  ? Number(chg.oldPrice).toLocaleString("vi-VN")
+                                  : "Mặc định"}
+                              </span>
+                              <span className="text-neutral-400">→</span>
+                              <span className="rounded bg-blue-50 px-1.5 py-0.5 font-bold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+                                {chg.newPrice
+                                  ? Number(chg.newPrice).toLocaleString("vi-VN")
+                                  : "Mặc định"}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                )}
+              </div>
+
+              {/* Save Action Button (enabled only when hasChanges) */}
+              <div className="mt-3 shrink-0 border-t border-neutral-200/70 pt-3 dark:border-neutral-800">
+                {(() => {
+                  const isDeviceTarget =
+                    selection.kind === "device" && Boolean(activeDevice);
+                  const isBusy = isDeviceTarget
+                    ? deviceSaving
+                    : menuSaving || menuLoading;
+                  return (
                     <button
                       type="button"
-                      onClick={revertAllChanges}
-                      className="inline-flex items-center gap-1 rounded-full border border-neutral-200 px-2.5 py-1 text-[10px] font-semibold text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                      disabled={!hasChanges || isBusy}
+                      onClick={() => {
+                        if (isDeviceTarget) {
+                          void handleSaveDeviceFilter();
+                        } else {
+                          void handleSaveStoreMenu();
+                        }
+                      }}
+                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-neutral-900 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
                     >
-                      <RotateCcw className="h-3 w-3" />
-                      Hoàn tác
-                    </button>
-                  </div>
-
-                  <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-                    <AnimatePresence initial={false}>
-                      {pendingChanges.map((chg) => (
-                        <motion.div
-                          key={chg.id}
-                          layout
-                          initial={{ opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.96 }}
-                          transition={{ duration: 0.16 }}
-                          className="rounded-xl border border-neutral-200/80 bg-neutral-50/70 p-2.5 dark:border-neutral-800 dark:bg-neutral-950/60"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <span className="line-clamp-2 text-[11px] font-bold text-neutral-900 dark:text-white">
-                              {chg.title}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => revertSingleChange(chg)}
-                              title="Hoàn tác mục này"
-                              className="grid h-5 w-5 shrink-0 place-items-center rounded-md text-neutral-400 hover:bg-neutral-200/70 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
-                            >
-                              <RotateCcw className="h-3 w-3" />
-                            </button>
-                          </div>
-
-                          <div className="mt-1.5 space-y-1 text-[10px]">
-                            {chg.modeChanged && (
-                              <div className="flex flex-wrap items-center gap-1">
-                                <span className="rounded bg-neutral-200/80 px-1.5 py-0.5 text-neutral-600 line-through dark:bg-neutral-800 dark:text-neutral-400">
-                                  {chg.oldMode}
-                                </span>
-                                <span className="text-neutral-400">→</span>
-                                <span className="rounded bg-blue-50 px-1.5 py-0.5 font-bold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
-                                  {chg.newMode}
-                                </span>
-                              </div>
-                            )}
-
-                            {chg.availChanged && (
-                              <div className="flex flex-wrap items-center gap-1">
-                                <span className="rounded bg-neutral-200/80 px-1.5 py-0.5 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
-                                  {chg.oldAvail ? "Đang bán" : "Đang ẩn"}
-                                </span>
-                                <span className="text-neutral-400">→</span>
-                                <span
-                                  className={`rounded px-1.5 py-0.5 font-bold ${
-                                    chg.newAvail
-                                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
-                                      : "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
-                                  }`}
-                                >
-                                  {chg.newAvail ? "Đang bán" : "Đang ẩn"}
-                                </span>
-                              </div>
-                            )}
-
-                            {chg.priceChanged && (
-                              <div className="flex flex-wrap items-center gap-1">
-                                <span className="rounded bg-neutral-200/80 px-1.5 py-0.5 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
-                                  {chg.oldPrice
-                                    ? Number(chg.oldPrice).toLocaleString("vi-VN")
-                                    : "Mặc định"}
-                                </span>
-                                <span className="text-neutral-400">→</span>
-                                <span className="rounded bg-blue-50 px-1.5 py-0.5 font-bold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
-                                  {chg.newPrice
-                                    ? Number(chg.newPrice).toLocaleString("vi-VN")
-                                    : "Mặc định"}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </motion.div>
-                      ))}
-                    </AnimatePresence>
-                  </div>
-
-                  {/* Save Action Button inside Change Preview Panel */}
-                  <div className="mt-3 shrink-0 border-t border-neutral-200/70 pt-3 dark:border-neutral-800">
-                    {(() => {
-                      const isDeviceTarget =
-                        selection.kind === "device" && Boolean(activeDevice);
-                      const isBusy = isDeviceTarget
+                      <Check className="h-3.5 w-3.5" />
+                      {isDeviceTarget
                         ? deviceSaving
-                        : menuSaving || menuLoading;
-                      return (
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => {
-                            if (isDeviceTarget) {
-                              void handleSaveDeviceFilter();
-                            } else {
-                              void handleSaveStoreMenu();
-                            }
-                          }}
-                          className="inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-neutral-900 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
-                        >
-                          <Check className="h-3.5 w-3.5" />
-                          {isDeviceTarget
-                            ? deviceSaving
-                              ? "Đang lưu..."
-                              : "Lưu Cấu Hình Máy"
-                            : menuSaving
-                              ? "Đang lưu..."
-                              : "Lưu Thực Đơn"}
-                        </button>
-                      );
-                    })()}
-                  </div>
-                </div>
-              </motion.aside>
-            )}
-          </AnimatePresence>
+                          ? "Đang lưu..."
+                          : "Lưu Cấu Hình Máy"
+                        : menuSaving
+                          ? "Đang lưu..."
+                          : "Lưu Thực Đơn"}
+                    </button>
+                  );
+                })()}
+              </div>
+            </div>
+          </aside>
         </div>
       </div>
 
