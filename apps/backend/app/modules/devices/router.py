@@ -557,6 +557,153 @@ def pair_device_by_ip(
     )
 
 
+@router.post("/devices/activate-by-serial")
+def activate_device_by_serial(
+    body: ActivateBySerialRequest,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    """Zero-touch POS/Kiosk activation using hardware Serial Number."""
+    norm_serial = normalize_and_validate_serial(body.serial_number)
+    if not norm_serial:
+        raise ValidationAppError(
+            code="INVALID_SERIAL_NUMBER",
+            message="Serial number không được để trống.",
+        )
+
+    device = (
+        db.query(Device)
+        .filter(Device.serial_number == norm_serial, Device.deleted_at.is_(None))
+        .first()
+    )
+    if device is None:
+        raise NotFoundError(
+            code="SERIAL_NOT_REGISTERED",
+            message=f"Thiết bị có Serial '{norm_serial}' chưa được đăng ký vào chi nhánh nào.",
+        )
+
+    set_rls_tenant_context(db, device.organization_id)
+    org = (
+        db.query(Organization)
+        .filter(
+            Organization.id == device.organization_id,
+            Organization.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if org is None or org.status != "active":
+        raise ForbiddenError(
+            code="ORGANIZATION_INACTIVE",
+            message="Tổ chức của thiết bị này hiện đang tạm khóa hoặc chưa kích hoạt.",
+        )
+    if body.organization_code and org.code.upper() != body.organization_code.strip().upper():
+        raise ForbiddenError(
+            code="ORGANIZATION_MISMATCH",
+            message="Serial number không thuộc tổ chức được yêu cầu.",
+        )
+
+    if device.status in ("disabled", "revoked"):
+        raise ForbiddenError(
+            code="DEVICE_NOT_ACTIVE",
+            message="Thiết bị này đã bị khóa hoặc thu hồi quyền hoạt động.",
+        )
+
+    store = (
+        db.query(Store)
+        .filter(
+            Store.organization_id == org.id,
+            Store.id == device.store_id,
+            Store.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if store is None or store.status != "active":
+        raise ForbiddenError(
+            code="STORE_INACTIVE",
+            message="Chi nhánh gắn với thiết bị này hiện không hoạt động.",
+        )
+
+    now = datetime.now(timezone.utc)
+    # Revoke any older token families so only this hardware session remains valid
+    old_tokens = (
+        db.query(DeviceToken)
+        .filter(
+            DeviceToken.organization_id == org.id,
+            DeviceToken.device_id == device.id,
+            DeviceToken.revoked_at.is_(None),
+        )
+        .all()
+    )
+    for tok in old_tokens:
+        tok.revoked_at = now
+        tok.revoke_reason = "re_activated_by_serial"
+
+    device.status = "active"
+    device.app_version = body.app_version
+    device.last_seen_at = now
+
+    token_family_id = str(uuid.uuid4())
+    raw_refresh = generate_opaque_secret(prefix="drt")
+    db.add(
+        DeviceToken(
+            organization_id=org.id,
+            device_id=device.id,
+            token_hash=hash_opaque_secret(raw_refresh),
+            token_family_id=token_family_id,
+            issued_at=now,
+            expires_at=now + timedelta(days=90),
+            last_used_at=now,
+        )
+    )
+    db.add(
+        DeviceEvent(
+            organization_id=org.id,
+            device_id=device.id,
+            event_type="activated_by_serial",
+            event_metadata={
+                "serial_number": norm_serial,
+                "app_version": body.app_version,
+            },
+            occurred_at=now,
+        )
+    )
+    db.flush()
+
+    access_token = create_device_access_token(
+        settings=settings,
+        device_id=device.id,
+        organization_id=org.id,
+        store_id=store.id,
+        token_family_id=token_family_id,
+        deployment_id=settings.deployment_id,
+        now=now,
+    )
+    db.commit()
+    db.refresh(device)
+
+    return ok_response(
+        {
+            "access_token": access_token,
+            "refresh_token": raw_refresh,
+            "token_type": "Bearer",
+            "expires_in": settings.device_access_token_expire_seconds,
+            "device": _serialize_device(device),
+            "store": {
+                "id": store.id,
+                "code": store.code,
+                "name": store.name,
+            },
+            "organization": {
+                "id": org.id,
+                "code": org.code,
+                "name": org.name,
+            },
+        },
+        request_id=request_id,
+    )
+
+
 @router.get("/devices")
 @router.get("/stores/{store_id}/devices")
 def list_devices(
@@ -1504,151 +1651,5 @@ def update_device_status(
     db.refresh(device)
     return ok_response(_serialize_device(device), request_id=request_id)
 
-
-@router.post("/devices/activate-by-serial")
-def activate_device_by_serial(
-    body: ActivateBySerialRequest,
-    db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
-    request_id: str = Depends(get_request_id),
-) -> Dict[str, Any]:
-    """Zero-touch POS/Kiosk activation using hardware Serial Number."""
-    norm_serial = normalize_and_validate_serial(body.serial_number)
-    if not norm_serial:
-        raise ValidationAppError(
-            code="INVALID_SERIAL_NUMBER",
-            message="Serial number không được để trống.",
-        )
-
-    device = (
-        db.query(Device)
-        .filter(Device.serial_number == norm_serial, Device.deleted_at.is_(None))
-        .first()
-    )
-    if device is None:
-        raise NotFoundError(
-            code="SERIAL_NOT_REGISTERED",
-            message=f"Thiết bị có Serial '{norm_serial}' chưa được đăng ký vào chi nhánh nào.",
-        )
-
-    set_rls_tenant_context(db, device.organization_id)
-    org = (
-        db.query(Organization)
-        .filter(
-            Organization.id == device.organization_id,
-            Organization.deleted_at.is_(None),
-        )
-        .first()
-    )
-    if org is None or org.status != "active":
-        raise ForbiddenError(
-            code="ORGANIZATION_INACTIVE",
-            message="Tổ chức của thiết bị này hiện đang tạm khóa hoặc chưa kích hoạt.",
-        )
-    if body.organization_code and org.code.upper() != body.organization_code.strip().upper():
-        raise ForbiddenError(
-            code="ORGANIZATION_MISMATCH",
-            message="Serial number không thuộc tổ chức được yêu cầu.",
-        )
-
-    if device.status in ("disabled", "revoked"):
-        raise ForbiddenError(
-            code="DEVICE_NOT_ACTIVE",
-            message="Thiết bị này đã bị khóa hoặc thu hồi quyền hoạt động.",
-        )
-
-    store = (
-        db.query(Store)
-        .filter(
-            Store.organization_id == org.id,
-            Store.id == device.store_id,
-            Store.deleted_at.is_(None),
-        )
-        .first()
-    )
-    if store is None or store.status != "active":
-        raise ForbiddenError(
-            code="STORE_INACTIVE",
-            message="Chi nhánh gắn với thiết bị này hiện không hoạt động.",
-        )
-
-    now = datetime.now(timezone.utc)
-    # Revoke any older token families so only this hardware session remains valid
-    old_tokens = (
-        db.query(DeviceToken)
-        .filter(
-            DeviceToken.organization_id == org.id,
-            DeviceToken.device_id == device.id,
-            DeviceToken.revoked_at.is_(None),
-        )
-        .all()
-    )
-    for tok in old_tokens:
-        tok.revoked_at = now
-        tok.revoke_reason = "re_activated_by_serial"
-
-    device.status = "active"
-    device.app_version = body.app_version
-    device.last_seen_at = now
-
-    token_family_id = str(uuid.uuid4())
-    raw_refresh = generate_opaque_secret(prefix="drt")
-    db.add(
-        DeviceToken(
-            organization_id=org.id,
-            device_id=device.id,
-            token_hash=hash_opaque_secret(raw_refresh),
-            token_family_id=token_family_id,
-            issued_at=now,
-            expires_at=now + timedelta(days=90),
-            last_used_at=now,
-        )
-    )
-    db.add(
-        DeviceEvent(
-            organization_id=org.id,
-            device_id=device.id,
-            event_type="activated_by_serial",
-            event_metadata={
-                "serial_number": norm_serial,
-                "app_version": body.app_version,
-            },
-            occurred_at=now,
-        )
-    )
-    db.flush()
-
-    access_token = create_device_access_token(
-        settings=settings,
-        device_id=device.id,
-        organization_id=org.id,
-        store_id=store.id,
-        token_family_id=token_family_id,
-        deployment_id=settings.deployment_id,
-        now=now,
-    )
-    db.commit()
-    db.refresh(device)
-
-    return ok_response(
-        {
-            "access_token": access_token,
-            "refresh_token": raw_refresh,
-            "token_type": "Bearer",
-            "expires_in": settings.device_access_token_expire_seconds,
-            "device": _serialize_device(device),
-            "store": {
-                "id": store.id,
-                "code": store.code,
-                "name": store.name,
-            },
-            "organization": {
-                "id": org.id,
-                "code": org.code,
-                "name": org.name,
-            },
-        },
-        request_id=request_id,
-    )
 
 
