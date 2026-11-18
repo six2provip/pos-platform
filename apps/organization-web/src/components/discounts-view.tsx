@@ -3,13 +3,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
+  BadgePercent,
   Calendar,
   Check,
   Copy,
   Pencil,
   Plus,
+  Repeat,
   Search,
   Store,
+  Tag,
   TicketPercent,
   Trash2,
   X,
@@ -97,6 +100,7 @@ export function DiscountsView({
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [revealedCodeId, setRevealedCodeId] = useState<string | null>(null);
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -387,18 +391,18 @@ export function DiscountsView({
         </div>
 
         {/* List */}
-        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-xl bg-neutral-50/70 p-3 dark:bg-neutral-950/40">
           {loading ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="flex flex-col gap-3">
               {[1, 2, 3, 4].map((idx) => (
                 <Skeleton
                   key={idx}
-                  className="h-36 w-full rounded-2xl dark:bg-neutral-800"
+                  className="h-28 w-full rounded-2xl dark:bg-neutral-800"
                 />
               ))}
             </div>
           ) : filtered.length === 0 ? (
-            <div className="flex h-full min-h-[240px] flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-neutral-50/50 p-10 text-center dark:border-neutral-800 dark:bg-neutral-950/30">
+            <div className="flex h-full min-h-[240px] flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-white/60 p-10 text-center dark:border-neutral-800 dark:bg-neutral-950/30">
               <TicketPercent className="mb-2.5 h-8 w-8 text-neutral-400" />
               <div className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
                 Chưa có mã giảm giá nào
@@ -408,7 +412,7 @@ export function DiscountsView({
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="flex flex-col gap-3">
               {filtered.map((dc) => {
                 const badge = getRuntimeBadge(dc);
                 const valNum = Number(dc.value || 0);
@@ -416,106 +420,142 @@ export function DiscountsView({
                 const maxNum = dc.max_discount_amount
                   ? Number(dc.max_discount_amount)
                   : null;
-                const usagePct = dc.usage_limit
-                  ? Math.min(100, Math.round((dc.used_count / dc.usage_limit) * 100))
-                  : null;
+                const isRevealed = revealedCodeId === dc.id;
+                const isPercent = dc.discount_type === "percentage";
+
+                const headline = isPercent
+                  ? `Giảm ${valNum}%${
+                      maxNum
+                        ? ` (tối đa ${maxNum.toLocaleString("vi-VN")}đ)`
+                        : ""
+                    }`
+                  : `Giảm ${valNum.toLocaleString("vi-VN")}đ`;
+
+                const dateLabel =
+                  dc.starts_at || dc.ends_at
+                    ? `${dc.starts_at ? formatShortDate(dc.starts_at) : "Ngay"} → ${
+                        dc.ends_at ? formatShortDate(dc.ends_at) : "Không giới hạn"
+                      }`
+                    : "Không giới hạn ngày";
+
+                const usageLabel = dc.usage_limit
+                  ? `Đã dùng ${dc.used_count}/${dc.usage_limit} lượt`
+                  : dc.used_count > 0
+                    ? `Đã dùng ${dc.used_count} lượt (∞)`
+                    : "Không giới hạn lượt";
+
                 return (
                   <div
                     key={dc.id}
-                    className="flex flex-col justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4 transition-colors hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950/50 dark:hover:border-neutral-700"
+                    className="relative flex flex-col overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-colors hover:border-neutral-300 sm:flex-row dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700"
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    {/* Left Ticket Body */}
+                    <div className="flex min-w-0 flex-1 items-start gap-4 p-5">
+                      <div
+                        className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${
+                          isPercent
+                            ? "bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400"
+                            : "bg-rose-50 text-rose-500 dark:bg-rose-950/60 dark:text-rose-400"
+                        }`}
+                      >
+                        {isPercent ? (
+                          <BadgePercent className="h-5 w-5" />
+                        ) : (
+                          <Tag className="h-5 w-5" />
+                        )}
+                      </div>
+
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 font-mono text-xs font-extrabold text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white">
-                            {dc.code}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                void navigator.clipboard?.writeText(dc.code);
-                                notify("info", `Đã sao chép mã ${dc.code}`);
-                              }}
-                              title="Sao chép mã"
-                              className="text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
-                            >
-                              <Copy className="h-3 w-3" />
-                            </button>
-                          </span>
+                        <div className="flex items-start justify-between gap-3">
+                          <h3 className="truncate text-sm font-bold text-neutral-900 dark:text-white">
+                            {headline}
+                          </h3>
                           <span
-                            className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.cls}`}
+                            className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${badge.cls}`}
                           >
                             {badge.label}
                           </span>
                         </div>
 
-                        <h3 className="mt-2 truncate text-xs font-bold text-neutral-900 dark:text-white">
+                        <p className="mt-1 line-clamp-1 text-xs text-neutral-600 dark:text-neutral-300">
                           {dc.name}
-                        </h3>
-                        <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
-                          {dc.discount_type === "percentage"
-                            ? `Giảm ${valNum}%${
-                                maxNum
-                                  ? ` (tối đa ${maxNum.toLocaleString("vi-VN")}đ)`
-                                  : ""
-                              }`
-                            : `Giảm ${valNum.toLocaleString("vi-VN")}đ`}
                           {minNum > 0
                             ? ` • Đơn tối thiểu ${minNum.toLocaleString("vi-VN")}đ`
-                            : " • Mọi đơn hàng"}
+                            : " • Áp dụng mọi đơn hàng"}
+                          {dc.store_ids.length > 0
+                            ? ` • ${dc.store_ids.length} chi nhánh`
+                            : " • Tất cả chi nhánh"}
                         </p>
-                      </div>
 
-                      <BeSwitch
-                        checked={dc.status === "active"}
-                        onCheckedChange={() => void handleToggleStatus(dc)}
-                        ariaLabel={`Bật tắt mã ${dc.code}`}
+                        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                          <span className="inline-flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5 text-neutral-400" />
+                            {dateLabel}
+                          </span>
+                          <span className="inline-flex items-center gap-1.5">
+                            <Repeat className="h-3.5 w-3.5 text-neutral-400" />
+                            {usageLabel}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Dashed Ticket Stub Divider with Notches */}
+                    <div className="relative hidden w-px border-l border-dashed border-neutral-200 sm:block dark:border-neutral-800">
+                      <span
+                        aria-hidden="true"
+                        className="absolute -left-2.5 -top-2.5 h-5 w-5 rounded-full border border-neutral-200/80 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="absolute -bottom-2.5 -left-2.5 h-5 w-5 rounded-full border border-neutral-200/80 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950"
                       />
                     </div>
 
-                    <div className="space-y-2 border-t border-neutral-200/70 pt-2.5 text-[11px] text-neutral-500 dark:border-neutral-800">
-                      {usagePct !== null && (
-                        <div className="h-1 w-full overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
-                          <div
-                            className="h-full rounded-full bg-neutral-900 transition-all dark:bg-white"
-                            style={{ width: `${usagePct}%` }}
-                          />
-                        </div>
-                      )}
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span>
-                            Đã dùng:{" "}
-                            <strong className="text-neutral-900 dark:text-white">
-                              {dc.used_count}
-                              {dc.usage_limit ? `/${dc.usage_limit}` : " (∞)"}
-                            </strong>
+                    {/* Right Stub Action Area */}
+                    <div className="flex shrink-0 items-center justify-between gap-3 border-t border-dashed border-neutral-200 px-5 py-3.5 sm:w-56 sm:flex-col sm:justify-center sm:border-t-0 dark:border-neutral-800">
+                      <BeButton
+                        variant="primary"
+                        size="md"
+                        onClick={() => {
+                          setRevealedCodeId(dc.id);
+                          void navigator.clipboard?.writeText(dc.code);
+                          notify("info", `Đã sao chép mã ${dc.code}`);
+                        }}
+                        className="h-9 w-auto min-w-[144px] bg-slate-900 px-5 text-xs font-semibold text-white hover:bg-slate-800 sm:w-full dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+                      >
+                        {isRevealed ? (
+                          <span className="inline-flex items-center gap-1.5 font-mono tracking-wider">
+                            {dc.code}
+                            <Copy className="h-3 w-3 opacity-80" />
                           </span>
-                          <span>•</span>
-                          <span>
-                            {dc.store_ids.length === 0
-                              ? "Tất cả chi nhánh"
-                              : `${dc.store_ids.length} chi nhánh`}
-                          </span>
-                        </div>
+                        ) : (
+                          "Xem mã"
+                        )}
+                      </BeButton>
 
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(dc)}
-                            title="Chỉnh sửa"
-                            className="grid h-7 w-7 place-items-center rounded-lg text-neutral-500 hover:bg-neutral-200/70 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleDelete(dc)}
-                            title="Xóa mã"
-                            className="grid h-7 w-7 place-items-center rounded-lg text-rose-500 hover:bg-rose-100/70 hover:text-rose-600 dark:hover:bg-rose-950/40"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <BeSwitch
+                          checked={dc.status === "active"}
+                          onCheckedChange={() => void handleToggleStatus(dc)}
+                          ariaLabel={`Bật tắt mã ${dc.code}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(dc)}
+                          title="Chỉnh sửa"
+                          className="grid h-7 w-7 place-items-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(dc)}
+                          title="Xóa mã"
+                          className="grid h-7 w-7 place-items-center rounded-lg text-rose-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </div>
                   </div>
