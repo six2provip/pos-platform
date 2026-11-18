@@ -1484,14 +1484,9 @@ export function MenuSetupView({
                               className="rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-3.5 dark:border-neutral-800 dark:bg-neutral-900/50"
                             >
                               <div className="flex items-center justify-between gap-2">
-                                <div>
-                                  <span className="text-xs font-bold text-neutral-900 dark:text-white">
-                                    {v.variant_name}
-                                  </span>
-                                  <span className="ml-2 font-mono text-[11px] text-neutral-400">
-                                    {v.sku}
-                                  </span>
-                                </div>
+                                <span className="text-xs font-bold text-neutral-900 dark:text-white">
+                                  {v.variant_name}
+                                </span>
                                 <span className="text-xs font-extrabold text-neutral-900 dark:text-white">
                                   {Number(v.default_price || 0).toLocaleString(
                                     "vi-VN"
