@@ -712,6 +712,7 @@ export function MenuSetupView({
     priceChanged?: boolean;
     oldPrice?: string | null;
     newPrice?: string | null;
+    fallbackPrice?: number;
     modeChanged?: boolean;
     oldMode?: string;
     newMode?: string;
@@ -753,6 +754,9 @@ export function MenuSetupView({
               priceChanged,
               oldPrice: oldP || null,
               newPrice: newP || null,
+              fallbackPrice: Number(
+                it.store_price_override ?? it.base_price ?? 0
+              ),
             });
           }
         }
@@ -777,6 +781,7 @@ export function MenuSetupView({
             priceChanged,
             oldPrice: oldP || null,
             newPrice: newP || null,
+            fallbackPrice: Number(it.base_price ?? 0),
           });
         }
       }
@@ -1283,16 +1288,16 @@ export function MenuSetupView({
 
                           {chg.priceChanged && (
                             <div className="flex flex-wrap items-center gap-1">
-                              <span className="rounded bg-neutral-200/80 px-1.5 py-0.5 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
-                                {chg.oldPrice
-                                  ? Number(chg.oldPrice).toLocaleString("vi-VN")
-                                  : "Mặc định"}
+                              <span className="rounded bg-neutral-200/80 px-1.5 py-0.5 tabular-nums text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+                                {Number(
+                                  chg.oldPrice ?? chg.fallbackPrice ?? 0
+                                ).toLocaleString("vi-VN")}
                               </span>
                               <span className="text-neutral-400">→</span>
-                              <span className="rounded bg-blue-50 px-1.5 py-0.5 font-bold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
-                                {chg.newPrice
-                                  ? Number(chg.newPrice).toLocaleString("vi-VN")
-                                  : "Mặc định"}
+                              <span className="rounded bg-blue-50 px-1.5 py-0.5 font-bold tabular-nums text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+                                {Number(
+                                  chg.newPrice ?? chg.fallbackPrice ?? 0
+                                ).toLocaleString("vi-VN")}
                               </span>
                             </div>
                           )}
