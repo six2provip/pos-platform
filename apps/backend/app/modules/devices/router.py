@@ -1680,7 +1680,7 @@ class DeviceMenuItemConfig(BaseModel):
 
     product_id: str
     is_available: bool = True
-    price_override: Optional[Decimal] = Field(default=None, ge=0)
+    price_override: Optional[Decimal] = Field(default=None, ge=Decimal("0"))
 
 
 class UpdateDeviceMenuRequest(BaseModel):
