@@ -173,6 +173,196 @@ const VOUCHER_VISUAL_THEMES = [
   },
 ] as const;
 
+interface CouponPassCardProps {
+  code: string;
+  name: string;
+  discountType: "percentage" | "fixed";
+  valueNum: number;
+  maxNum?: number | null;
+  minNum: number;
+  dateLabel: string;
+  usageText: string;
+  storeNames: string;
+  badge: { label: string; cls: string };
+  themeIndex?: number;
+  compact?: boolean;
+  onCopy?: () => void;
+  actions?: React.ReactNode;
+}
+
+function CouponPassCard({
+  code,
+  name,
+  discountType,
+  valueNum,
+  maxNum,
+  minNum,
+  dateLabel,
+  usageText,
+  storeNames,
+  badge,
+  themeIndex = 0,
+  compact = false,
+  onCopy,
+  actions,
+}: CouponPassCardProps) {
+  const isPercent = discountType === "percentage";
+  const theme = VOUCHER_VISUAL_THEMES[themeIndex % VOUCHER_VISUAL_THEMES.length];
+
+  const shortHeroValue = !valueNum
+    ? isPercent
+      ? "-0%"
+      : "-0đ"
+    : isPercent
+      ? `-${valueNum}%`
+      : valueNum >= 1000
+        ? `-${Math.round(valueNum / 1000)}K`
+        : `-${valueNum}đ`;
+
+  const headline = isPercent
+    ? `Giảm ${valueNum}%${
+        maxNum ? ` (tối đa ${maxNum.toLocaleString("vi-VN")}đ)` : ""
+      }`
+    : `Giảm ${valueNum.toLocaleString("vi-VN")}đ`;
+
+  return (
+    <div className="mx-auto flex w-full max-w-md flex-col overflow-hidden rounded-3xl border border-neutral-200/90 bg-white shadow-[0_12px_36px_rgba(0,0,0,0.06)] dark:border-neutral-800 dark:bg-neutral-900">
+      {/* Top Pass Visual Banner */}
+      <div className={compact ? "p-3 pb-2.5" : "p-4 pb-3"}>
+        <div
+          className={`relative flex flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br p-4 text-white ${
+            compact ? "h-28" : "h-36"
+          } ${theme.bg}`}
+        >
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-6 -top-6 h-28 w-28 rounded-full bg-white/15 blur-xl"
+          />
+          <div
+            aria-hidden="true"
+            className={`pointer-events-none absolute -bottom-4 -right-4 h-24 w-36 rotate-[-10deg] rounded-2xl border backdrop-blur-sm ${theme.cardBg}`}
+          />
+
+          <div className="relative z-10 flex items-center justify-between">
+            <span
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-black shadow-sm ${theme.badgeBg}`}
+            >
+              {isPercent ? "%" : "đ"}
+            </span>
+            <span
+              className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold backdrop-blur-sm ${badge.cls}`}
+            >
+              {badge.label}
+            </span>
+          </div>
+
+          <div className="relative z-10 flex items-end justify-between gap-2">
+            <div className="min-w-0">
+              <div
+                className={`text-[10px] font-bold uppercase tracking-wider ${theme.accent}`}
+              >
+                Phiếu ưu đãi POS
+              </div>
+              <div className="truncate text-sm font-bold text-white">
+                {name}
+              </div>
+            </div>
+            <div className="shrink-0 text-3xl font-black leading-none tracking-tight text-white drop-shadow-sm">
+              {shortHeroValue}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Horizontal Ticket Perforation with Side Notches */}
+      <div className="relative my-1 border-t border-dashed border-neutral-200 dark:border-neutral-800">
+        <span
+          aria-hidden="true"
+          className="absolute -left-3 -top-3 h-6 w-6 rounded-full border border-neutral-200/80 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950"
+        />
+        <span
+          aria-hidden="true"
+          className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-neutral-200/80 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950"
+        />
+      </div>
+
+      {/* Middle: Code + Conditions */}
+      <div className={compact ? "space-y-3 px-4 py-3" : "space-y-4 px-5 py-4"}>
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-neutral-50/70 px-3.5 py-2 dark:border-neutral-800 dark:bg-neutral-950/60">
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+              Mã áp dụng
+            </div>
+            <div className="truncate font-mono text-sm font-extrabold tracking-wider text-neutral-900 dark:text-white">
+              {code}
+            </div>
+          </div>
+          {onCopy && (
+            <BeButton variant="secondary" size="sm" onClick={onCopy}>
+              <Copy className="h-3.5 w-3.5" />
+              Sao chép
+            </BeButton>
+          )}
+        </div>
+
+        <div>
+          <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+            Điều kiện áp dụng
+          </div>
+          <ul className="space-y-1 text-xs text-neutral-600 dark:text-neutral-300">
+            <li className="flex items-center justify-between gap-2">
+              <span className="text-neutral-400">Ưu đãi:</span>
+              <span className="font-semibold text-neutral-900 dark:text-white">
+                {headline}
+              </span>
+            </li>
+            <li className="flex items-center justify-between gap-2">
+              <span className="text-neutral-400">Đơn tối thiểu:</span>
+              <span className="font-semibold text-neutral-900 dark:text-white">
+                {minNum > 0
+                  ? `${minNum.toLocaleString("vi-VN")}đ`
+                  : "Không yêu cầu"}
+              </span>
+            </li>
+            <li className="flex items-center justify-between gap-2">
+              <span className="text-neutral-400">Thời hạn:</span>
+              <span className="font-semibold text-neutral-900 dark:text-white">
+                {dateLabel}
+              </span>
+            </li>
+            <li className="flex items-center justify-between gap-2">
+              <span className="text-neutral-400">Lượt dùng:</span>
+              <span className="font-semibold text-neutral-900 dark:text-white">
+                {usageText}
+              </span>
+            </li>
+            <li className="flex items-start justify-between gap-3">
+              <span className="shrink-0 text-neutral-400">Chi nhánh:</span>
+              <span className="text-right font-semibold text-neutral-900 dark:text-white">
+                {storeNames}
+              </span>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      {/* Bottom Barcode & Optional Actions */}
+      <div
+        className={`border-t border-dashed border-neutral-200 bg-neutral-50/50 dark:border-neutral-800 dark:bg-neutral-950/40 ${
+          compact ? "px-4 py-3" : "px-5 py-4"
+        }`}
+      >
+        <BarcodeGraphic code={code} />
+        {actions && (
+          <div className="mt-4 flex items-center justify-between gap-2 border-t border-neutral-200/70 pt-3 dark:border-neutral-800">
+            {actions}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function DiscountsView({
   stores,
   accessToken,
@@ -670,22 +860,6 @@ export function DiscountsView({
                     const maxNum = dc.max_discount_amount
                       ? Number(dc.max_discount_amount)
                       : null;
-                    const isPercent = dc.discount_type === "percentage";
-                    const theme = VOUCHER_VISUAL_THEMES[selectedThemeIndex];
-
-                    const shortHeroValue = isPercent
-                      ? `-${valNum}%`
-                      : valNum >= 1000
-                        ? `-${Math.round(valNum / 1000)}K`
-                        : `-${valNum}đ`;
-
-                    const headline = isPercent
-                      ? `Giảm ${valNum}%${
-                          maxNum
-                            ? ` (tối đa ${maxNum.toLocaleString("vi-VN")}đ)`
-                            : ""
-                        }`
-                      : `Giảm ${valNum.toLocaleString("vi-VN")}đ`;
 
                     const dateLabel =
                       dc.starts_at || dc.ends_at
@@ -707,141 +881,28 @@ export function DiscountsView({
                             .join(", ");
 
                     return (
-                      <div className="mx-auto flex w-full max-w-md flex-col overflow-hidden rounded-3xl border border-neutral-200/90 bg-white shadow-[0_12px_36px_rgba(0,0,0,0.06)] dark:border-neutral-800 dark:bg-neutral-900">
-                        {/* Top Pass Visual Banner */}
-                        <div className="p-4 pb-3">
-                          <div
-                            className={`relative flex h-36 flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br p-4 text-white ${theme.bg}`}
-                          >
-                            <div
-                              aria-hidden="true"
-                              className="pointer-events-none absolute -right-6 -top-6 h-28 w-28 rounded-full bg-white/15 blur-xl"
-                            />
-                            <div
-                              aria-hidden="true"
-                              className={`pointer-events-none absolute -bottom-4 -right-4 h-24 w-36 rotate-[-10deg] rounded-2xl border backdrop-blur-sm ${theme.cardBg}`}
-                            />
-
-                            <div className="relative z-10 flex items-center justify-between">
-                              <span
-                                className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-black shadow-sm ${theme.badgeBg}`}
-                              >
-                                {isPercent ? "%" : "đ"}
-                              </span>
-                              <span
-                                className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold backdrop-blur-sm ${badge.cls}`}
-                              >
-                                {badge.label}
-                              </span>
-                            </div>
-
-                            <div className="relative z-10 flex items-end justify-between gap-2">
-                              <div className="min-w-0">
-                                <div
-                                  className={`text-[10px] font-bold uppercase tracking-wider ${theme.accent}`}
-                                >
-                                  Phiếu ưu đãi POS
-                                </div>
-                                <div className="truncate text-sm font-bold text-white">
-                                  {dc.name}
-                                </div>
-                              </div>
-                              <div className="shrink-0 text-3xl font-black leading-none tracking-tight text-white drop-shadow-sm">
-                                {shortHeroValue}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Horizontal Ticket Perforation with Side Notches */}
-                        <div className="relative my-1 border-t border-dashed border-neutral-200 dark:border-neutral-800">
-                          <span
-                            aria-hidden="true"
-                            className="absolute -left-3 -top-3 h-6 w-6 rounded-full border border-neutral-200/80 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950"
-                          />
-                          <span
-                            aria-hidden="true"
-                            className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-neutral-200/80 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950"
-                          />
-                        </div>
-
-                        {/* Middle: Code + Conditions */}
-                        <div className="space-y-4 px-5 py-4">
-                          <div className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-neutral-50/70 px-3.5 py-2.5 dark:border-neutral-800 dark:bg-neutral-950/60">
-                            <div>
-                              <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                                Mã áp dụng
-                              </div>
-                              <div className="font-mono text-base font-extrabold tracking-wider text-neutral-900 dark:text-white">
-                                {dc.code}
-                              </div>
-                            </div>
-                            <BeButton
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => {
-                                void navigator.clipboard?.writeText(dc.code);
-                                notify("info", `Đã sao chép mã ${dc.code}`);
-                              }}
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                              Sao chép
-                            </BeButton>
-                          </div>
-
-                          <div>
-                            <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-                              Điều kiện áp dụng
-                            </div>
-                            <ul className="space-y-1.5 text-xs text-neutral-600 dark:text-neutral-300">
-                              <li className="flex items-center justify-between gap-2">
-                                <span className="text-neutral-400">Ưu đãi:</span>
-                                <span className="font-semibold text-neutral-900 dark:text-white">
-                                  {headline}
-                                </span>
-                              </li>
-                              <li className="flex items-center justify-between gap-2">
-                                <span className="text-neutral-400">
-                                  Đơn tối thiểu:
-                                </span>
-                                <span className="font-semibold text-neutral-900 dark:text-white">
-                                  {minNum > 0
-                                    ? `${minNum.toLocaleString("vi-VN")}đ`
-                                    : "Không yêu cầu"}
-                                </span>
-                              </li>
-                              <li className="flex items-center justify-between gap-2">
-                                <span className="text-neutral-400">Thời hạn:</span>
-                                <span className="font-semibold text-neutral-900 dark:text-white">
-                                  {dateLabel}
-                                </span>
-                              </li>
-                              <li className="flex items-center justify-between gap-2">
-                                <span className="text-neutral-400">Lượt dùng:</span>
-                                <span className="font-semibold text-neutral-900 dark:text-white">
-                                  {dc.used_count}
-                                  {dc.usage_limit
-                                    ? ` / ${dc.usage_limit} lượt`
-                                    : " (Không giới hạn)"}
-                                </span>
-                              </li>
-                              <li className="flex items-start justify-between gap-3">
-                                <span className="shrink-0 text-neutral-400">
-                                  Chi nhánh:
-                                </span>
-                                <span className="text-right font-semibold text-neutral-900 dark:text-white">
-                                  {storeNames}
-                                </span>
-                              </li>
-                            </ul>
-                          </div>
-                        </div>
-
-                        {/* Bottom Barcode & Quick Actions */}
-                        <div className="border-t border-dashed border-neutral-200 bg-neutral-50/50 px-5 py-4 dark:border-neutral-800 dark:bg-neutral-950/40">
-                          <BarcodeGraphic code={dc.code} />
-
-                          <div className="mt-4 flex items-center justify-between gap-2 border-t border-neutral-200/70 pt-3 dark:border-neutral-800">
+                      <CouponPassCard
+                        code={dc.code}
+                        name={dc.name}
+                        discountType={dc.discount_type}
+                        valueNum={valNum}
+                        maxNum={maxNum}
+                        minNum={minNum}
+                        dateLabel={dateLabel}
+                        usageText={`${dc.used_count}${
+                          dc.usage_limit
+                            ? ` / ${dc.usage_limit} lượt`
+                            : " (Không giới hạn)"
+                        }`}
+                        storeNames={storeNames}
+                        badge={badge}
+                        themeIndex={selectedThemeIndex}
+                        onCopy={() => {
+                          void navigator.clipboard?.writeText(dc.code);
+                          notify("info", `Đã sao chép mã ${dc.code}`);
+                        }}
+                        actions={
+                          <>
                             <BeSwitch
                               checked={dc.status === "active"}
                               onCheckedChange={() =>
@@ -867,9 +928,9 @@ export function DiscountsView({
                                 Xóa
                               </BeButton>
                             </div>
-                          </div>
-                        </div>
-                      </div>
+                          </>
+                        }
+                      />
                     );
                   })()}
                 </div>
@@ -1140,79 +1201,58 @@ export function DiscountsView({
                       </div>
                     </div>
 
-                    {/* RIGHT COLUMN (5 cols): Live Voucher Preview, Store Scope, Status */}
+                    {/* RIGHT COLUMN (5 cols): Live Coupon Pass Preview (Matching Outer Card), Store Scope, Status */}
                     <div className="flex flex-col gap-4 lg:col-span-5">
-                      {/* Live Voucher Preview Card */}
-                      <div className="rounded-2xl border border-neutral-200/80 bg-gradient-to-br from-neutral-900 to-neutral-800 p-4 text-white shadow-sm dark:border-neutral-700">
-                        <div className="flex items-center justify-between">
-                          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-neutral-300">
-                            <TicketPercent className="h-3.5 w-3.5" />
-                            Xem trước thẻ ưu đãi
-                          </span>
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                              isActive
-                                ? "bg-emerald-500/20 text-emerald-300"
-                                : "bg-white/10 text-neutral-300"
-                            }`}
-                          >
-                            {isActive ? "Đang kích hoạt" : "Tạm dừng"}
-                          </span>
-                        </div>
-
-                        <div className="mt-4 flex items-baseline justify-between gap-2">
-                          <div className="font-mono text-lg font-extrabold tracking-wide text-white">
-                            {code.trim() || "MÃ_GIẢM_GIÁ"}
-                          </div>
-                          <div className="text-xl font-black tabular-nums text-emerald-400">
-                            {previewValueText}
-                          </div>
-                        </div>
-
-                        <div className="mt-1 truncate text-xs font-medium text-neutral-200">
-                          {name.trim() || "Tên chương trình khuyến mãi"}
-                        </div>
-
-                        <div className="mt-4 space-y-1.5 border-t border-dashed border-white/15 pt-3 text-[11px] text-neutral-300">
-                          <div className="flex items-center justify-between">
-                            <span>Đơn tối thiểu:</span>
-                            <span className="font-semibold text-white">
-                              {previewMinOrder > 0
-                                ? `${previewMinOrder.toLocaleString("vi-VN")}đ`
-                                : "Không yêu cầu"}
-                            </span>
-                          </div>
-                          {discountType === "percentage" && previewMaxDiscount > 0 && (
-                            <div className="flex items-center justify-between">
-                              <span>Giảm tối đa:</span>
-                              <span className="font-semibold text-white">
-                                {previewMaxDiscount.toLocaleString("vi-VN")}đ
-                              </span>
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between">
-                            <span className="inline-flex items-center gap-1">
-                              <Store className="h-3 w-3" /> Phạm vi:
-                            </span>
-                            <span className="font-semibold text-white">
-                              {selectedStoreIds.length === 0
-                                ? "Tất cả chi nhánh"
-                                : `${selectedStoreIds.length} chi nhánh`}
-                            </span>
-                          </div>
-                          {(startsAt || endsAt) && (
-                            <div className="flex items-center justify-between">
-                              <span className="inline-flex items-center gap-1">
-                                <Calendar className="h-3 w-3" /> Hiệu lực:
-                              </span>
-                              <span className="font-semibold text-white">
-                                {startsAt ? formatShortDate(startsAt) : "Ngay"} →{" "}
-                                {endsAt ? formatShortDate(endsAt) : "Vô thời hạn"}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                      <CouponPassCard
+                        compact
+                        code={code.trim() || "MÃ_GIẢM_GIÁ"}
+                        name={name.trim() || "Tên chương trình khuyến mãi"}
+                        discountType={discountType}
+                        valueNum={Number(valueDigits || 0)}
+                        maxNum={
+                          discountType === "percentage" && previewMaxDiscount > 0
+                            ? previewMaxDiscount
+                            : null
+                        }
+                        minNum={previewMinOrder}
+                        dateLabel={
+                          startsAt || endsAt
+                            ? `${startsAt ? formatShortDate(startsAt) : "Ngay"} → ${
+                                endsAt
+                                  ? formatShortDate(endsAt)
+                                  : "Không giới hạn"
+                              }`
+                            : "Không giới hạn thời gian"
+                        }
+                        usageText={
+                          usageLimitDigits.trim()
+                            ? `${editing?.used_count ?? 0} / ${usageLimitDigits.trim()} lượt`
+                            : `${editing?.used_count ?? 0} (Không giới hạn)`
+                        }
+                        storeNames={
+                          selectedStoreIds.length === 0
+                            ? "Tất cả chi nhánh"
+                            : selectedStoreIds
+                                .map(
+                                  (sid) =>
+                                    stores.find((s) => s.id === sid)?.name ||
+                                    sid
+                                )
+                                .join(", ")
+                        }
+                        badge={
+                          isActive
+                            ? {
+                                label: "Đang chạy",
+                                cls: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900",
+                              }
+                            : {
+                                label: "Tạm dừng",
+                                cls: "bg-neutral-100 text-neutral-600 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:border-neutral-700",
+                              }
+                        }
+                        themeIndex={editing ? selectedThemeIndex : 0}
+                      />
 
                       {/* Store Scope via BeMultiSelect */}
                       <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
