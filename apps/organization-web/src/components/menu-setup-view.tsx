@@ -572,9 +572,6 @@ export function MenuSetupView({
   const renderProductCard = (item: MenuCardItem, isDeviceMode: boolean) => {
     const prod = productLookup.get(item.product_id);
     const imgUrl = item.image_url || prod?.image_url || null;
-    const categoryNames = item.category_ids
-      .map((cid) => categoryLookup.get(cid)?.name)
-      .filter((name): name is string => Boolean(name));
 
     const baseDisplay = Number(
       isDeviceMode
@@ -659,16 +656,11 @@ export function MenuSetupView({
           </span>
         </div>
 
-        {/* Full-Width 2-Line Product Name + 1-Line Subtle Categories */}
-        <div className="mt-2 shrink-0 space-y-0.5 px-0.5">
+        {/* Full-Width 2-Line Product Name */}
+        <div className="mt-2 shrink-0 px-0.5">
           <h3 className="line-clamp-2 min-h-[2rem] text-xs font-bold leading-snug text-neutral-900 dark:text-white">
             {item.name}
           </h3>
-          <p className="truncate text-[10px] text-neutral-400 dark:text-neutral-500">
-            {categoryNames.length > 0
-              ? categoryNames.join(" • ")
-              : "Chưa phân loại"}
-          </p>
         </div>
       </div>
     );
@@ -1382,6 +1374,26 @@ export function MenuSetupView({
                         <p className="mt-1 line-clamp-2 text-[11px] text-neutral-400">
                           {detailProduct.description}
                         </p>
+                      )}
+                      {detailMenuItem.category_ids.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {detailMenuItem.category_ids.map((cid) => {
+                            const catMeta = categoryLookup.get(cid);
+                            if (!catMeta) return null;
+                            return (
+                              <span
+                                key={cid}
+                                className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${
+                                  PASTEL_PILL_STYLES[
+                                    catMeta.idx % PASTEL_PILL_STYLES.length
+                                  ]
+                                }`}
+                              >
+                                {catMeta.name}
+                              </span>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
                   </div>
