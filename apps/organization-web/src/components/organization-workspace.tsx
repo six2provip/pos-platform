@@ -1352,7 +1352,7 @@ export default function OrganizationWorkspace({
       await refreshWorkspaceData();
       notify(
         "success",
-        `Đã thanh toán hóa đơn ${orderData.order_number} (${formatMoneyVND(orderData.total_amount)}) — Tồn kho đã tự động trừ!`
+        `Đã thanh toán hóa đơn ${orderData.order_number} (${formatMoneyVND(orderData.total_amount)})!`
       );
     } catch (err: any) {
       notify("error", err.message || "Lỗi thanh toán đơn hàng");
@@ -2369,7 +2369,6 @@ export default function OrganizationWorkspace({
             </div>
 
             {[
-              { id: "inventory", label: "Tồn kho & Sổ cái", icon: Boxes, path: "/inventory" },
               { id: "discounts", label: "Mã giảm giá", icon: TicketPercent, path: "/discounts" },
               { id: "promotions", label: "Khuyến mãi", icon: Sparkles, path: "/promotions" },
               {

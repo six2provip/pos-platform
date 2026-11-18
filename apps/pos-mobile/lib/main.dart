@@ -1225,7 +1225,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
         _busy = false;
       });
       await _refreshTerminalData();
-      _showSnack('Thanh toán thành công ${order['order_number']} — Đã trừ tồn kho!');
+      _showSnack('Thanh toán thành công ${order['order_number']}!');
     } on PosApiException catch (e) {
       if (e.isNetworkError) {
         setState(() {
@@ -2115,7 +2115,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
               if (val == 'reset') _resetAndRepair();
             },
             itemBuilder: (_) => const [
-              PopupMenuItem(value: 'refresh', child: Text('Tải lại thực đơn & tồn kho')),
+              PopupMenuItem(value: 'refresh', child: Text('Tải lại thực đơn')),
               PopupMenuItem(value: 'server', child: Text('Đổi địa chỉ máy chủ')),
               PopupMenuItem(value: 'reset', child: Text('Hủy ghép nối máy POS')),
             ],
@@ -2299,7 +2299,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
               icon: Icons.sync_rounded,
               tooltip: _outboxQueue.isNotEmpty
                   ? 'Đồng bộ ${_outboxQueue.length} đơn chờ'
-                  : 'Tải lại thực đơn & tồn kho',
+                  : 'Tải lại thực đơn',
               active: false,
               idleFg: _outboxQueue.isNotEmpty ? Colors.amber.shade700 : null,
               badgeCount: _outboxQueue.length,
@@ -2615,31 +2615,6 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                                   ),
                                                 ),
                                               ),
-                                            Positioned(
-                                              right: 6,
-                                              top: 6,
-                                              child: Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                  horizontal: 6,
-                                                  vertical: 2,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.black
-                                                      .withOpacity(0.55),
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                ),
-                                                child: Text(
-                                                  'Kho: $onHand',
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
                                           ],
                                         ),
                                       ),
