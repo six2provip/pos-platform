@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { BeButton } from "./motion/button";
+import { Card, CardContent, CardFooter } from "./motion/card";
 import {
   DateRangePicker,
   DateRangePickerCalendar,
@@ -390,14 +391,14 @@ export function DiscountsView({
           </div>
         </div>
 
-        {/* List */}
+        {/* List (3 Cards per Row on Desktop) */}
         <div className="min-h-0 flex-1 overflow-y-auto rounded-xl bg-neutral-50/70 p-3 dark:bg-neutral-950/40">
           {loading ? (
-            <div className="flex flex-col gap-3">
-              {[1, 2, 3, 4].map((idx) => (
+            <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
+              {[1, 2, 3, 4, 5, 6].map((idx) => (
                 <Skeleton
                   key={idx}
-                  className="h-28 w-full rounded-2xl dark:bg-neutral-800"
+                  className="h-48 w-full rounded-2xl dark:bg-neutral-800"
                 />
               ))}
             </div>
@@ -412,7 +413,7 @@ export function DiscountsView({
               </p>
             </div>
           ) : (
-            <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
               {filtered.map((dc) => {
                 const badge = getRuntimeBadge(dc);
                 const valNum = Number(dc.value || 0);
@@ -445,49 +446,58 @@ export function DiscountsView({
                     : "Không giới hạn lượt";
 
                 return (
-                  <div
+                  <Card
                     key={dc.id}
-                    className="relative flex flex-col overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-colors hover:border-neutral-300 sm:flex-row dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700"
+                    variant={dc.status === "active" ? "outlined" : "muted"}
+                    size="compact"
+                    className="relative justify-between gap-0 overflow-hidden rounded-2xl border-neutral-200/80 bg-white py-0 shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-colors hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700"
                   >
-                    {/* Left Ticket Body */}
-                    <div className="flex min-w-0 flex-1 items-start gap-4 p-5">
-                      <div
-                        className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${
-                          isPercent
-                            ? "bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400"
-                            : "bg-rose-50 text-rose-500 dark:bg-rose-950/60 dark:text-rose-400"
-                        }`}
-                      >
-                        {isPercent ? (
-                          <BadgePercent className="h-5 w-5" />
-                        ) : (
-                          <Tag className="h-5 w-5" />
-                        )}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <h3 className="truncate text-sm font-bold text-neutral-900 dark:text-white">
-                            {headline}
-                          </h3>
-                          <span
-                            className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${badge.cls}`}
+                    <CardContent className="flex flex-1 flex-col gap-3 p-4">
+                      {/* Header Row: Icon + Headline + Status Badge */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div
+                            className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${
+                              isPercent
+                                ? "bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400"
+                                : "bg-rose-50 text-rose-500 dark:bg-rose-950/60 dark:text-rose-400"
+                            }`}
                           >
-                            {badge.label}
-                          </span>
+                            {isPercent ? (
+                              <BadgePercent className="h-5 w-5" />
+                            ) : (
+                              <Tag className="h-5 w-5" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="truncate text-sm font-bold text-neutral-900 dark:text-white">
+                              {headline}
+                            </h3>
+                            <p className="truncate text-xs font-medium text-neutral-600 dark:text-neutral-300">
+                              {dc.name}
+                            </p>
+                          </div>
                         </div>
 
-                        <p className="mt-1 line-clamp-1 text-xs text-neutral-600 dark:text-neutral-300">
-                          {dc.name}
-                          {minNum > 0
-                            ? ` • Đơn tối thiểu ${minNum.toLocaleString("vi-VN")}đ`
-                            : " • Áp dụng mọi đơn hàng"}
-                          {dc.store_ids.length > 0
-                            ? ` • ${dc.store_ids.length} chi nhánh`
-                            : " • Tất cả chi nhánh"}
-                        </p>
+                        <span
+                          className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.cls}`}
+                        >
+                          {badge.label}
+                        </span>
+                      </div>
 
-                        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                      {/* Conditions & Meta */}
+                      <div className="space-y-1.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                        <p className="truncate">
+                          {minNum > 0
+                            ? `Đơn tối thiểu ${minNum.toLocaleString("vi-VN")}đ`
+                            : "Áp dụng mọi đơn hàng"}
+                          {" • "}
+                          {dc.store_ids.length > 0
+                            ? `${dc.store_ids.length} chi nhánh`
+                            : "Tất cả chi nhánh"}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                           <span className="inline-flex items-center gap-1.5">
                             <Calendar className="h-3.5 w-3.5 text-neutral-400" />
                             {dateLabel}
@@ -498,31 +508,31 @@ export function DiscountsView({
                           </span>
                         </div>
                       </div>
-                    </div>
+                    </CardContent>
 
-                    {/* Dashed Ticket Stub Divider with Notches */}
-                    <div className="relative hidden w-px border-l border-dashed border-neutral-200 sm:block dark:border-neutral-800">
+                    {/* Horizontal Dashed Ticket Divider with Notches */}
+                    <div className="relative mx-0 border-t border-dashed border-neutral-200 dark:border-neutral-800">
                       <span
                         aria-hidden="true"
                         className="absolute -left-2.5 -top-2.5 h-5 w-5 rounded-full border border-neutral-200/80 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950"
                       />
                       <span
                         aria-hidden="true"
-                        className="absolute -bottom-2.5 -left-2.5 h-5 w-5 rounded-full border border-neutral-200/80 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950"
+                        className="absolute -right-2.5 -top-2.5 h-5 w-5 rounded-full border border-neutral-200/80 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950"
                       />
                     </div>
 
-                    {/* Right Stub Action Area */}
-                    <div className="flex shrink-0 items-center justify-between gap-3 border-t border-dashed border-neutral-200 px-5 py-3.5 sm:w-56 sm:flex-col sm:justify-center sm:border-t-0 dark:border-neutral-800">
+                    {/* Ticket Footer Stub: Show Code + Switch + Actions */}
+                    <CardFooter className="justify-between gap-2 bg-neutral-50/40 px-4 py-3 dark:bg-neutral-950/30">
                       <BeButton
                         variant="primary"
-                        size="md"
+                        size="sm"
                         onClick={() => {
                           setRevealedCodeId(dc.id);
                           void navigator.clipboard?.writeText(dc.code);
                           notify("info", `Đã sao chép mã ${dc.code}`);
                         }}
-                        className="h-9 w-auto min-w-[144px] bg-slate-900 px-5 text-xs font-semibold text-white hover:bg-slate-800 sm:w-full dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+                        className="h-8 min-w-[116px] bg-slate-900 px-3.5 text-xs font-semibold text-white hover:bg-slate-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
                       >
                         {isRevealed ? (
                           <span className="inline-flex items-center gap-1.5 font-mono tracking-wider">
@@ -534,7 +544,7 @@ export function DiscountsView({
                         )}
                       </BeButton>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <BeSwitch
                           checked={dc.status === "active"}
                           onCheckedChange={() => void handleToggleStatus(dc)}
@@ -557,8 +567,8 @@ export function DiscountsView({
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
-                    </div>
-                  </div>
+                    </CardFooter>
+                  </Card>
                 );
               })}
             </div>
