@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -471,7 +471,14 @@ class StoreMenuItemConfig(BaseModel):
 
     product_id: str
     is_available: bool = True
-    price_override: Optional[Decimal] = Field(default=None, ge=Decimal("0"))
+    price_override: Optional[Decimal] = None
+
+    @field_validator("price_override")
+    @classmethod
+    def _validate_price_override(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None and v < Decimal("0"):
+            raise ValueError("price_override must be >= 0")
+        return v
 
 
 class UpdateStoreMenuRequest(BaseModel):

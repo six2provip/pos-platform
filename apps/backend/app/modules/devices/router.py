@@ -15,7 +15,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Header, Request, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -1559,7 +1559,7 @@ def update_device(
         device.menu_mode = body.menu_mode
     if "allowed_category_ids" in body.model_fields_set:
         device.allowed_category_ids_json = [
-            str(cid).strip() for cid in (body.allowed_category_ids or []) if str(cid).strip()
+            cid.strip() for cid in (body.allowed_category_ids or []) if cid.strip()
         ]
 
     if "serial_number" in body.model_fields_set:
@@ -1680,7 +1680,14 @@ class DeviceMenuItemConfig(BaseModel):
 
     product_id: str
     is_available: bool = True
-    price_override: Optional[Decimal] = Field(default=None, ge=Decimal("0"))
+    price_override: Optional[Decimal] = None
+
+    @field_validator("price_override")
+    @classmethod
+    def _validate_price_override(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None and v < Decimal("0"):
+            raise ValueError("price_override must be >= 0")
+        return v
 
 
 class UpdateDeviceMenuRequest(BaseModel):
@@ -1821,7 +1828,7 @@ def update_device_menu(
 
     device.menu_mode = body.menu_mode
     device.allowed_category_ids_json = (
-        [str(cid).strip() for cid in body.allowed_category_ids if str(cid).strip()]
+        [cid.strip() for cid in body.allowed_category_ids if cid.strip()]
         if body.menu_mode == "custom"
         else []
     )
