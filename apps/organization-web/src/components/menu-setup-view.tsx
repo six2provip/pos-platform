@@ -1,12 +1,16 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   Check,
+  Layers,
   Search,
+  SlidersHorizontal,
   Smartphone,
   Store as StoreIcon,
   UtensilsCrossed,
+  X,
 } from "lucide-react";
 import { BeSwitch } from "./motion/switch";
 import { Skeleton } from "./ui/skeleton";
@@ -15,10 +19,14 @@ import type {
   StoreMenuItem,
   StoreRecord,
 } from "./stores-master-detail-view";
+import type { ProductRecord } from "./catalog-products-view";
+import type { OptionGroupRecord } from "./catalog-options-view";
 
 interface MenuSetupViewProps {
   stores: StoreRecord[];
   categories: { id: string; name: string }[];
+  products?: ProductRecord[];
+  optionGroups?: OptionGroupRecord[];
   selectedStoreId: string;
   accessToken: string | null;
   apiFetch: (path: string, options?: RequestInit) => Promise<any>;
@@ -29,9 +37,16 @@ type SelectionTarget =
   | { kind: "store"; storeId: string }
   | { kind: "device"; deviceId: string; storeId: string };
 
+type MenuCardItem = StoreMenuItem & {
+  store_is_available?: boolean;
+  store_price_override?: string | null;
+};
+
 export function MenuSetupView({
   stores,
   categories,
+  products = [],
+  optionGroups = [],
   selectedStoreId,
   accessToken,
   apiFetch,
@@ -47,7 +62,7 @@ export function MenuSetupView({
   }));
 
   // Store Menu State
-  const [menuItems, setMenuItems] = useState<StoreMenuItem[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuCardItem[]>([]);
   const [menuLoading, setMenuLoading] = useState(false);
   const [menuSaving, setMenuSaving] = useState(false);
   const [menuSearch, setMenuSearch] = useState("");
@@ -58,13 +73,26 @@ export function MenuSetupView({
     "inherit_store"
   );
   const [deviceAllowedCats, setDeviceAllowedCats] = useState<string[]>([]);
-  const [deviceMenuItems, setDeviceMenuItems] = useState<
-    (StoreMenuItem & { store_is_available?: boolean; store_price_override?: string | null })[]
-  >([]);
+  const [deviceMenuItems, setDeviceMenuItems] = useState<MenuCardItem[]>([]);
   const [deviceMenuLoading, setDeviceMenuLoading] = useState(false);
   const [deviceMenuSearch, setDeviceMenuSearch] = useState("");
   const [deviceMenuFilter, setDeviceMenuFilter] = useState<"all" | "available" | "hidden">("all");
   const [deviceSaving, setDeviceSaving] = useState(false);
+
+  // Product Detail & Options Modal
+  const [detailProductId, setDetailProductId] = useState<string | null>(null);
+
+  const productLookup = useMemo(() => {
+    const map = new Map<string, ProductRecord>();
+    for (const p of products) map.set(p.id, p);
+    return map;
+  }, [products]);
+
+  const optionGroupLookup = useMemo(() => {
+    const map = new Map<string, OptionGroupRecord>();
+    for (const g of optionGroups) map.set(g.id, g);
+    return map;
+  }, [optionGroups]);
 
   const loadAllDevices = useCallback(async () => {
     if (!accessToken) return;
@@ -200,6 +228,25 @@ export function MenuSetupView({
     });
   }, [menuItems, menuSearch, menuFilter]);
 
+  const filteredDeviceMenuItems = useMemo(() => {
+    const q = deviceMenuSearch.trim().toLowerCase();
+    return deviceMenuItems.filter((item) => {
+      if (
+        deviceAllowedCats.length > 0 &&
+        !item.category_ids.some((cid) => deviceAllowedCats.includes(cid))
+      ) {
+        return false;
+      }
+      if (deviceMenuFilter === "available" && !item.is_available) return false;
+      if (deviceMenuFilter === "hidden" && item.is_available) return false;
+      if (!q) return true;
+      return (
+        item.name.toLowerCase().includes(q) ||
+        item.code.toLowerCase().includes(q)
+      );
+    });
+  }, [deviceMenuItems, deviceAllowedCats, deviceMenuSearch, deviceMenuFilter]);
+
   const handleSaveStoreMenu = async () => {
     if (!activeStore) return;
     setMenuSaving(true);
@@ -225,25 +272,6 @@ export function MenuSetupView({
       setMenuSaving(false);
     }
   };
-
-  const filteredDeviceMenuItems = useMemo(() => {
-    const q = deviceMenuSearch.trim().toLowerCase();
-    return deviceMenuItems.filter((item) => {
-      if (
-        deviceAllowedCats.length > 0 &&
-        !item.category_ids.some((cid) => deviceAllowedCats.includes(cid))
-      ) {
-        return false;
-      }
-      if (deviceMenuFilter === "available" && !item.is_available) return false;
-      if (deviceMenuFilter === "hidden" && item.is_available) return false;
-      if (!q) return true;
-      return (
-        item.name.toLowerCase().includes(q) ||
-        item.code.toLowerCase().includes(q)
-      );
-    });
-  }, [deviceMenuItems, deviceAllowedCats, deviceMenuSearch, deviceMenuFilter]);
 
   const handleSaveDeviceFilter = async () => {
     if (!activeDevice) return;
@@ -296,6 +324,166 @@ export function MenuSetupView({
     }
   };
 
+  const toggleItemAvailability = (productId: string, next: boolean) => {
+    if (selection.kind === "device") {
+      setDeviceMenuItems((prev) =>
+        prev.map((x) =>
+          x.product_id === productId ? { ...x, is_available: next } : x
+        )
+      );
+    } else {
+      setMenuItems((prev) =>
+        prev.map((x) =>
+          x.product_id === productId ? { ...x, is_available: next } : x
+        )
+      );
+    }
+  };
+
+  const updateItemPriceOverride = (productId: string, val: string) => {
+    const nextVal = val === "" ? null : val;
+    if (selection.kind === "device") {
+      setDeviceMenuItems((prev) =>
+        prev.map((x) =>
+          x.product_id === productId ? { ...x, price_override: nextVal } : x
+        )
+      );
+    } else {
+      setMenuItems((prev) =>
+        prev.map((x) =>
+          x.product_id === productId ? { ...x, price_override: nextVal } : x
+        )
+      );
+    }
+  };
+
+  const renderProductCard = (item: MenuCardItem, isDeviceMode: boolean) => {
+    const prod = productLookup.get(item.product_id);
+    const imgUrl = item.image_url || prod?.image_url || null;
+    const variantsCount = prod?.variants?.length || item.variant_count || 0;
+    const optIds = new Set<string>();
+    for (const v of prod?.variants || []) {
+      for (const ogId of v.option_group_ids || []) {
+        optIds.add(ogId);
+      }
+    }
+    const baseDisplay = Number(
+      isDeviceMode
+        ? item.store_price_override ?? item.base_price ?? 0
+        : item.base_price ?? 0
+    );
+    const hasOverride =
+      item.price_override !== null && String(item.price_override).trim() !== "";
+
+    return (
+      <div
+        key={item.product_id}
+        onClick={() => setDetailProductId(item.product_id)}
+        className={`group flex cursor-pointer flex-col overflow-hidden rounded-2xl border transition-all hover:shadow-md ${
+          item.is_available
+            ? "border-neutral-200/80 bg-white hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-950/70 dark:hover:border-neutral-700"
+            : "border-neutral-200/60 bg-neutral-100/70 opacity-75 dark:border-neutral-800 dark:bg-neutral-900/40"
+        }`}
+      >
+        {/* Product Image Header */}
+        <div className="relative h-28 w-full overflow-hidden bg-neutral-100 dark:bg-neutral-800">
+          {imgUrl ? (
+            <img
+              src={imgUrl}
+              alt={item.name}
+              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-neutral-300 dark:text-neutral-600">
+              <UtensilsCrossed className="h-8 w-8" />
+            </div>
+          )}
+
+          {/* Status Pill */}
+          <span
+            className={`absolute left-2.5 top-2.5 rounded-full px-2 py-0.5 text-[10px] font-bold shadow-sm ${
+              item.is_available
+                ? "bg-emerald-600/90 text-white"
+                : "bg-neutral-900/75 text-white"
+            }`}
+          >
+            {item.is_available ? "Đang bán" : "Đang ẩn"}
+          </span>
+
+          {/* Quick Toggle Switch */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="absolute right-2.5 top-2 rounded-full bg-white/90 p-0.5 shadow-sm backdrop-blur dark:bg-neutral-900/90"
+          >
+            <BeSwitch
+              checked={item.is_available}
+              onCheckedChange={(checked) =>
+                toggleItemAvailability(item.product_id, checked)
+              }
+              ariaLabel={`Bật tắt ${item.name}`}
+            />
+          </div>
+
+          {isDeviceMode && item.store_is_available === false && (
+            <span className="absolute bottom-2 left-2.5 rounded bg-amber-500/95 px-1.5 py-0.5 text-[9px] font-bold text-white shadow-sm">
+              Đang ẩn ở Chi nhánh
+            </span>
+          )}
+        </div>
+
+        {/* Card Body */}
+        <div className="flex flex-1 flex-col justify-between gap-2 p-3">
+          <div>
+            <h3 className="line-clamp-2 text-xs font-bold leading-snug text-neutral-900 dark:text-white">
+              {item.name}
+            </h3>
+            <p className="mt-0.5 truncate font-mono text-[10px] text-neutral-400">
+              {item.code}
+            </p>
+          </div>
+
+          <div className="flex items-end justify-between gap-2 border-t border-neutral-100 pt-2 dark:border-neutral-800">
+            <div>
+              {hasOverride ? (
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400">
+                    {Number(item.price_override).toLocaleString("vi-VN")}₫
+                  </span>
+                  <span className="text-[10px] text-neutral-400 line-through">
+                    {baseDisplay.toLocaleString("vi-VN")}₫
+                  </span>
+                </div>
+              ) : (
+                <span className="text-xs font-extrabold text-neutral-900 dark:text-white">
+                  {baseDisplay.toLocaleString("vi-VN")}₫
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1 text-[10px] font-medium text-neutral-500 dark:text-neutral-400">
+              {variantsCount > 0 && <span>{variantsCount} BT</span>}
+              {optIds.size > 0 && (
+                <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                  +{optIds.size} tùy chọn
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const detailMenuItem = useMemo(() => {
+    if (!detailProductId) return null;
+    const source = selection.kind === "device" ? deviceMenuItems : menuItems;
+    return source.find((x) => x.product_id === detailProductId) || null;
+  }, [detailProductId, selection.kind, deviceMenuItems, menuItems]);
+
+  const detailProduct = detailProductId
+    ? productLookup.get(detailProductId) || null
+    : null;
+
   return (
     <div className="flex h-full flex-1 min-h-0 flex-col gap-3 overflow-hidden">
       {/* Header */}
@@ -305,15 +493,15 @@ export function MenuSetupView({
             Thiết lập Menu Chi nhánh &amp; Thiết bị
           </h1>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            Mặc định thiết bị POS kế thừa toàn bộ thực đơn của Chi nhánh. Bạn có thể bật/tắt món theo Chi nhánh hoặc lọc danh mục riêng cho từng máy Kiosk.
+            Bấm vào từng thẻ món để xem biến thể, nhóm tùy chọn đi kèm và cấu hình giá riêng.
           </p>
         </div>
       </div>
 
       {/* Master-Detail Fit-to-Viewport */}
       <div className="grid flex-1 min-h-0 grid-cols-1 gap-4 lg:grid-cols-12">
-        {/* Left 4 cols: Store & Device Tree */}
-        <div className="flex min-h-0 flex-col rounded-2xl border border-neutral-200/80 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 lg:col-span-4">
+        {/* Left 3 cols: Store & Device Tree */}
+        <div className="flex min-h-0 flex-col rounded-2xl border border-neutral-200/80 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 lg:col-span-3">
           <div className="mb-3 flex shrink-0 items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               Chi nhánh &amp; Thiết bị ({stores.length})
@@ -410,7 +598,7 @@ export function MenuSetupView({
                                 }`}
                               >
                                 {dev.menu_mode === "custom"
-                                  ? `${(dev.allowed_category_ids || []).length} DM`
+                                  ? "Menu riêng"
                                   : "Kế thừa"}
                               </span>
                             </button>
@@ -425,8 +613,8 @@ export function MenuSetupView({
           </div>
         </div>
 
-        {/* Right 8 cols: Store Menu OR Device Menu Filter */}
-        <div className="flex min-h-0 flex-col rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 lg:col-span-8">
+        {/* Right 9 cols: 3-column Card Grid */}
+        <div className="flex min-h-0 flex-col rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 lg:col-span-9">
           {selection.kind === "device" && activeDevice ? (
             <>
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-neutral-200/70 pb-4 dark:border-neutral-800">
@@ -456,243 +644,182 @@ export function MenuSetupView({
                 </button>
               </div>
 
-              <div className="mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => setDeviceMenuMode("inherit_store")}
-                    className={`rounded-2xl border p-4 text-left transition-all ${
-                      deviceMenuMode === "inherit_store"
-                        ? "border-neutral-900 bg-neutral-50 ring-1 ring-neutral-900/10 dark:border-white dark:bg-neutral-800/70"
-                        : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-800"
-                    }`}
-                  >
-                    <div className="text-xs font-bold text-neutral-900 dark:text-white">
-                      Kế thừa thực đơn Chi nhánh (Mặc định)
-                    </div>
-                    <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
-                      Hiển thị toàn bộ món đang mở bán và áp dụng giá của chi nhánh.
-                    </p>
-                  </button>
+              <div className="mt-3 shrink-0 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setDeviceMenuMode("inherit_store")}
+                  className={`rounded-2xl border p-3.5 text-left transition-all ${
+                    deviceMenuMode === "inherit_store"
+                      ? "border-neutral-900 bg-neutral-50 ring-1 ring-neutral-900/10 dark:border-white dark:bg-neutral-800/70"
+                      : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-800"
+                  }`}
+                >
+                  <div className="text-xs font-bold text-neutral-900 dark:text-white">
+                    Kế thừa thực đơn Chi nhánh (Mặc định)
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                    Hiển thị toàn bộ món đang mở bán của chi nhánh.
+                  </p>
+                </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setDeviceMenuMode("custom")}
-                    className={`rounded-2xl border p-4 text-left transition-all ${
-                      deviceMenuMode === "custom"
-                        ? "border-neutral-900 bg-neutral-50 ring-1 ring-neutral-900/10 dark:border-white dark:bg-neutral-800/70"
-                        : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-800"
-                    }`}
-                  >
-                    <div className="text-xs font-bold text-neutral-900 dark:text-white">
-                      Lọc theo Danh mục riêng
-                    </div>
-                    <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
-                      Phù hợp cho máy Kiosk tự phục vụ hoặc quầy chuyên biệt chỉ bán một số nhóm món.
-                    </p>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setDeviceMenuMode("custom")}
+                  className={`rounded-2xl border p-3.5 text-left transition-all ${
+                    deviceMenuMode === "custom"
+                      ? "border-neutral-900 bg-neutral-50 ring-1 ring-neutral-900/10 dark:border-white dark:bg-neutral-800/70"
+                      : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-800"
+                  }`}
+                >
+                  <div className="text-xs font-bold text-neutral-900 dark:text-white">
+                    Menu riêng cho máy này
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                    Lọc theo danh mục và bật/tắt chi tiết từng món riêng cho Kiosk/quầy.
+                  </p>
+                </button>
+              </div>
 
-                {deviceMenuMode === "custom" && (
-                  <>
-                    <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/60 p-4 dark:border-neutral-800 dark:bg-neutral-950/50">
-                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-xs font-bold text-neutral-900 dark:text-white">
-                          Lọc nhanh theo Danh mục ({deviceAllowedCats.length === 0 ? "Tất cả" : `${deviceAllowedCats.length} danh mục`})
-                        </span>
-                        <div className="flex items-center gap-2">
-                          {allDevices.filter((d) => d.id !== activeDevice.id).length > 0 && (
-                            <select
-                              defaultValue=""
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val) void handleCopyFromDevice(val);
-                                e.target.value = "";
-                              }}
-                              className="rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
-                            >
-                              <option value="">Sao chép từ máy khác...</option>
-                              {allDevices
-                                .filter((d) => d.id !== activeDevice.id)
-                                .map((d) => (
-                                  <option key={d.id} value={d.id}>
-                                    {d.name}
-                                  </option>
-                                ))}
-                            </select>
-                          )}
-                          {categories.length > 0 && deviceAllowedCats.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => setDeviceAllowedCats([])}
-                              className="text-[11px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
-                            >
-                              Bỏ lọc danh mục
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      {categories.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {categories.map((cat) => {
-                            const selected = deviceAllowedCats.includes(cat.id);
-                            return (
-                              <button
-                                key={cat.id}
-                                type="button"
-                                onClick={() =>
-                                  setDeviceAllowedCats((prev) =>
-                                    selected
-                                      ? prev.filter((id) => id !== cat.id)
-                                      : [...prev, cat.id]
-                                  )
-                                }
-                                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${
-                                  selected
-                                    ? "border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900"
-                                    : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
-                                }`}
-                              >
-                                {selected && <Check className="h-3 w-3" />}
-                                {cat.name}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Per-product toggles & optional device price override */}
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5">
-                        {(
-                          [
-                            { id: "all", label: `Tất cả (${deviceMenuItems.length})` },
-                            {
-                              id: "available",
-                              label: `Bán trên máy (${deviceMenuItems.filter((i) => i.is_available).length})`,
-                            },
-                            {
-                              id: "hidden",
-                              label: `Ẩn trên máy (${deviceMenuItems.filter((i) => !i.is_available).length})`,
-                            },
-                          ] as const
-                        ).map((f) => (
-                          <button
-                            key={f.id}
-                            type="button"
-                            onClick={() => setDeviceMenuFilter(f.id)}
-                            className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
-                              deviceMenuFilter === f.id
-                                ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
-                                : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300"
-                            }`}
+              {deviceMenuMode === "custom" && (
+                <>
+                  <div className="mt-3 shrink-0 rounded-2xl border border-neutral-200/80 bg-neutral-50/60 p-3 dark:border-neutral-800 dark:bg-neutral-950/50">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-neutral-900 dark:text-white">
+                        Lọc nhanh theo Danh mục (
+                        {deviceAllowedCats.length === 0
+                          ? "Tất cả"
+                          : `${deviceAllowedCats.length} danh mục`}
+                        )
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {allDevices.filter((d) => d.id !== activeDevice.id)
+                          .length > 0 && (
+                          <select
+                            defaultValue=""
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val) void handleCopyFromDevice(val);
+                              e.target.value = "";
+                            }}
+                            className="rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
                           >
-                            {f.label}
+                            <option value="">Sao chép từ máy khác...</option>
+                            {allDevices
+                              .filter((d) => d.id !== activeDevice.id)
+                              .map((d) => (
+                                <option key={d.id} value={d.id}>
+                                  {d.name}
+                                </option>
+                              ))}
+                          </select>
+                        )}
+                        {categories.length > 0 && deviceAllowedCats.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setDeviceAllowedCats([])}
+                            className="text-[11px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                          >
+                            Bỏ lọc
                           </button>
-                        ))}
-                      </div>
-
-                      <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-700 dark:bg-neutral-800">
-                        <Search className="h-3.5 w-3.5 text-neutral-400" />
-                        <input
-                          type="text"
-                          value={deviceMenuSearch}
-                          onChange={(e) => setDeviceMenuSearch(e.target.value)}
-                          placeholder="Tìm món trên máy..."
-                          className="w-40 bg-transparent text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-white"
-                        />
+                        )}
                       </div>
                     </div>
+                    {categories.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {categories.map((cat) => {
+                          const selected = deviceAllowedCats.includes(cat.id);
+                          return (
+                            <button
+                              key={cat.id}
+                              type="button"
+                              onClick={() =>
+                                setDeviceAllowedCats((prev) =>
+                                  selected
+                                    ? prev.filter((id) => id !== cat.id)
+                                    : [...prev, cat.id]
+                                )
+                              }
+                              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                                selected
+                                  ? "border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900"
+                                  : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                              }`}
+                            >
+                              {selected && <Check className="h-3 w-3" />}
+                              {cat.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
 
+                  <div className="mt-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      {(
+                        [
+                          { id: "all", label: `Tất cả (${deviceMenuItems.length})` },
+                          {
+                            id: "available",
+                            label: `Bán trên máy (${deviceMenuItems.filter((i) => i.is_available).length})`,
+                          },
+                          {
+                            id: "hidden",
+                            label: `Ẩn trên máy (${deviceMenuItems.filter((i) => !i.is_available).length})`,
+                          },
+                        ] as const
+                      ).map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setDeviceMenuFilter(f.id)}
+                          className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
+                            deviceMenuFilter === f.id
+                              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
+                              : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300"
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-700 dark:bg-neutral-800">
+                      <Search className="h-3.5 w-3.5 text-neutral-400" />
+                      <input
+                        type="text"
+                        value={deviceMenuSearch}
+                        onChange={(e) => setDeviceMenuSearch(e.target.value)}
+                        placeholder="Tìm món trên máy..."
+                        className="w-40 bg-transparent text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
                     {deviceMenuLoading ? (
-                      <div className="space-y-2">
-                        {[1, 2, 3].map((idx) => (
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        {[1, 2, 3, 4, 5, 6].map((idx) => (
                           <Skeleton
                             key={idx}
-                            className="h-14 w-full rounded-2xl dark:bg-neutral-800"
+                            className="h-48 w-full rounded-2xl dark:bg-neutral-800"
                           />
                         ))}
                       </div>
                     ) : filteredDeviceMenuItems.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-neutral-200 p-6 text-center text-xs text-neutral-400 dark:border-neutral-800">
+                      <div className="flex h-full min-h-[200px] items-center justify-center rounded-2xl border border-dashed border-neutral-200 p-6 text-xs text-neutral-400 dark:border-neutral-800">
                         Không có món nào khớp bộ lọc.
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        {filteredDeviceMenuItems.map((item) => (
-                          <div
-                            key={item.product_id}
-                            className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 transition-colors ${
-                              item.is_available
-                                ? "border-neutral-200/80 bg-white dark:border-neutral-800 dark:bg-neutral-950/60"
-                                : "border-neutral-200/60 bg-neutral-100/70 opacity-70 dark:border-neutral-800 dark:bg-neutral-900/40"
-                            }`}
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="truncate text-xs font-bold text-neutral-900 dark:text-white">
-                                  {item.name}
-                                </span>
-                                {item.store_is_available === false && (
-                                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
-                                    Đang ẩn ở Chi nhánh
-                                  </span>
-                                )}
-                              </div>
-                              <div className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
-                                {item.code} • Giá:{" "}
-                                {Number(
-                                  item.store_price_override ?? item.base_price ?? 0
-                                ).toLocaleString("vi-VN")}
-                                ₫
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <div className="w-36">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={item.price_override ?? ""}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setDeviceMenuItems((prev) =>
-                                      prev.map((x) =>
-                                        x.product_id === item.product_id
-                                          ? {
-                                              ...x,
-                                              price_override:
-                                                val === "" ? null : val,
-                                            }
-                                          : x
-                                      )
-                                    );
-                                  }}
-                                  placeholder="Giá riêng máy"
-                                  className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-2.5 py-1.5 text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                                />
-                              </div>
-                              <BeSwitch
-                                checked={item.is_available}
-                                onCheckedChange={(checked) => {
-                                  setDeviceMenuItems((prev) =>
-                                    prev.map((x) =>
-                                      x.product_id === item.product_id
-                                        ? { ...x, is_available: checked }
-                                        : x
-                                    )
-                                  );
-                                }}
-                                ariaLabel={`Bật tắt ${item.name} trên máy`}
-                              />
-                            </div>
-                          </div>
-                        ))}
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        {filteredDeviceMenuItems.map((item) =>
+                          renderProductCard(item, true)
+                        )}
                       </div>
                     )}
-                  </>
-                )}
-              </div>
+                  </div>
+                </>
+              )}
             </>
           ) : activeStore ? (
             <>
@@ -705,7 +832,7 @@ export function MenuSetupView({
                     </h2>
                   </div>
                   <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
-                    Bật/tắt món đang bán tại chi nhánh và đặt giá riêng (để trống nếu dùng giá gốc).
+                    Bấm vào thẻ món để xem biến thể &amp; tùy chọn đi kèm, hoặc gạt công tắc để bật/tắt nhanh.
                   </p>
                 </div>
 
@@ -762,13 +889,13 @@ export function MenuSetupView({
                 </div>
               </div>
 
-              <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+              <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
                 {menuLoading ? (
-                  <div className="space-y-2">
-                    {[1, 2, 3, 4].map((idx) => (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {[1, 2, 3, 4, 5, 6].map((idx) => (
                       <Skeleton
                         key={idx}
-                        className="h-16 w-full rounded-2xl dark:bg-neutral-800"
+                        className="h-48 w-full rounded-2xl dark:bg-neutral-800"
                       />
                     ))}
                   </div>
@@ -777,63 +904,11 @@ export function MenuSetupView({
                     Không có sản phẩm nào phù hợp.
                   </div>
                 ) : (
-                  filteredMenuItems.map((item) => (
-                    <div
-                      key={item.product_id}
-                      className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 transition-colors ${
-                        item.is_available
-                          ? "border-neutral-200/80 bg-white dark:border-neutral-800 dark:bg-neutral-950/60"
-                          : "border-neutral-200/60 bg-neutral-100/70 opacity-70 dark:border-neutral-800 dark:bg-neutral-900/40"
-                      }`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-xs font-bold text-neutral-900 dark:text-white">
-                          {item.name}
-                        </div>
-                        <div className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
-                          {item.code} • Giá gốc:{" "}
-                          {Number(item.base_price || 0).toLocaleString("vi-VN")}₫
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="w-36">
-                          <input
-                            type="number"
-                            min={0}
-                            value={item.price_override ?? ""}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setMenuItems((prev) =>
-                                prev.map((x) =>
-                                  x.product_id === item.product_id
-                                    ? {
-                                        ...x,
-                                        price_override: val === "" ? null : val,
-                                      }
-                                    : x
-                                )
-                              );
-                            }}
-                            placeholder="Giá riêng (mặc định)"
-                            className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-2.5 py-1.5 text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                          />
-                        </div>
-                        <BeSwitch
-                          checked={item.is_available}
-                          onCheckedChange={(checked) => {
-                            setMenuItems((prev) =>
-                              prev.map((x) =>
-                                x.product_id === item.product_id
-                                  ? { ...x, is_available: checked }
-                                  : x
-                              )
-                            );
-                          }}
-                          ariaLabel={`Bật tắt ${item.name}`}
-                        />
-                      </div>
-                    </div>
-                  ))
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {filteredMenuItems.map((item) =>
+                      renderProductCard(item, false)
+                    )}
+                  </div>
                 )}
               </div>
             </>
@@ -844,7 +919,234 @@ export function MenuSetupView({
           )}
         </div>
       </div>
+
+      {/* MODAL: PRODUCT DETAIL, VARIANTS & ATTACHED OPTIONS */}
+      <AnimatePresence>
+        {detailMenuItem && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setDetailProductId(null)}
+              className="fixed inset-0 z-[80] bg-black/30 [backdrop-filter:blur(8px)]"
+            />
+            <div className="pointer-events-none fixed inset-4 z-[81] flex items-center justify-center">
+              <motion.div
+                initial={{ opacity: 0, y: 18, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.97 }}
+                transition={{ type: "spring", stiffness: 420, damping: 36 }}
+                className="pointer-events-auto flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-neutral-200/80 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950"
+              >
+                {/* Modal Header with Image */}
+                <div className="flex items-start justify-between gap-4 border-b border-neutral-200/80 p-5 dark:border-neutral-800">
+                  <div className="flex min-w-0 items-center gap-3.5">
+                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900">
+                      {detailMenuItem.image_url || detailProduct?.image_url ? (
+                        <img
+                          src={
+                            detailMenuItem.image_url ||
+                            detailProduct?.image_url ||
+                            ""
+                          }
+                          alt={detailMenuItem.name}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-neutral-400">
+                          <UtensilsCrossed className="h-6 w-6" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="truncate text-base font-bold text-neutral-900 dark:text-white">
+                        {detailMenuItem.name}
+                      </h3>
+                      <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                        {detailMenuItem.code} • Giá gốc:{" "}
+                        {Number(detailMenuItem.base_price || 0).toLocaleString(
+                          "vi-VN"
+                        )}
+                        ₫
+                      </p>
+                      {detailProduct?.description && (
+                        <p className="mt-1 line-clamp-2 text-[11px] text-neutral-400">
+                          {detailProduct.description}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDetailProductId(null)}
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Modal Body */}
+                <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
+                  {/* Availability & Custom Price */}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="flex items-center justify-between rounded-2xl border border-neutral-200/80 bg-neutral-50/70 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900">
+                      <div>
+                        <div className="text-xs font-bold text-neutral-900 dark:text-white">
+                          {selection.kind === "device"
+                            ? "Hiển thị trên máy này"
+                            : "Mở bán tại chi nhánh"}
+                        </div>
+                        <div className="text-[11px] text-neutral-400">
+                          Bật/tắt trạng thái bán của món
+                        </div>
+                      </div>
+                      <BeSwitch
+                        checked={detailMenuItem.is_available}
+                        onCheckedChange={(checked) =>
+                          toggleItemAvailability(
+                            detailMenuItem.product_id,
+                            checked
+                          )
+                        }
+                        ariaLabel="Bật tắt món"
+                      />
+                    </div>
+
+                    <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/70 px-4 py-2.5 dark:border-neutral-800 dark:bg-neutral-900">
+                      <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300">
+                        {selection.kind === "device"
+                          ? "Giá riêng trên máy (để trống = giá chi nhánh)"
+                          : "Giá riêng chi nhánh (để trống = giá gốc)"}
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={detailMenuItem.price_override ?? ""}
+                        onChange={(e) =>
+                          updateItemPriceOverride(
+                            detailMenuItem.product_id,
+                            e.target.value
+                          )
+                        }
+                        placeholder="Nhập giá bán riêng..."
+                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Variants & Attached Option Groups */}
+                  {detailProduct?.variants && detailProduct.variants.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 text-xs font-bold text-neutral-900 dark:text-white">
+                        <Layers className="h-3.5 w-3.5" />
+                        Biến thể &amp; Nhóm tùy chọn đi kèm (
+                        {detailProduct.variants.length})
+                      </div>
+
+                      <div className="space-y-2.5">
+                        {detailProduct.variants.map((v, idx) => {
+                          const attachedGroups = (v.option_group_ids || [])
+                            .map((gid) => optionGroupLookup.get(gid))
+                            .filter(Boolean) as OptionGroupRecord[];
+                          return (
+                            <div
+                              key={v.id || idx}
+                              className="rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-3.5 dark:border-neutral-800 dark:bg-neutral-900/50"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div>
+                                  <span className="text-xs font-bold text-neutral-900 dark:text-white">
+                                    {v.variant_name}
+                                  </span>
+                                  <span className="ml-2 font-mono text-[11px] text-neutral-400">
+                                    {v.sku}
+                                  </span>
+                                </div>
+                                <span className="text-xs font-extrabold text-neutral-900 dark:text-white">
+                                  {Number(v.default_price || 0).toLocaleString(
+                                    "vi-VN"
+                                  )}
+                                  ₫
+                                </span>
+                              </div>
+
+                              {attachedGroups.length > 0 ? (
+                                <div className="mt-2.5 space-y-2 border-t border-neutral-200/70 pt-2.5 dark:border-neutral-800">
+                                  {attachedGroups.map((grp) => (
+                                    <div key={grp.id} className="space-y-1">
+                                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-neutral-700 dark:text-neutral-300">
+                                        <SlidersHorizontal className="h-3 w-3 text-neutral-400" />
+                                        <span>{grp.name}</span>
+                                        <span className="text-[10px] font-normal text-neutral-400">
+                                          (
+                                          {grp.is_required
+                                            ? "Bắt buộc"
+                                            : "Tùy chọn"}
+                                          {" • "}
+                                          {grp.selection_mode === "single"
+                                            ? "Chọn 1"
+                                            : "Chọn nhiều"}
+                                          )
+                                        </span>
+                                      </div>
+                                      <div className="flex flex-wrap gap-1.5 pl-4">
+                                        {grp.items.map((opt, i) => (
+                                          <span
+                                            key={opt.id || i}
+                                            className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] ${
+                                              opt.is_default
+                                                ? "border-blue-200 bg-blue-50 font-semibold text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300"
+                                                : "border-neutral-200 bg-white text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                                            }`}
+                                          >
+                                            <span>{opt.name}</span>
+                                            {Number(opt.price_delta) > 0 && (
+                                              <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                                                +
+                                                {Number(
+                                                  opt.price_delta
+                                                ).toLocaleString("vi-VN")}
+                                                ₫
+                                              </span>
+                                            )}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="mt-1.5 text-[11px] text-neutral-400">
+                                  Không có nhóm tùy chọn đi kèm.
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Modal Footer */}
+                <div className="flex items-center justify-between border-t border-neutral-200/80 px-5 py-3.5 dark:border-neutral-800">
+                  <span className="text-[11px] text-neutral-400">
+                    Thay đổi được lưu khi bấm nút Lưu ở góc trên phải.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setDetailProductId(null)}
+                    className="rounded-full bg-neutral-900 px-5 py-2 text-xs font-bold text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900"
+                  >
+                    Xong
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
-

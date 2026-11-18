@@ -3103,6 +3103,8 @@ export default function OrganizationWorkspace({
           <MenuSetupView
             stores={stores}
             categories={categories}
+            products={products as unknown as ProductRecord[]}
+            optionGroups={optionGroups}
             selectedStoreId={selectedStoreId}
             accessToken={accessToken}
             apiFetch={apiFetch}
