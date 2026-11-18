@@ -2149,13 +2149,12 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                       _buildWideSidebar(),
                       const VerticalDivider(width: 1),
                       Expanded(
-                        flex: 3,
                         child: _mobileTabIndex == 2
                             ? _buildOrdersPane()
                             : _buildCatalogPane(filteredVariants),
                       ),
                       const VerticalDivider(width: 1),
-                      Expanded(flex: 2, child: _buildCartPane()),
+                      SizedBox(width: 280, child: _buildCartPane()),
                     ],
                   )
                 : IndexedStack(
@@ -2494,18 +2493,18 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                   )
                 : LayoutBuilder(
                     builder: (context, constraints) {
-                      final cols = constraints.maxWidth >= 560
-                          ? 3
-                          : constraints.maxWidth >= 360
-                              ? 2
-                              : 1;
+                      final cols = constraints.maxWidth >= 540
+                          ? 4
+                          : constraints.maxWidth >= 380
+                              ? 3
+                              : 2;
                       return GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
+                        padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: cols,
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          childAspectRatio: 0.78,
+                          mainAxisSpacing: 10,
+                          crossAxisSpacing: 10,
+                          childAspectRatio: 0.72,
                         ),
                         itemCount: items.length,
                         itemBuilder: (ctx, i) {
@@ -2543,7 +2542,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                 onTap: () => _onVariantTap(v),
                                 borderRadius: BorderRadius.circular(16),
                                 child: Padding(
-                                  padding: const EdgeInsets.all(10),
+                                  padding: const EdgeInsets.all(8),
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
@@ -2653,11 +2652,11 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w700,
-                                          fontSize: 13.5,
-                                          height: 1.25,
+                                          fontSize: 12.5,
+                                          height: 1.2,
                                         ),
                                       ),
-                                      const SizedBox(height: 4),
+                                      const SizedBox(height: 3),
 
                                       // Variant Name & Price Row
                                       Row(
@@ -2672,14 +2671,14 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
-                                                fontSize: 12,
+                                                fontSize: 11,
                                                 color: isDark
                                                     ? Colors.white60
                                                     : Colors.grey.shade600,
                                               ),
                                             ),
                                           ),
-                                          const SizedBox(width: 6),
+                                          const SizedBox(width: 4),
                                           Column(
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.end,
@@ -2689,7 +2688,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                                 Text(
                                                   formatVnd(origPrice),
                                                   style: TextStyle(
-                                                    fontSize: 10.5,
+                                                    fontSize: 9.5,
                                                     decoration: TextDecoration
                                                         .lineThrough,
                                                     color: Colors.grey.shade500,
@@ -2700,37 +2699,37 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                                 style: const TextStyle(
                                                   color: kEmeraldDark,
                                                   fontWeight: FontWeight.w800,
-                                                  fontSize: 14.5,
+                                                  fontSize: 13,
                                                 ),
                                               ),
                                             ],
                                           ),
                                         ],
                                       ),
-                                      const SizedBox(height: 8),
+                                      const SizedBox(height: 6),
 
-                                      // Soft Emerald "+ Thêm vào đơn" CTA Button
+                                      // Soft Emerald "+ Thêm" CTA Button
                                       SizedBox(
                                         width: double.infinity,
-                                        height: 34,
+                                        height: 30,
                                         child: TextButton.icon(
                                           onPressed: () => _onVariantTap(v),
                                           style: TextButton.styleFrom(
                                             backgroundColor: kMintSoft,
                                             foregroundColor: kEmeraldDark,
                                             padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
+                                              horizontal: 6,
                                             ),
                                             shape: RoundedRectangleBorder(
                                               borderRadius:
-                                                  BorderRadius.circular(10),
+                                                  BorderRadius.circular(8),
                                             ),
                                           ),
-                                          icon: const Icon(Icons.add, size: 16),
+                                          icon: const Icon(Icons.add, size: 14),
                                           label: const Text(
-                                            'Thêm vào đơn',
+                                            'Thêm',
                                             style: TextStyle(
-                                              fontSize: 12,
+                                              fontSize: 11.5,
                                               fontWeight: FontWeight.w700,
                                             ),
                                           ),
