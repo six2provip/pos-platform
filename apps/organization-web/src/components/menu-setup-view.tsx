@@ -76,6 +76,7 @@ export function MenuSetupView({
 
   // Store Menu State
   const [menuItems, setMenuItems] = useState<MenuCardItem[]>([]);
+  const [baselineMenuItems, setBaselineMenuItems] = useState<MenuCardItem[]>([]);
   const [menuLoading, setMenuLoading] = useState(false);
   const [menuSaving, setMenuSaving] = useState(false);
   const [menuSearch, setMenuSearch] = useState("");
@@ -86,8 +87,12 @@ export function MenuSetupView({
   const [deviceMenuMode, setDeviceMenuMode] = useState<"inherit_store" | "custom">(
     "inherit_store"
   );
+  const [baselineDeviceMode, setBaselineDeviceMode] = useState<"inherit_store" | "custom">(
+    "inherit_store"
+  );
   const [deviceAllowedCats, setDeviceAllowedCats] = useState<string[]>([]);
   const [deviceMenuItems, setDeviceMenuItems] = useState<MenuCardItem[]>([]);
+  const [baselineDeviceMenuItems, setBaselineDeviceMenuItems] = useState<MenuCardItem[]>([]);
   const [deviceMenuLoading, setDeviceMenuLoading] = useState(false);
   const [deviceMenuSearch, setDeviceMenuSearch] = useState("");
   const [deviceMenuFilter, setDeviceMenuFilter] = useState<"all" | "available" | "hidden">("all");
@@ -199,10 +204,14 @@ export function MenuSetupView({
               ? res.data.items
               : [];
           setMenuItems(items);
+          setBaselineMenuItems(items.map((it: MenuCardItem) => ({ ...it })));
         }
       })
       .catch(() => {
-        if (!cancelled) setMenuItems([]);
+        if (!cancelled) {
+          setMenuItems([]);
+          setBaselineMenuItems([]);
+        }
       })
       .finally(() => {
         if (!cancelled) setMenuLoading(false);
@@ -221,23 +230,27 @@ export function MenuSetupView({
       .then((res) => {
         if (cancelled) return;
         const data = res?.items ? res : res?.data || res || {};
-        setDeviceMenuMode(
-          data.menu_mode === "custom" ? "custom" : "inherit_store"
-        );
+        const nextMode = data.menu_mode === "custom" ? "custom" : "inherit_store";
+        const nextItems: MenuCardItem[] = Array.isArray(data.items) ? data.items : [];
+        setDeviceMenuMode(nextMode);
+        setBaselineDeviceMode(nextMode);
         setDeviceAllowedCats(
           Array.isArray(data.allowed_category_ids)
             ? data.allowed_category_ids
             : []
         );
-        setDeviceMenuItems(Array.isArray(data.items) ? data.items : []);
+        setDeviceMenuItems(nextItems);
+        setBaselineDeviceMenuItems(nextItems.map((it) => ({ ...it })));
       })
       .catch(() => {
         if (!cancelled) {
-          setDeviceMenuMode(
-            activeDevice.menu_mode === "custom" ? "custom" : "inherit_store"
-          );
+          const fallbackMode =
+            activeDevice.menu_mode === "custom" ? "custom" : "inherit_store";
+          setDeviceMenuMode(fallbackMode);
+          setBaselineDeviceMode(fallbackMode);
           setDeviceAllowedCats(activeDevice.allowed_category_ids || []);
           setDeviceMenuItems([]);
+          setBaselineDeviceMenuItems([]);
         }
       })
       .finally(() => {
@@ -349,6 +362,7 @@ export function MenuSetupView({
         }),
       });
       notify("success", `Đã lưu thực đơn cho "${activeStore.name}"!`);
+      setBaselineMenuItems(menuItems.map((it) => ({ ...it })));
     } catch (err: any) {
       notify("error", err?.message || "Không thể lưu thực đơn chi nhánh");
     } finally {
@@ -381,6 +395,8 @@ export function MenuSetupView({
         }),
       });
       notify("success", `Đã cập nhật thực đơn cho "${activeDevice.name}"!`);
+      setBaselineDeviceMode(deviceMenuMode);
+      setBaselineDeviceMenuItems(deviceMenuItems.map((it) => ({ ...it })));
       await loadAllDevices();
     } catch (err: any) {
       notify("error", err?.message || "Không thể lưu cấu hình thiết bị");
@@ -676,6 +692,134 @@ export function MenuSetupView({
     ? productLookup.get(detailProductId) || null
     : null;
 
+  type PendingChange = {
+    id: string;
+    productId?: string;
+    title: string;
+    availChanged?: boolean;
+    oldAvail?: boolean;
+    newAvail?: boolean;
+    priceChanged?: boolean;
+    oldPrice?: string | null;
+    newPrice?: string | null;
+    modeChanged?: boolean;
+    oldMode?: string;
+    newMode?: string;
+  };
+
+  const pendingChanges = useMemo<PendingChange[]>(() => {
+    const list: PendingChange[] = [];
+    if (selection.kind === "device" && activeDevice) {
+      if (deviceMenuMode !== baselineDeviceMode) {
+        list.push({
+          id: "__mode__",
+          title: "Chế độ thực đơn máy POS",
+          modeChanged: true,
+          oldMode:
+            baselineDeviceMode === "custom" ? "Menu riêng" : "Kế thừa Chi nhánh",
+          newMode:
+            deviceMenuMode === "custom" ? "Menu riêng" : "Kế thừa Chi nhánh",
+        });
+      }
+      if (deviceMenuMode === "custom") {
+        const baseMap = new Map(
+          baselineDeviceMenuItems.map((b) => [b.product_id, b])
+        );
+        for (const it of deviceMenuItems) {
+          const orig = baseMap.get(it.product_id);
+          if (!orig) continue;
+          const availChanged = it.is_available !== orig.is_available;
+          const oldP = orig.price_override ? String(orig.price_override).trim() : "";
+          const newP = it.price_override ? String(it.price_override).trim() : "";
+          const priceChanged = oldP !== newP;
+          if (availChanged || priceChanged) {
+            list.push({
+              id: it.product_id,
+              productId: it.product_id,
+              title: it.name,
+              availChanged,
+              oldAvail: orig.is_available,
+              newAvail: it.is_available,
+              priceChanged,
+              oldPrice: oldP || null,
+              newPrice: newP || null,
+            });
+          }
+        }
+      }
+    } else if (activeStore) {
+      const baseMap = new Map(baselineMenuItems.map((b) => [b.product_id, b]));
+      for (const it of menuItems) {
+        const orig = baseMap.get(it.product_id);
+        if (!orig) continue;
+        const availChanged = it.is_available !== orig.is_available;
+        const oldP = orig.price_override ? String(orig.price_override).trim() : "";
+        const newP = it.price_override ? String(it.price_override).trim() : "";
+        const priceChanged = oldP !== newP;
+        if (availChanged || priceChanged) {
+          list.push({
+            id: it.product_id,
+            productId: it.product_id,
+            title: it.name,
+            availChanged,
+            oldAvail: orig.is_available,
+            newAvail: it.is_available,
+            priceChanged,
+            oldPrice: oldP || null,
+            newPrice: newP || null,
+          });
+        }
+      }
+    }
+    return list;
+  }, [
+    selection.kind,
+    activeDevice,
+    activeStore,
+    deviceMenuMode,
+    baselineDeviceMode,
+    deviceMenuItems,
+    baselineDeviceMenuItems,
+    menuItems,
+    baselineMenuItems,
+  ]);
+
+  const hasChanges = pendingChanges.length > 0;
+
+  const revertSingleChange = (change: PendingChange) => {
+    if (change.id === "__mode__") {
+      setDeviceMenuMode(baselineDeviceMode);
+      return;
+    }
+    if (!change.productId) return;
+    if (selection.kind === "device") {
+      const orig = baselineDeviceMenuItems.find(
+        (b) => b.product_id === change.productId
+      );
+      if (!orig) return;
+      setDeviceMenuItems((prev) =>
+        prev.map((x) => (x.product_id === orig.product_id ? { ...orig } : x))
+      );
+    } else {
+      const orig = baselineMenuItems.find(
+        (b) => b.product_id === change.productId
+      );
+      if (!orig) return;
+      setMenuItems((prev) =>
+        prev.map((x) => (x.product_id === orig.product_id ? { ...orig } : x))
+      );
+    }
+  };
+
+  const revertAllChanges = () => {
+    if (selection.kind === "device") {
+      setDeviceMenuMode(baselineDeviceMode);
+      setDeviceMenuItems(baselineDeviceMenuItems.map((it) => ({ ...it })));
+    } else {
+      setMenuItems(baselineMenuItems.map((it) => ({ ...it })));
+    }
+  };
+
   return (
     <div className="flex h-full flex-1 min-h-0 flex-col gap-3 overflow-hidden">
       {/* Header */}
@@ -805,8 +949,9 @@ export function MenuSetupView({
           </div>
         </div>
 
-        {/* Right 9 cols: Category Cards + Full Search + 4-Col Square Grid */}
-        <div className="flex min-h-0 flex-col rounded-2xl border border-neutral-200/80 bg-[#F9FAFB] p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 lg:col-span-9">
+        {/* Right 9 cols: Menu Cards + Conditional Animated Change Preview Section */}
+        <div className="flex min-h-0 gap-4 lg:col-span-9">
+          <div className="flex min-w-0 flex-1 flex-col rounded-2xl border border-neutral-200/80 bg-[#F9FAFB] p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
           {selection.kind === "device" && activeDevice ? (
             <>
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 pb-3">
@@ -951,7 +1096,11 @@ export function MenuSetupView({
                         Không có món nào khớp bộ lọc.
                       </div>
                     ) : (
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+                      <div
+                        className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${
+                          hasChanges ? "xl:grid-cols-3" : "xl:grid-cols-4"
+                        }`}
+                      >
                         {filteredDeviceMenuItems.map((item) =>
                           renderProductCard(item, true)
                         )}
@@ -1026,7 +1175,11 @@ export function MenuSetupView({
                     Không có sản phẩm nào phù hợp.
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+                  <div
+                    className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${
+                      hasChanges ? "xl:grid-cols-3" : "xl:grid-cols-4"
+                    }`}
+                  >
                     {filteredMenuItems.map((item) =>
                       renderProductCard(item, false)
                     )}
@@ -1039,6 +1192,120 @@ export function MenuSetupView({
               Chọn một chi nhánh hoặc thiết bị ở cột bên trái để thiết lập menu.
             </div>
           )}
+          </div>
+
+          {/* Animated Vertical Change Preview Section (only appears when hasChanges) */}
+          <AnimatePresence initial={false}>
+            {hasChanges && (
+              <motion.aside
+                key="change-preview-panel"
+                initial={{ width: 0, opacity: 0, x: 16 }}
+                animate={{ width: 300, opacity: 1, x: 0 }}
+                exit={{ width: 0, opacity: 0, x: 16 }}
+                transition={{ type: "spring", stiffness: 360, damping: 32 }}
+                className="hidden shrink-0 overflow-hidden lg:flex lg:flex-col"
+              >
+                <div className="flex h-full min-h-0 w-[300px] flex-col rounded-2xl border border-neutral-200/80 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+                  <div className="flex shrink-0 items-center justify-between gap-2 border-b border-neutral-200/70 pb-3 dark:border-neutral-800">
+                    <div>
+                      <h3 className="text-xs font-bold text-neutral-900 dark:text-white">
+                        Xem trước thay đổi ({pendingChanges.length})
+                      </h3>
+                      <p className="text-[10px] text-neutral-400">
+                        Chưa lưu vào hệ thống
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={revertAllChanges}
+                      className="inline-flex items-center gap-1 rounded-full border border-neutral-200 px-2.5 py-1 text-[10px] font-semibold text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      Hoàn tác
+                    </button>
+                  </div>
+
+                  <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pb-16 pr-1">
+                    <AnimatePresence initial={false}>
+                      {pendingChanges.map((chg) => (
+                        <motion.div
+                          key={chg.id}
+                          layout
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.96 }}
+                          transition={{ duration: 0.16 }}
+                          className="rounded-xl border border-neutral-200/80 bg-neutral-50/70 p-2.5 dark:border-neutral-800 dark:bg-neutral-950/60"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="line-clamp-2 text-[11px] font-bold text-neutral-900 dark:text-white">
+                              {chg.title}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => revertSingleChange(chg)}
+                              title="Hoàn tác mục này"
+                              className="grid h-5 w-5 shrink-0 place-items-center rounded-md text-neutral-400 hover:bg-neutral-200/70 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                            </button>
+                          </div>
+
+                          <div className="mt-1.5 space-y-1 text-[10px]">
+                            {chg.modeChanged && (
+                              <div className="flex flex-wrap items-center gap-1">
+                                <span className="rounded bg-neutral-200/80 px-1.5 py-0.5 text-neutral-600 line-through dark:bg-neutral-800 dark:text-neutral-400">
+                                  {chg.oldMode}
+                                </span>
+                                <span className="text-neutral-400">→</span>
+                                <span className="rounded bg-blue-50 px-1.5 py-0.5 font-bold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+                                  {chg.newMode}
+                                </span>
+                              </div>
+                            )}
+
+                            {chg.availChanged && (
+                              <div className="flex flex-wrap items-center gap-1">
+                                <span className="rounded bg-neutral-200/80 px-1.5 py-0.5 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+                                  {chg.oldAvail ? "Đang bán" : "Đang ẩn"}
+                                </span>
+                                <span className="text-neutral-400">→</span>
+                                <span
+                                  className={`rounded px-1.5 py-0.5 font-bold ${
+                                    chg.newAvail
+                                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                      : "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+                                  }`}
+                                >
+                                  {chg.newAvail ? "Đang bán" : "Đang ẩn"}
+                                </span>
+                              </div>
+                            )}
+
+                            {chg.priceChanged && (
+                              <div className="flex flex-wrap items-center gap-1">
+                                <span className="rounded bg-neutral-200/80 px-1.5 py-0.5 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+                                  {chg.oldPrice
+                                    ? Number(chg.oldPrice).toLocaleString("vi-VN")
+                                    : "Mặc định"}
+                                </span>
+                                <span className="text-neutral-400">→</span>
+                                <span className="rounded bg-blue-50 px-1.5 py-0.5 font-bold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+                                  {chg.newPrice
+                                    ? Number(chg.newPrice).toLocaleString("vi-VN")
+                                    : "Mặc định"}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                </div>
+              </motion.aside>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
