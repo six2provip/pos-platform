@@ -121,23 +121,26 @@ export function DiscountsView({
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
   const [isActive, setIsActive] = useState(true);
 
-  const loadDiscounts = useCallback(async () => {
-    if (!accessToken) return;
-    setLoading(true);
-    try {
-      const res = await apiFetch("/api/v1/discounts");
-      const list = Array.isArray(res)
-        ? (res as DiscountCodeRecord[])
-        : Array.isArray(res?.data)
-          ? (res.data as DiscountCodeRecord[])
-          : [];
-      setDiscounts(list);
-    } catch {
-      setDiscounts([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [accessToken, apiFetch]);
+  const loadDiscounts = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!accessToken) return;
+      if (!options?.silent) setLoading(true);
+      try {
+        const res = await apiFetch("/api/v1/discounts");
+        const list = Array.isArray(res)
+          ? (res as DiscountCodeRecord[])
+          : Array.isArray(res?.data)
+            ? (res.data as DiscountCodeRecord[])
+            : [];
+        setDiscounts(list);
+      } catch {
+        if (!options?.silent) setDiscounts([]);
+      } finally {
+        if (!options?.silent) setLoading(false);
+      }
+    },
+    [accessToken, apiFetch]
+  );
 
   useEffect(() => {
     void loadDiscounts();
@@ -238,7 +241,7 @@ export function DiscountsView({
         notify("success", `Đã tạo mã giảm giá "${code.trim().toUpperCase()}"!`);
       }
       setModalOpen(false);
-      await loadDiscounts();
+      await loadDiscounts({ silent: true });
     } catch (err: any) {
       notify("error", err?.message || "Không thể lưu mã giảm giá");
     } finally {
@@ -248,6 +251,11 @@ export function DiscountsView({
 
   const handleToggleStatus = async (dc: DiscountCodeRecord) => {
     const nextStatus = dc.status === "active" ? "inactive" : "active";
+    setDiscounts((prev) =>
+      prev.map((item) =>
+        item.id === dc.id ? { ...item, status: nextStatus } : item
+      )
+    );
     try {
       await apiFetch(`/api/v1/discounts/${dc.id}`, {
         method: "PATCH",
@@ -259,18 +267,24 @@ export function DiscountsView({
           ? `Đã bật mã "${dc.code}"`
           : `Đã tạm dừng mã "${dc.code}"`
       );
-      await loadDiscounts();
     } catch (err: any) {
+      setDiscounts((prev) =>
+        prev.map((item) =>
+          item.id === dc.id ? { ...item, status: dc.status } : item
+        )
+      );
       notify("error", err?.message || "Không thể cập nhật trạng thái");
     }
   };
 
   const handleDelete = async (dc: DiscountCodeRecord) => {
+    const snapshot = discounts;
+    setDiscounts((prev) => prev.filter((item) => item.id !== dc.id));
     try {
       await apiFetch(`/api/v1/discounts/${dc.id}`, { method: "DELETE" });
       notify("success", `Đã xóa mã "${dc.code}"`);
-      await loadDiscounts();
     } catch (err: any) {
+      setDiscounts(snapshot);
       notify("error", err?.message || "Không thể xóa mã giảm giá");
     }
   };
