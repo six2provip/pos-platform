@@ -873,6 +873,353 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
     });
   }
 
+  Future<void> _onProductTap(Map<String, dynamic> product) async {
+    final variants = (product['variants'] as List?)
+            ?.whereType<Map>()
+            .map((v) => Map<String, dynamic>.from(v))
+            .toList() ??
+        [];
+    if (variants.isEmpty) return;
+
+    if (variants.length == 1) {
+      await _onVariantTap(variants.first);
+      return;
+    }
+
+    int selectedVariantIdx = 0;
+    Map<String, Set<String>> buildDefaultsForVariant(
+        Map<String, dynamic> v) {
+      final rawGroups = (v['optionGroups'] as List?) ?? const [];
+      final groups = rawGroups
+          .whereType<Map>()
+          .map((g) => Map<String, dynamic>.from(g))
+          .where((g) => ((g['items'] as List?) ?? const []).isNotEmpty)
+          .toList();
+      final Map<String, Set<String>> map = {};
+      for (final g in groups) {
+        final gid = g['id']?.toString() ?? '';
+        final items = ((g['items'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((it) => Map<String, dynamic>.from(it))
+            .toList();
+        final defaults = items
+            .where((it) => it['is_default'] == true)
+            .map((it) => it['id']?.toString() ?? '')
+            .where((id) => id.isNotEmpty)
+            .toSet();
+        if (g['selection_mode'] == 'single' && defaults.length > 1) {
+          map[gid] = {defaults.first};
+        } else {
+          map[gid] = defaults;
+        }
+      }
+      return map;
+    }
+
+    Map<String, Set<String>> selectedByGroup =
+        buildDefaultsForVariant(variants[selectedVariantIdx]);
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final activeVariant = variants[selectedVariantIdx];
+            final basePrice = (activeVariant['price'] as int?) ?? 0;
+            final rawGroups =
+                (activeVariant['optionGroups'] as List?) ?? const [];
+            final groups = rawGroups
+                .whereType<Map>()
+                .map((g) => Map<String, dynamic>.from(g))
+                .where((g) => ((g['items'] as List?) ?? const []).isNotEmpty)
+                .toList();
+
+            int extraPrice = 0;
+            bool allValid = true;
+            for (final g in groups) {
+              final gid = g['id']?.toString() ?? '';
+              final chosen = selectedByGroup[gid] ?? const <String>{};
+              final isReq = g['is_required'] == true;
+              final minSel =
+                  (g['min_selections'] as int?) ?? (isReq ? 1 : 0);
+              final effectiveMin = isReq && minSel < 1 ? 1 : minSel;
+              if (chosen.length < effectiveMin) {
+                allValid = false;
+              }
+              final items = ((g['items'] as List?) ?? const [])
+                  .whereType<Map>()
+                  .map((it) => Map<String, dynamic>.from(it));
+              for (final it in items) {
+                if (chosen.contains(it['id']?.toString())) {
+                  extraPrice +=
+                      (double.tryParse(it['price_delta']?.toString() ?? '0') ??
+                              0)
+                          .round();
+                }
+              }
+            }
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20)),
+              title: Text(
+                product['productName']?.toString() ?? 'Chọn tùy chọn',
+                style:
+                    const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+              content: SizedBox(
+                width: 480,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Chọn biến thể / kích cỡ',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: List.generate(variants.length, (idx) {
+                          final v = variants[idx];
+                          final isSelected = idx == selectedVariantIdx;
+                          final vPrice = (v['price'] as int?) ?? 0;
+                          final vOrig = (v['originalPrice'] as int?) ?? vPrice;
+                          final hasPromo = vPrice < vOrig;
+                          return InkWell(
+                            onTap: () {
+                              setModalState(() {
+                                selectedVariantIdx = idx;
+                                selectedByGroup = buildDefaultsForVariant(v);
+                              });
+                            },
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 9),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? kMintSoft
+                                    : Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? kEmeraldPrimary
+                                      : Colors.grey.shade300,
+                                  width: isSelected ? 1.5 : 1,
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    v['variantName']?.toString() ?? 'Mặc định',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: isSelected
+                                          ? kEmeraldDark
+                                          : Colors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (hasPromo) ...[
+                                        Text(
+                                          formatVnd(vOrig),
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            decoration:
+                                                TextDecoration.lineThrough,
+                                            color: Colors.grey.shade500,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                      ],
+                                      Text(
+                                        formatVnd(vPrice),
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w800,
+                                          color: isSelected
+                                              ? kEmeraldDark
+                                              : Colors.black87,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                      if (groups.isNotEmpty) const SizedBox(height: 16),
+                      ...groups.map((g) {
+                        final gid = g['id']?.toString() ?? '';
+                        final mode =
+                            g['selection_mode']?.toString() ?? 'single';
+                        final isReq = g['is_required'] == true;
+                        final minSel =
+                            (g['min_selections'] as int?) ?? (isReq ? 1 : 0);
+                        final maxSel = g['max_selections'] as int?;
+                        final chosen =
+                            selectedByGroup[gid] ?? const <String>{};
+                        final items = ((g['items'] as List?) ?? const [])
+                            .whereType<Map>()
+                            .map((it) => Map<String, dynamic>.from(it))
+                            .where((it) => it['status'] != 'inactive')
+                            .toList();
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      g['name']?.toString() ?? 'Tùy chọn',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isReq
+                                          ? const Color(0xFFFEF3C7)
+                                          : const Color(0xFFF3F4F6),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      isReq
+                                          ? 'Bắt buộc ($minSel${maxSel != null ? '-$maxSel' : '+'})'
+                                          : (mode == 'single'
+                                              ? 'Chọn 1'
+                                              : 'Tùy chọn'),
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: isReq
+                                            ? const Color(0xFFB45309)
+                                            : Colors.black54,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: items.map((it) {
+                                  final itemId = it['id']?.toString() ?? '';
+                                  final isPicked = chosen.contains(itemId);
+                                  final delta = (double.tryParse(
+                                              it['price_delta']?.toString() ??
+                                                  '0') ??
+                                          0)
+                                      .round();
+                                  return FilterChip(
+                                    selected: isPicked,
+                                    label: Text(
+                                      delta > 0
+                                          ? '${it['name']} (+${formatVnd(delta)})'
+                                          : it['name']?.toString() ?? '',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                    onSelected: (checked) {
+                                      setModalState(() {
+                                        final current = Set<String>.from(
+                                            selectedByGroup[gid] ?? const {});
+                                        if (mode == 'single') {
+                                          current.clear();
+                                          if (checked || isReq) {
+                                            current.add(itemId);
+                                          }
+                                        } else {
+                                          if (checked) {
+                                            if (maxSel == null ||
+                                                current.length < maxSel) {
+                                              current.add(itemId);
+                                            }
+                                          } else {
+                                            current.remove(itemId);
+                                          }
+                                        }
+                                        selectedByGroup[gid] = current;
+                                      });
+                                    },
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(),
+                  child: const Text('Hủy'),
+                ),
+                ElevatedButton(
+                  onPressed: allValid
+                      ? () {
+                          final List<Map<String, dynamic>> picked = [];
+                          for (final g in groups) {
+                            final gid = g['id']?.toString() ?? '';
+                            final chosen =
+                                selectedByGroup[gid] ?? const <String>{};
+                            final items = ((g['items'] as List?) ?? const [])
+                                .whereType<Map>()
+                                .map((it) => Map<String, dynamic>.from(it));
+                            for (final it in items) {
+                              if (chosen.contains(it['id']?.toString())) {
+                                picked.add({
+                                  'id': it['id'],
+                                  'option_group_id': gid,
+                                  'group_name': g['name'],
+                                  'name': it['name'],
+                                  'price_delta': it['price_delta'],
+                                });
+                              }
+                            }
+                          }
+                          Navigator.of(dialogCtx).pop();
+                          _addToCart(activeVariant, selectedOptions: picked);
+                        }
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kEmeraldDark,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: Text('Thêm • ${formatVnd(basePrice + extraPrice)}'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _onVariantTap(Map<String, dynamic> variant) async {
     final rawGroups = (variant['optionGroups'] as List?) ?? const [];
     final groups = rawGroups
@@ -2059,9 +2406,46 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
       if (_searchQuery.trim().isEmpty) return true;
       final q = _searchQuery.toLowerCase();
       return v['productName'].toString().toLowerCase().contains(q) ||
+          v['variantName'].toString().toLowerCase().contains(q) ||
           v['sku'].toString().toLowerCase().contains(q) ||
           v['barcode'].toString().toLowerCase().contains(q);
     }).toList();
+
+    // Group variants by productId so outer catalog shows 1 card per Product
+    final Map<String, Map<String, dynamic>> productMap = {};
+    for (final v in filteredVariants) {
+      final pid = v['productId']?.toString() ?? v['variantId'].toString();
+      final price = (v['price'] as int?) ?? 0;
+      final origPrice = (v['originalPrice'] as int?) ?? price;
+      final promoBadge = v['promoBadge']?.toString() ?? '';
+      if (!productMap.containsKey(pid)) {
+        productMap[pid] = {
+          'productId': pid,
+          'productName': v['productName'].toString(),
+          'imageUrl': v['imageUrl']?.toString() ?? '',
+          'minPrice': price,
+          'maxPrice': price,
+          'originalMinPrice': origPrice,
+          'promoBadge': promoBadge,
+          'variants': <Map<String, dynamic>>[v],
+        };
+      } else {
+        final entry = productMap[pid]!;
+        final list = entry['variants'] as List<Map<String, dynamic>>;
+        list.add(v);
+        if (price < (entry['minPrice'] as int)) {
+          entry['minPrice'] = price;
+          entry['originalMinPrice'] = origPrice;
+        }
+        if (price > (entry['maxPrice'] as int)) {
+          entry['maxPrice'] = price;
+        }
+        if ((entry['promoBadge'] as String).isEmpty && promoBadge.isNotEmpty) {
+          entry['promoBadge'] = promoBadge;
+        }
+      }
+    }
+    final filteredProducts = productMap.values.toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -2152,7 +2536,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                       Expanded(
                         child: _mobileTabIndex == 2
                             ? _buildOrdersPane()
-                            : _buildCatalogPane(filteredVariants),
+                            : _buildCatalogPane(filteredProducts),
                       ),
                       const VerticalDivider(width: 1),
                       SizedBox(width: 280, child: _buildCartPane()),
@@ -2161,7 +2545,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                 : IndexedStack(
                     index: _mobileTabIndex,
                     children: [
-                      _buildCatalogPane(filteredVariants),
+                      _buildCatalogPane(filteredProducts),
                       _buildCartPane(),
                       _buildOrdersPane(),
                     ],
@@ -2515,17 +2899,35 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                         ),
                         itemCount: items.length,
                         itemBuilder: (ctx, i) {
-                          final v = items[i];
-                          final imgUrl = v['imageUrl']?.toString() ?? '';
-                          final price = (v['price'] as int?) ?? 0;
-                          final origPrice = (v['originalPrice'] as int?) ?? price;
-                          final promoBadge = v['promoBadge']?.toString() ?? '';
-                          final hasPromo = promoBadge.isNotEmpty && price < origPrice;
-                          final onHand = (v['onHand'] as int?) ?? 0;
+                          final prod = items[i];
+                          final imgUrl = prod['imageUrl']?.toString() ?? '';
+                          final minPrice = (prod['minPrice'] as int?) ?? 0;
+                          final maxPrice = (prod['maxPrice'] as int?) ?? minPrice;
+                          final origPrice =
+                              (prod['originalMinPrice'] as int?) ?? minPrice;
+                          final promoBadge =
+                              prod['promoBadge']?.toString() ?? '';
+                          final hasPromo =
+                              promoBadge.isNotEmpty && minPrice < origPrice;
+                          final variantsList =
+                              (prod['variants'] as List<Map<String, dynamic>>?) ??
+                                  const [];
+                          final variantSubtitle = variantsList.length > 1
+                              ? '${variantsList.length} lựa chọn'
+                              : (variantsList.isNotEmpty
+                                  ? variantsList.first['variantName']
+                                          ?.toString() ??
+                                      'Tiêu chuẩn'
+                                  : 'Tiêu chuẩn');
+                          final priceLabel = minPrice < maxPrice
+                              ? 'Từ ${formatVnd(minPrice)}'
+                              : formatVnd(minPrice);
 
                           return Container(
                             decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF111827) : Colors.white,
+                              color: isDark
+                                  ? const Color(0xFF111827)
+                                  : Colors.white,
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
                                 color: isDark
@@ -2546,12 +2948,13 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                               color: Colors.transparent,
                               borderRadius: BorderRadius.circular(16),
                               child: InkWell(
-                                onTap: () => _onVariantTap(v),
+                                onTap: () => _onProductTap(prod),
                                 borderRadius: BorderRadius.circular(16),
                                 child: Padding(
                                   padding: const EdgeInsets.all(8),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       // Image Container
                                       Expanded(
@@ -2608,7 +3011,8 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                                     vertical: 3,
                                                   ),
                                                   decoration: BoxDecoration(
-                                                    color: const Color(0xFFE11D48),
+                                                    color: const Color(
+                                                        0xFFE11D48),
                                                     borderRadius:
                                                         BorderRadius.circular(8),
                                                   ),
@@ -2617,7 +3021,8 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                                     style: const TextStyle(
                                                       color: Colors.white,
                                                       fontSize: 10,
-                                                      fontWeight: FontWeight.w800,
+                                                      fontWeight:
+                                                          FontWeight.w800,
                                                     ),
                                                   ),
                                                 ),
@@ -2629,7 +3034,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
 
                                       // Product Name
                                       Text(
-                                        v['productName'].toString(),
+                                        prod['productName'].toString(),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
@@ -2640,7 +3045,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                       ),
                                       const SizedBox(height: 3),
 
-                                      // Variant Name & Price Row
+                                      // Variant Count / Label & Price Row
                                       Row(
                                         mainAxisAlignment:
                                             MainAxisAlignment.spaceBetween,
@@ -2649,7 +3054,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                         children: [
                                           Expanded(
                                             child: Text(
-                                              v['variantName'].toString(),
+                                              variantSubtitle,
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
@@ -2677,7 +3082,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                                   ),
                                                 ),
                                               Text(
-                                                formatVnd(price),
+                                                priceLabel,
                                                 style: const TextStyle(
                                                   color: kEmeraldDark,
                                                   fontWeight: FontWeight.w800,
@@ -2695,7 +3100,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                         width: double.infinity,
                                         height: 30,
                                         child: TextButton.icon(
-                                          onPressed: () => _onVariantTap(v),
+                                          onPressed: () => _onProductTap(prod),
                                           style: TextButton.styleFrom(
                                             backgroundColor: kMintSoft,
                                             foregroundColor: kEmeraldDark,
