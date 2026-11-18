@@ -572,11 +572,9 @@ export function MenuSetupView({
   const renderProductCard = (item: MenuCardItem, isDeviceMode: boolean) => {
     const prod = productLookup.get(item.product_id);
     const imgUrl = item.image_url || prod?.image_url || null;
-    const itemCategories = item.category_ids
-      .map((cid) => categoryLookup.get(cid))
-      .filter((c): c is { id: string; name: string; idx: number } => Boolean(c));
-    const visibleCats = itemCategories.slice(0, 2);
-    const extraCatCount = Math.max(0, itemCategories.length - visibleCats.length);
+    const categoryNames = item.category_ids
+      .map((cid) => categoryLookup.get(cid)?.name)
+      .filter((name): name is string => Boolean(name));
 
     const baseDisplay = Number(
       isDeviceMode
@@ -617,27 +615,6 @@ export function MenuSetupView({
           ) : (
             <div className="flex h-full w-full items-center justify-center text-neutral-300 dark:text-neutral-600">
               <UtensilsCrossed className="h-8 w-8" />
-            </div>
-          )}
-
-          {/* Categories Overlay in Top-Left (supports multi-category) */}
-          {visibleCats.length > 0 && (
-            <div className="absolute left-2 top-2 flex max-w-[calc(100%-64px)] flex-wrap gap-1">
-              {visibleCats.map((cat) => (
-                <span
-                  key={cat.id}
-                  className={`max-w-[120px] truncate rounded-md border px-1.5 py-0.5 text-[9px] font-semibold shadow-sm backdrop-blur-sm ${
-                    PASTEL_PILL_STYLES[cat.idx % PASTEL_PILL_STYLES.length]
-                  }`}
-                >
-                  {cat.name}
-                </span>
-              ))}
-              {extraCatCount > 0 && (
-                <span className="rounded-md border border-neutral-200/80 bg-white/90 px-1.5 py-0.5 text-[9px] font-bold text-neutral-700 shadow-sm backdrop-blur-sm dark:border-neutral-700 dark:bg-neutral-900/90 dark:text-neutral-200">
-                  +{extraCatCount}
-                </span>
-              )}
             </div>
           )}
 
@@ -682,11 +659,16 @@ export function MenuSetupView({
           </span>
         </div>
 
-        {/* Full-Width 2-Line Product Name Footer */}
-        <div className="mt-2 shrink-0 px-0.5">
+        {/* Full-Width 2-Line Product Name + 1-Line Subtle Categories */}
+        <div className="mt-2 shrink-0 space-y-0.5 px-0.5">
           <h3 className="line-clamp-2 min-h-[2rem] text-xs font-bold leading-snug text-neutral-900 dark:text-white">
             {item.name}
           </h3>
+          <p className="truncate text-[10px] text-neutral-400 dark:text-neutral-500">
+            {categoryNames.length > 0
+              ? categoryNames.join(" • ")
+              : "Chưa phân loại"}
+          </p>
         </div>
       </div>
     );
