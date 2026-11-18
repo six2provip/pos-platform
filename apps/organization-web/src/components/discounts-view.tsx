@@ -1231,8 +1231,8 @@ export function DiscountsView({
                       </div>
                     </div>
 
-                    {/* RIGHT COLUMN (5 cols): Live Coupon Pass Preview + Active Switch at bottom */}
-                    <div className="flex flex-col justify-between gap-4 lg:col-span-5">
+                    {/* RIGHT COLUMN (5 cols): Live Coupon Pass Preview + Active Switch */}
+                    <div className="flex flex-col gap-4 lg:col-span-5">
                       <CouponPassCard
                         compact
                         code={code.trim() || "MÃ_GIẢM_GIÁ"}
