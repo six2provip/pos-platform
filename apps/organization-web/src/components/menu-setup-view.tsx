@@ -58,6 +58,12 @@ export function MenuSetupView({
     "inherit_store"
   );
   const [deviceAllowedCats, setDeviceAllowedCats] = useState<string[]>([]);
+  const [deviceMenuItems, setDeviceMenuItems] = useState<
+    (StoreMenuItem & { store_is_available?: boolean; store_price_override?: string | null })[]
+  >([]);
+  const [deviceMenuLoading, setDeviceMenuLoading] = useState(false);
+  const [deviceMenuSearch, setDeviceMenuSearch] = useState("");
+  const [deviceMenuFilter, setDeviceMenuFilter] = useState<"all" | "available" | "hidden">("all");
   const [deviceSaving, setDeviceSaving] = useState(false);
 
   const loadAllDevices = useCallback(async () => {
@@ -119,12 +125,39 @@ export function MenuSetupView({
   }, [selection.kind, activeStore?.id, accessToken, apiFetch]);
 
   useEffect(() => {
-    if (!activeDevice) return;
-    setDeviceMenuMode(
-      activeDevice.menu_mode === "custom" ? "custom" : "inherit_store"
-    );
-    setDeviceAllowedCats(activeDevice.allowed_category_ids || []);
-  }, [activeDevice]);
+    if (selection.kind !== "device" || !activeDevice || !accessToken) return;
+    let cancelled = false;
+    setDeviceMenuLoading(true);
+    apiFetch(`/api/v1/devices/${activeDevice.id}/menu`)
+      .then((res) => {
+        if (cancelled) return;
+        const data = res?.data || {};
+        setDeviceMenuMode(
+          data.menu_mode === "custom" ? "custom" : "inherit_store"
+        );
+        setDeviceAllowedCats(
+          Array.isArray(data.allowed_category_ids)
+            ? data.allowed_category_ids
+            : []
+        );
+        setDeviceMenuItems(Array.isArray(data.items) ? data.items : []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDeviceMenuMode(
+            activeDevice.menu_mode === "custom" ? "custom" : "inherit_store"
+          );
+          setDeviceAllowedCats(activeDevice.allowed_category_ids || []);
+          setDeviceMenuItems([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDeviceMenuLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selection.kind, activeDevice?.id, accessToken, apiFetch]);
 
   const filteredTreeStores = useMemo(() => {
     const q = treeSearch.trim().toLowerCase();
@@ -182,16 +215,47 @@ export function MenuSetupView({
     }
   };
 
+  const filteredDeviceMenuItems = useMemo(() => {
+    const q = deviceMenuSearch.trim().toLowerCase();
+    return deviceMenuItems.filter((item) => {
+      if (
+        deviceAllowedCats.length > 0 &&
+        !item.category_ids.some((cid) => deviceAllowedCats.includes(cid))
+      ) {
+        return false;
+      }
+      if (deviceMenuFilter === "available" && !item.is_available) return false;
+      if (deviceMenuFilter === "hidden" && item.is_available) return false;
+      if (!q) return true;
+      return (
+        item.name.toLowerCase().includes(q) ||
+        item.code.toLowerCase().includes(q)
+      );
+    });
+  }, [deviceMenuItems, deviceAllowedCats, deviceMenuSearch, deviceMenuFilter]);
+
   const handleSaveDeviceFilter = async () => {
     if (!activeDevice) return;
     setDeviceSaving(true);
     try {
-      await apiFetch(`/api/v1/devices/${activeDevice.id}`, {
-        method: "PATCH",
+      await apiFetch(`/api/v1/devices/${activeDevice.id}/menu`, {
+        method: "PUT",
         body: JSON.stringify({
           menu_mode: deviceMenuMode,
           allowed_category_ids:
             deviceMenuMode === "custom" ? deviceAllowedCats : [],
+          items:
+            deviceMenuMode === "custom"
+              ? deviceMenuItems.map((it) => ({
+                  product_id: it.product_id,
+                  is_available: it.is_available,
+                  price_override:
+                    it.price_override !== null &&
+                    String(it.price_override).trim() !== ""
+                      ? String(it.price_override).trim()
+                      : null,
+                }))
+              : [],
         }),
       });
       notify("success", `Đã cập nhật thực đơn cho "${activeDevice.name}"!`);
@@ -200,6 +264,24 @@ export function MenuSetupView({
       notify("error", err?.message || "Không thể lưu cấu hình thiết bị");
     } finally {
       setDeviceSaving(false);
+    }
+  };
+
+  const handleCopyFromDevice = async (sourceDeviceId: string) => {
+    if (!sourceDeviceId || !accessToken) return;
+    try {
+      const res = await apiFetch(`/api/v1/devices/${sourceDeviceId}/menu`);
+      const data = res?.data || {};
+      setDeviceMenuMode("custom");
+      setDeviceAllowedCats(
+        Array.isArray(data.allowed_category_ids) ? data.allowed_category_ids : []
+      );
+      if (Array.isArray(data.items)) {
+        setDeviceMenuItems(data.items);
+      }
+      notify("info", "Đã sao chép cấu hình menu từ máy đã chọn. Nhấn Lưu để áp dụng.");
+    } catch {
+      notify("error", "Không thể tải menu từ máy nguồn");
     }
   };
 
@@ -401,62 +483,203 @@ export function MenuSetupView({
                 </div>
 
                 {deviceMenuMode === "custom" && (
-                  <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/60 p-4 dark:border-neutral-800 dark:bg-neutral-950/50">
-                    <div className="mb-3 flex items-center justify-between">
-                      <span className="text-xs font-bold text-neutral-900 dark:text-white">
-                        Chọn danh mục hiển thị trên máy ({deviceAllowedCats.length} đã chọn)
-                      </span>
+                  <>
+                    <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/60 p-4 dark:border-neutral-800 dark:bg-neutral-950/50">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-neutral-900 dark:text-white">
+                          Lọc nhanh theo Danh mục ({deviceAllowedCats.length === 0 ? "Tất cả" : `${deviceAllowedCats.length} danh mục`})
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {allDevices.filter((d) => d.id !== activeDevice.id).length > 0 && (
+                            <select
+                              defaultValue=""
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val) void handleCopyFromDevice(val);
+                                e.target.value = "";
+                              }}
+                              className="rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                            >
+                              <option value="">Sao chép từ máy khác...</option>
+                              {allDevices
+                                .filter((d) => d.id !== activeDevice.id)
+                                .map((d) => (
+                                  <option key={d.id} value={d.id}>
+                                    {d.name}
+                                  </option>
+                                ))}
+                            </select>
+                          )}
+                          {categories.length > 0 && deviceAllowedCats.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setDeviceAllowedCats([])}
+                              className="text-[11px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                            >
+                              Bỏ lọc danh mục
+                            </button>
+                          )}
+                        </div>
+                      </div>
                       {categories.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDeviceAllowedCats(
-                              deviceAllowedCats.length === categories.length
-                                ? []
-                                : categories.map((c) => c.id)
-                            )
-                          }
-                          className="text-[11px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
-                        >
-                          {deviceAllowedCats.length === categories.length
-                            ? "Bỏ chọn tất cả"
-                            : "Chọn tất cả"}
-                        </button>
+                        <div className="flex flex-wrap gap-2">
+                          {categories.map((cat) => {
+                            const selected = deviceAllowedCats.includes(cat.id);
+                            return (
+                              <button
+                                key={cat.id}
+                                type="button"
+                                onClick={() =>
+                                  setDeviceAllowedCats((prev) =>
+                                    selected
+                                      ? prev.filter((id) => id !== cat.id)
+                                      : [...prev, cat.id]
+                                  )
+                                }
+                                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${
+                                  selected
+                                    ? "border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900"
+                                    : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                                }`}
+                              >
+                                {selected && <Check className="h-3 w-3" />}
+                                {cat.name}
+                              </button>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
-                    {categories.length === 0 ? (
-                      <div className="text-xs text-neutral-400">
-                        Chưa có danh mục nào. Hãy tạo danh mục ở mục Quản lý Danh mục.
+
+                    {/* Per-product toggles & optional device price override */}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        {(
+                          [
+                            { id: "all", label: `Tất cả (${deviceMenuItems.length})` },
+                            {
+                              id: "available",
+                              label: `Bán trên máy (${deviceMenuItems.filter((i) => i.is_available).length})`,
+                            },
+                            {
+                              id: "hidden",
+                              label: `Ẩn trên máy (${deviceMenuItems.filter((i) => !i.is_available).length})`,
+                            },
+                          ] as const
+                        ).map((f) => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setDeviceMenuFilter(f.id)}
+                            className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
+                              deviceMenuFilter === f.id
+                                ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
+                                : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300"
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-700 dark:bg-neutral-800">
+                        <Search className="h-3.5 w-3.5 text-neutral-400" />
+                        <input
+                          type="text"
+                          value={deviceMenuSearch}
+                          onChange={(e) => setDeviceMenuSearch(e.target.value)}
+                          placeholder="Tìm món trên máy..."
+                          className="w-40 bg-transparent text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-white"
+                        />
+                      </div>
+                    </div>
+
+                    {deviceMenuLoading ? (
+                      <div className="space-y-2">
+                        {[1, 2, 3].map((idx) => (
+                          <Skeleton
+                            key={idx}
+                            className="h-14 w-full rounded-2xl dark:bg-neutral-800"
+                          />
+                        ))}
+                      </div>
+                    ) : filteredDeviceMenuItems.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-neutral-200 p-6 text-center text-xs text-neutral-400 dark:border-neutral-800">
+                        Không có món nào khớp bộ lọc.
                       </div>
                     ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {categories.map((cat) => {
-                          const selected = deviceAllowedCats.includes(cat.id);
-                          return (
-                            <button
-                              key={cat.id}
-                              type="button"
-                              onClick={() =>
-                                setDeviceAllowedCats((prev) =>
-                                  selected
-                                    ? prev.filter((id) => id !== cat.id)
-                                    : [...prev, cat.id]
-                                )
-                              }
-                              className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-                                selected
-                                  ? "border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900"
-                                  : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
-                              }`}
-                            >
-                              {selected && <Check className="h-3 w-3" />}
-                              {cat.name}
-                            </button>
-                          );
-                        })}
+                      <div className="space-y-2">
+                        {filteredDeviceMenuItems.map((item) => (
+                          <div
+                            key={item.product_id}
+                            className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 transition-colors ${
+                              item.is_available
+                                ? "border-neutral-200/80 bg-white dark:border-neutral-800 dark:bg-neutral-950/60"
+                                : "border-neutral-200/60 bg-neutral-100/70 opacity-70 dark:border-neutral-800 dark:bg-neutral-900/40"
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate text-xs font-bold text-neutral-900 dark:text-white">
+                                  {item.name}
+                                </span>
+                                {item.store_is_available === false && (
+                                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+                                    Đang ẩn ở Chi nhánh
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                                {item.code} • Giá:{" "}
+                                {Number(
+                                  item.store_price_override ?? item.base_price ?? 0
+                                ).toLocaleString("vi-VN")}
+                                ₫
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className="w-36">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={item.price_override ?? ""}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setDeviceMenuItems((prev) =>
+                                      prev.map((x) =>
+                                        x.product_id === item.product_id
+                                          ? {
+                                              ...x,
+                                              price_override:
+                                                val === "" ? null : val,
+                                            }
+                                          : x
+                                      )
+                                    );
+                                  }}
+                                  placeholder="Giá riêng máy"
+                                  className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-2.5 py-1.5 text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                                />
+                              </div>
+                              <BeSwitch
+                                checked={item.is_available}
+                                onCheckedChange={(checked) => {
+                                  setDeviceMenuItems((prev) =>
+                                    prev.map((x) =>
+                                      x.product_id === item.product_id
+                                        ? { ...x, is_available: checked }
+                                        : x
+                                    )
+                                  );
+                                }}
+                                ariaLabel={`Bật tắt ${item.name} trên máy`}
+                              />
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
-                  </div>
+                  </>
                 )}
               </div>
             </>
@@ -613,3 +836,4 @@ export function MenuSetupView({
     </div>
   );
 }
+

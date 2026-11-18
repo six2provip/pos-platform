@@ -11,6 +11,7 @@ from __future__ import annotations
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Header, Request, status
 from fastapi.responses import JSONResponse
@@ -47,10 +48,15 @@ from app.infrastructure.models import (
     Device,
     DeviceActivation,
     DeviceEvent,
+    DeviceProductConfig,
     DeviceToken,
     Organization,
     OrganizationSetting,
+    Product,
+    ProductCategory,
+    ProductVariant,
     Store,
+    StoreProductConfig,
 )
 from app.modules.audit.service import record_audit_event
 
@@ -1663,6 +1669,215 @@ def update_device_status(
         entity_id=device.id,
         request_id=request_id,
         metadata={"serial_number": device.serial_number, "status": body.status},
+    )
+    db.commit()
+    db.refresh(device)
+    return ok_response(_serialize_device(device), request_id=request_id)
+
+
+class DeviceMenuItemConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    product_id: str
+    is_available: bool = True
+    price_override: Optional[Decimal] = Field(default=None, ge=0)
+
+
+class UpdateDeviceMenuRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    menu_mode: str = Field(default="inherit_store", pattern="^(inherit_store|custom)$")
+    allowed_category_ids: List[str] = Field(default_factory=list)
+    items: List[DeviceMenuItemConfig] = Field(default_factory=list)
+
+
+@router.get("/devices/{device_id}/menu")
+def get_device_menu(
+    device_id: str,
+    principal: UserPrincipal = Depends(require_permission("devices.read")),
+    db: Session = Depends(get_db),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    """Return device-level menu mode, allowed categories, and per-product configs."""
+    org_id = principal.organization.id
+    device = (
+        db.query(Device)
+        .filter(
+            Device.organization_id == org_id,
+            Device.id == device_id,
+            Device.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if device is None:
+        raise NotFoundError(code="DEVICE_NOT_FOUND", message="POS device not found.")
+    verify_store_access(db, principal, requested_store_id=device.store_id)
+
+    products = (
+        db.query(Product)
+        .filter(Product.organization_id == org_id, Product.deleted_at.is_(None))
+        .order_by(Product.name.asc())
+        .all()
+    )
+    variants = (
+        db.query(ProductVariant)
+        .filter(ProductVariant.organization_id == org_id, ProductVariant.deleted_at.is_(None))
+        .all()
+    )
+    prod_cats = (
+        db.query(ProductCategory)
+        .filter(ProductCategory.organization_id == org_id)
+        .all()
+    )
+    store_cfgs = (
+        db.query(StoreProductConfig)
+        .filter(
+            StoreProductConfig.organization_id == org_id,
+            StoreProductConfig.store_id == device.store_id,
+        )
+        .all()
+    )
+    dev_cfgs = (
+        db.query(DeviceProductConfig)
+        .filter(
+            DeviceProductConfig.organization_id == org_id,
+            DeviceProductConfig.device_id == device.id,
+        )
+        .all()
+    )
+
+    store_cfg_map = {c.product_id: c for c in store_cfgs}
+    dev_cfg_map = {c.product_id: c for c in dev_cfgs}
+    cat_map: Dict[str, List[str]] = {}
+    for link in prod_cats:
+        cat_map.setdefault(link.product_id, []).append(link.category_id)
+    var_price_map: Dict[str, List[Decimal]] = {}
+    for v in variants:
+        var_price_map.setdefault(v.product_id, []).append(v.default_price)
+
+    items = []
+    for p in products:
+        sc = store_cfg_map.get(p.id)
+        dc = dev_cfg_map.get(p.id)
+        prices = var_price_map.get(p.id, [])
+        base_price = min(prices) if prices else Decimal("0")
+        store_avail = sc.is_available if sc is not None else True
+        items.append(
+            {
+                "product_id": p.id,
+                "code": p.code,
+                "name": p.name,
+                "category_ids": cat_map.get(p.id) or ([p.category_id] if p.category_id else []),
+                "base_price": str(base_price),
+                "store_is_available": store_avail,
+                "store_price_override": (
+                    str(sc.price_override)
+                    if (sc is not None and sc.price_override is not None)
+                    else None
+                ),
+                "is_available": dc.is_available if dc is not None else store_avail,
+                "price_override": (
+                    str(dc.price_override)
+                    if (dc is not None and dc.price_override is not None)
+                    else None
+                ),
+            }
+        )
+
+    return ok_response(
+        {
+            "device_id": device.id,
+            "store_id": device.store_id,
+            "menu_mode": getattr(device, "menu_mode", "inherit_store") or "inherit_store",
+            "allowed_category_ids": getattr(device, "allowed_category_ids_json", None) or [],
+            "items": items,
+        },
+        request_id=request_id,
+    )
+
+
+@router.put("/devices/{device_id}/menu")
+def update_device_menu(
+    device_id: str,
+    body: UpdateDeviceMenuRequest,
+    principal: UserPrincipal = Depends(require_permission("devices.activate")),
+    db: Session = Depends(get_db),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    """Update device menu mode, allowed categories, and per-product availability/price overrides."""
+    org_id = principal.organization.id
+    device = (
+        db.query(Device)
+        .filter(
+            Device.organization_id == org_id,
+            Device.id == device_id,
+            Device.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if device is None:
+        raise NotFoundError(code="DEVICE_NOT_FOUND", message="POS device not found.")
+    verify_store_access(db, principal, requested_store_id=device.store_id)
+
+    device.menu_mode = body.menu_mode
+    device.allowed_category_ids_json = (
+        [str(cid).strip() for cid in body.allowed_category_ids if str(cid).strip()]
+        if body.menu_mode == "custom"
+        else []
+    )
+
+    existing_rows = (
+        db.query(DeviceProductConfig)
+        .filter(
+            DeviceProductConfig.organization_id == org_id,
+            DeviceProductConfig.device_id == device.id,
+        )
+        .all()
+    )
+    existing_map = {r.product_id: r for r in existing_rows}
+
+    valid_prod_ids = {
+        p.id
+        for p in db.query(Product.id)
+        .filter(Product.organization_id == org_id, Product.deleted_at.is_(None))
+        .all()
+    }
+
+    updated_count = 0
+    for item in body.items:
+        if item.product_id not in valid_prod_ids:
+            continue
+        row = existing_map.get(item.product_id)
+        if row is None:
+            row = DeviceProductConfig(
+                organization_id=org_id,
+                device_id=device.id,
+                product_id=item.product_id,
+                is_available=item.is_available,
+                price_override=item.price_override,
+            )
+            db.add(row)
+        else:
+            row.is_available = item.is_available
+            row.price_override = item.price_override
+        updated_count += 1
+
+    db.flush()
+    record_audit_event(
+        db,
+        action="device.menu.updated",
+        entity_type="device",
+        actor_type="user",
+        actor_id=principal.user.id,
+        organization_id=org_id,
+        store_id=device.store_id,
+        entity_id=device.id,
+        request_id=request_id,
+        metadata={
+            "menu_mode": device.menu_mode,
+            "allowed_category_count": len(device.allowed_category_ids_json or []),
+            "updated_count": updated_count,
+        },
     )
     db.commit()
     db.refresh(device)

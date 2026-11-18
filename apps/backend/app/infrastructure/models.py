@@ -510,6 +510,40 @@ class StoreProductConfig(Base):
     )
 
 
+class DeviceProductConfig(Base):
+    __tablename__ = "device_product_configs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    organization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    product_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    is_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    price_override: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "device_id"],
+            ["devices.organization_id", "devices.id"],
+            name="fk_device_product_cfg_device_same_org",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "device_id",
+            "product_id",
+            name="uq_device_product_configs_org_dev_prod",
+        ),
+        Index("ix_device_product_configs_device", "organization_id", "device_id"),
+    )
+
+
 class DeviceActivation(Base):
     __tablename__ = "device_activations"
 
