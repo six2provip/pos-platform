@@ -106,7 +106,7 @@ const DEFAULT_PAGE_SIZE = 10;
 const ROW_HEIGHT = 54;
 const THEAD_HEIGHT = 38;
 const PAGINATION_FOOTER_HEIGHT = 52;
-type EditorTab = "general" | "images" | "variants";
+type EditorTab = "general" | "variants" | "options";
 
 const formatPriceNumber = (val: number | string) =>
   new Intl.NumberFormat("vi-VN").format(Math.round(Number(val || 0)));
@@ -276,15 +276,16 @@ export function CatalogProductsView({
   // Horizontal Stepper Wizard state
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorTab, setEditorTab] = useState<EditorTab>("general");
+  const [productOptionGroupIds, setProductOptionGroupIds] = useState<string[]>([]);
   const [touchedSteps, setTouchedSteps] = useState<Record<EditorTab, boolean>>({
     general: false,
-    images: false,
     variants: false,
+    options: false,
   });
   const [completedSteps, setCompletedSteps] = useState<Record<EditorTab, boolean>>({
     general: false,
-    images: false,
     variants: false,
+    options: false,
   });
   const [editingProd, setEditingProd] = useState<ProductRecord | null>(null);
   const [saving, setSaving] = useState(false);
@@ -468,8 +469,8 @@ export function CatalogProductsView({
     const ts = Date.now().toString().slice(-4);
     setEditingProd(null);
     setEditorTab("general");
-    setTouchedSteps({ general: false, images: false, variants: false });
-    setCompletedSteps({ general: false, images: false, variants: false });
+    setTouchedSteps({ general: false, variants: false, options: false });
+    setCompletedSteps({ general: false, variants: false, options: false });
     setProdCode(`SP-${ts}`);
     setProdName("");
     setProdDesc("");
@@ -480,6 +481,7 @@ export function CatalogProductsView({
     setEditorCatSearch("");
     setImages([]);
     setImageUrlInput("");
+    setProductOptionGroupIds([]);
     setVariants([
       {
         variant_code: `SP-${ts}-M`,
@@ -539,10 +541,9 @@ export function CatalogProductsView({
         isNew: false,
       }))
     );
-    setTouchedSteps({ general: false, images: false, variants: false });
+    setTouchedSteps({ general: false, variants: false, options: false });
     setCompletedSteps({
       general: Boolean(p.name?.trim() && p.product_code?.trim()),
-      images: Boolean((p.images && p.images.length > 0) || p.image_url),
       variants:
         (p.variants || []).length > 0 &&
         (p.variants || []).every(
@@ -550,7 +551,13 @@ export function CatalogProductsView({
             Boolean(v.variant_name?.trim()) &&
             String(v.default_price ?? "").trim() !== ""
         ),
+      options: true,
     });
+    setProductOptionGroupIds(
+      Array.from(
+        new Set((p.variants || []).flatMap((v) => v.option_group_ids || []))
+      )
+    );
     setSelectedVariantIdx(0);
     setEditorOpen(true);
   };
@@ -680,7 +687,7 @@ export function CatalogProductsView({
         errors: { nameErr, codeErr },
       };
     }
-    if (step === "images") {
+    if (step === "options") {
       return { valid: true, errors: {} };
     }
     const invalidVariants = variants.map((v) => ({
@@ -718,7 +725,7 @@ export function CatalogProductsView({
   };
 
   const handleNextStep = () => {
-    const order: EditorTab[] = ["general", "images", "variants"];
+    const order: EditorTab[] = ["general", "variants", "options"];
     const idx = order.indexOf(editorTab);
     const { valid } = getStepValidation(editorTab);
     setTouchedSteps((prev) => ({ ...prev, [editorTab]: true }));
@@ -734,7 +741,7 @@ export function CatalogProductsView({
   };
 
   const handlePrevStep = () => {
-    const order: EditorTab[] = ["general", "images", "variants"];
+    const order: EditorTab[] = ["general", "variants", "options"];
     const idx = order.indexOf(editorTab);
     if (idx > 0) {
       goToStep(order[idx - 1]);
@@ -743,13 +750,13 @@ export function CatalogProductsView({
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    setTouchedSteps({ general: true, images: true, variants: true });
+    setTouchedSteps({ general: true, variants: true, options: true });
     const genVal = getStepValidation("general");
     const varVal = getStepValidation("variants");
     setCompletedSteps({
       general: genVal.valid,
-      images: true,
       variants: varVal.valid,
+      options: true,
     });
 
     if (!genVal.valid) {
@@ -795,7 +802,7 @@ export function CatalogProductsView({
                 barcodes: v.barcode.trim()
                   ? [{ barcode: v.barcode.trim(), is_primary: true }]
                   : [],
-                option_group_ids: v.option_group_ids,
+                option_group_ids: productOptionGroupIds,
               })),
             }),
           },
@@ -837,7 +844,7 @@ export function CatalogProductsView({
                   barcodes: v.barcode.trim()
                     ? [{ barcode: v.barcode.trim(), is_primary: true }]
                     : [],
-                  option_group_ids: v.option_group_ids,
+                  option_group_ids: productOptionGroupIds,
                 }),
               },
               accessToken || undefined
@@ -855,7 +862,7 @@ export function CatalogProductsView({
                   default_price: v.default_price.trim() || "0",
                   is_default: v.is_default,
                   barcode: v.barcode.trim(),
-                  option_group_ids: v.option_group_ids,
+                  option_group_ids: productOptionGroupIds,
                 }),
               },
               accessToken || undefined
@@ -924,20 +931,20 @@ export function CatalogProductsView({
       {
         id: "general",
         num: 1,
-        title: "Thông tin & Danh mục",
-        subtitle: `${selectedCatIds.length} danh mục`,
-      },
-      {
-        id: "images",
-        num: 2,
-        title: "Hình ảnh",
-        subtitle: `${images.length} ảnh`,
+        title: "Thông tin, Danh mục & Ảnh",
+        subtitle: `${selectedCatIds.length} danh mục • ${images.length} ảnh`,
       },
       {
         id: "variants",
-        num: 3,
+        num: 2,
         title: "Biến thể & Giá bán",
         subtitle: `${variants.length} biến thể`,
+      },
+      {
+        id: "options",
+        num: 3,
+        title: "Tùy chọn thêm",
+        subtitle: `${productOptionGroupIds.length} nhóm`,
       },
     ];
     const currentStepIdx = stepsMeta.findIndex((s) => s.id === editorTab);
@@ -1143,8 +1150,8 @@ export function CatalogProductsView({
                     </div>
                   </div>
 
-                  {/* Right 5 cols: beUI Multi-Select Category Picker (clean divider, no nested border box) */}
-                  <div className="flex flex-col justify-start lg:col-span-5 lg:border-l lg:border-neutral-200/70 lg:pl-6 dark:lg:border-neutral-800">
+                  {/* Right 5 cols: Category Picker + Product Image Upload */}
+                  <div className="flex flex-col gap-5 lg:col-span-5 lg:border-l lg:border-neutral-200/70 lg:pl-6 dark:lg:border-neutral-800">
                     <BeMultiSelect
                       label={`Gắn Danh Mục (${selectedCatIds.length} đã chọn)`}
                       helperText="1 sản phẩm có thể thuộc nhiều danh mục cùng lúc. Gõ để tìm nhanh."
@@ -1156,27 +1163,27 @@ export function CatalogProductsView({
                       onChange={setSelectedCatIds}
                       placeholder="Chọn hoặc tìm nhanh danh mục..."
                     />
+
+                    <div className="border-t border-neutral-200/70 pt-4 dark:border-neutral-800">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                          Hình ảnh sản phẩm ({images.length})
+                        </span>
+                        <span className="text-[11px] text-neutral-400">
+                          Hiển thị trên POS &amp; Kiosk
+                        </span>
+                      </div>
+                      <ProductImageUpload
+                        images={images}
+                        onUploadSingleFile={uploadSingleImageFile}
+                        onImageUploaded={handleImageUploaded}
+                        onSetPrimary={setPrimaryImage}
+                        onRemove={removeImage}
+                      />
+                    </div>
                   </div>
                 </motion.div>
               )}
-
-            {editorTab === "images" && (
-              <motion.div
-                key="tab-images"
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 8 }}
-                transition={{ duration: 0.16 }}
-              >
-                <ProductImageUpload
-                  images={images}
-                  onUploadSingleFile={uploadSingleImageFile}
-                  onImageUploaded={handleImageUploaded}
-                  onSetPrimary={setPrimaryImage}
-                  onRemove={removeImage}
-                />
-              </motion.div>
-            )}
 
             {editorTab === "variants" && (() => {
               const safeVarIdx = Math.min(
@@ -1415,218 +1422,6 @@ export function CatalogProductsView({
                             ariaLabel="Đặt làm biến thể mặc định"
                           />
                         </div>
-
-                        {/* Row 4: Option Groups / Toppings attached to this variant */}
-                        <div className="flex flex-col gap-2 pt-1 lg:flex-1 lg:min-h-0">
-                          <div className="flex shrink-0 items-center justify-between gap-2">
-                            <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                              Nhóm tùy chọn đi kèm ({activeVar.option_group_ids.length} đã gắn)
-                            </span>
-                            {variants.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const ids = [...activeVar.option_group_ids];
-                                  setVariants((prev) =>
-                                    prev.map((v) => ({ ...v, option_group_ids: ids }))
-                                  );
-                                  notify("info", `Đã áp dụng ${ids.length} nhóm tùy chọn cho tất cả ${variants.length} biến thể.`);
-                                }}
-                                className="text-[11px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
-                              >
-                                Áp dụng cho tất cả biến thể
-                              </button>
-                            )}
-                          </div>
-                          <div className="shrink-0">
-                            <BeMultiSelect
-                              options={optionGroups.map((og) => {
-                                const previewItems = og.items
-                                  .slice(0, 3)
-                                  .map((it) =>
-                                    Number(it.price_delta) > 0
-                                      ? `${it.name} (+${formatPriceNumber(it.price_delta)})`
-                                      : it.name
-                                  )
-                                  .join(", ");
-                                const extra =
-                                  og.items.length > 3 ? ` +${og.items.length - 3}` : "";
-                                return {
-                                  value: og.id,
-                                  label: `${og.name} (${
-                                    og.selection_mode === "single" ? "Chọn 1" : "Chọn nhiều"
-                                  }${og.is_required ? " · Bắt buộc" : ""})`,
-                                  description: previewItems
-                                    ? `${previewItems}${extra}`
-                                    : "Chưa có lựa chọn con",
-                                };
-                              })}
-                              values={activeVar.option_group_ids}
-                              onChange={(next) =>
-                                updateDraftVariant(safeVarIdx, { option_group_ids: next })
-                              }
-                              placeholder="Chọn nhóm Topping, Mức đường, Đồ ăn kèm..."
-                              emptyText="Chưa có nhóm tùy chọn nào. Tạo tại mục Quản lý Tùy chọn."
-                            />
-                          </div>
-
-                          {/* Compact Collapsible Accordion Preview of Attached Option Groups */}
-                          <AnimatePresence initial={false}>
-                            {activeVar.option_group_ids.length > 0 && (
-                              <motion.div
-                                initial={{ opacity: 0, y: 6 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: 4 }}
-                                transition={{ duration: 0.18 }}
-                                className="flex flex-col gap-1.5 pt-1 lg:flex-1 lg:min-h-0"
-                              >
-                                <div className="flex shrink-0 items-center justify-between text-[11px] text-neutral-400">
-                                  <span>
-                                    Nhấn vào từng nhóm để xem nhanh các lựa chọn bên trong ({activeVar.option_group_ids.length} nhóm)
-                                  </span>
-                                  {activeVar.option_group_ids.length > 1 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const allOpen = activeVar.option_group_ids.every(
-                                          (id) => expandedOptionGroupIds.includes(id)
-                                        );
-                                        setExpandedOptionGroupIds(
-                                          allOpen ? [] : [...activeVar.option_group_ids]
-                                        );
-                                      }}
-                                      className="font-semibold text-blue-600 hover:underline dark:text-blue-400"
-                                    >
-                                      {activeVar.option_group_ids.every((id) =>
-                                        expandedOptionGroupIds.includes(id)
-                                      )
-                                        ? "Thu gọn tất cả"
-                                        : "Mở tất cả"}
-                                    </button>
-                                  )}
-                                </div>
-
-                                <div className="max-h-[210px] lg:max-h-none lg:flex-1 lg:min-h-0 space-y-1.5 overflow-y-auto pr-1">
-                                  {activeVar.option_group_ids.map((gid) => {
-                                    const grp = optionGroups.find((g) => g.id === gid);
-                                    if (!grp) return null;
-                                    const isOpen = expandedOptionGroupIds.includes(gid);
-
-                                    return (
-                                      <motion.div
-                                        key={gid}
-                                        layout
-                                        initial={{ opacity: 0, y: -4 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -4 }}
-                                        className="overflow-hidden rounded-xl bg-neutral-50/90 dark:bg-neutral-800/50"
-                                      >
-                                        {/* Compact 1-Line Accordion Header */}
-                                        <div
-                                          onClick={() =>
-                                            setExpandedOptionGroupIds((prev) =>
-                                              prev.includes(gid)
-                                                ? prev.filter((id) => id !== gid)
-                                                : [...prev, gid]
-                                            )
-                                          }
-                                          className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 transition-colors hover:bg-neutral-100/80 dark:hover:bg-neutral-800"
-                                        >
-                                          <div className="flex min-w-0 flex-1 items-center gap-2">
-                                            <span className="truncate text-xs font-bold text-neutral-900 dark:text-white">
-                                              {grp.name}
-                                            </span>
-                                            <span
-                                              className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-                                                grp.is_required
-                                                  ? "bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400"
-                                                  : "bg-neutral-200/70 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300"
-                                              }`}
-                                            >
-                                              {grp.is_required ? "Bắt buộc" : "Tùy chọn"}
-                                            </span>
-                                            <span className="hidden sm:inline shrink-0 text-[10px] text-neutral-400">
-                                              {grp.selection_mode === "single"
-                                                ? "Chọn 1"
-                                                : `Chọn nhiều (${grp.min_selections}–${
-                                                    grp.max_selections ?? "∞"
-                                                  })`}{" "}
-                                              • {grp.items.length} lựa chọn
-                                            </span>
-                                          </div>
-
-                                          <div className="flex shrink-0 items-center gap-1">
-                                            <motion.span
-                                              animate={{ rotate: isOpen ? 180 : 0 }}
-                                              transition={{ duration: 0.16 }}
-                                              className="grid h-6 w-6 place-items-center text-neutral-400"
-                                            >
-                                              <ChevronDown className="h-3.5 w-3.5" />
-                                            </motion.span>
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                updateDraftVariant(safeVarIdx, {
-                                                  option_group_ids:
-                                                    activeVar.option_group_ids.filter(
-                                                      (id) => id !== gid
-                                                    ),
-                                                });
-                                              }}
-                                              title="Gỡ nhóm tùy chọn này"
-                                              className="grid h-6 w-6 place-items-center rounded-full text-neutral-400 hover:bg-neutral-200/70 hover:text-rose-600 dark:hover:bg-neutral-700"
-                                            >
-                                              <X className="h-3.5 w-3.5" />
-                                            </button>
-                                          </div>
-                                        </div>
-
-                                        {/* Expandable Child Options List */}
-                                        <AnimatePresence initial={false}>
-                                          {isOpen && (
-                                            <motion.div
-                                              initial={{ height: 0, opacity: 0 }}
-                                              animate={{ height: "auto", opacity: 1 }}
-                                              exit={{ height: 0, opacity: 0 }}
-                                              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                                              className="overflow-hidden border-t border-neutral-200/60 dark:border-neutral-700/60"
-                                            >
-                                              <div className="flex flex-wrap gap-1.5 px-3 py-2.5">
-                                                {grp.items.map((it, i) => (
-                                                  <span
-                                                    key={it.id || i}
-                                                    className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium ${
-                                                      it.is_default
-                                                        ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
-                                                        : "bg-white text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
-                                                    }`}
-                                                  >
-                                                    <span className="max-w-[140px] truncate">
-                                                      {it.name}
-                                                    </span>
-                                                    {Number(it.price_delta) > 0 && (
-                                                      <span className="tabular-nums font-bold text-emerald-600 dark:text-emerald-400">
-                                                        +{formatPriceNumber(it.price_delta)}
-                                                      </span>
-                                                    )}
-                                                    {it.is_default && (
-                                                      <Check className="h-2.5 w-2.5 shrink-0" />
-                                                    )}
-                                                  </span>
-                                                ))}
-                                              </div>
-                                            </motion.div>
-                                          )}
-                                        </AnimatePresence>
-                                      </motion.div>
-                                    );
-                                  })}
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
                       </motion.div>
                     </AnimatePresence>
                   )}
@@ -1634,6 +1429,210 @@ export function CatalogProductsView({
               </motion.div>
               );
             })()}
+
+            {editorTab === "options" && (
+              <motion.div
+                key="tab-options"
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 8 }}
+                transition={{ duration: 0.16 }}
+                className="flex flex-col gap-4 lg:h-full lg:min-h-0"
+              >
+                <div className="shrink-0">
+                  <h4 className="text-sm font-bold text-neutral-900 dark:text-white">
+                    Nhóm tùy chọn đi kèm của sản phẩm ({productOptionGroupIds.length} đã gắn)
+                  </h4>
+                  <p className="mt-0.5 text-xs text-neutral-400">
+                    Các nhóm Topping, Mức đá, Mức đường được gắn 1 lần cho sản phẩm chính và tự động áp dụng cho toàn bộ {variants.length} biến thể.
+                  </p>
+                </div>
+
+                <div className="shrink-0">
+                  <BeMultiSelect
+                    options={optionGroups.map((og) => {
+                      const previewItems = og.items
+                        .slice(0, 3)
+                        .map((it) =>
+                          Number(it.price_delta) > 0
+                            ? `${it.name} (+${formatPriceNumber(it.price_delta)})`
+                            : it.name
+                        )
+                        .join(", ");
+                      const extra =
+                        og.items.length > 3 ? ` +${og.items.length - 3}` : "";
+                      return {
+                        value: og.id,
+                        label: `${og.name} (${
+                          og.selection_mode === "single" ? "Chọn 1" : "Chọn nhiều"
+                        }${og.is_required ? " · Bắt buộc" : ""})`,
+                        description: previewItems
+                          ? `${previewItems}${extra}`
+                          : "Chưa có lựa chọn con",
+                      };
+                    })}
+                    values={productOptionGroupIds}
+                    onChange={setProductOptionGroupIds}
+                    placeholder="Chọn nhóm Topping, Mức đường, Đồ ăn kèm..."
+                    emptyText="Chưa có nhóm tùy chọn nào. Tạo tại mục Quản lý Tùy chọn."
+                  />
+                </div>
+
+                <AnimatePresence initial={false}>
+                  {productOptionGroupIds.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 4 }}
+                      transition={{ duration: 0.18 }}
+                      className="flex flex-col gap-2 pt-1 lg:flex-1 lg:min-h-0"
+                    >
+                      <div className="flex shrink-0 items-center justify-between text-[11px] text-neutral-400">
+                        <span>
+                          Nhấn vào từng nhóm để xem nhanh các lựa chọn bên trong ({productOptionGroupIds.length} nhóm)
+                        </span>
+                        {productOptionGroupIds.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allOpen = productOptionGroupIds.every((id) =>
+                                expandedOptionGroupIds.includes(id)
+                              );
+                              setExpandedOptionGroupIds(
+                                allOpen ? [] : [...productOptionGroupIds]
+                              );
+                            }}
+                            className="font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                          >
+                            {productOptionGroupIds.every((id) =>
+                              expandedOptionGroupIds.includes(id)
+                            )
+                              ? "Thu gọn tất cả"
+                              : "Mở tất cả"}
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="max-h-[340px] lg:max-h-none lg:flex-1 lg:min-h-0 space-y-2 overflow-y-auto pr-1">
+                        {productOptionGroupIds.map((gid) => {
+                          const grp = optionGroups.find((g) => g.id === gid);
+                          if (!grp) return null;
+                          const isOpen = expandedOptionGroupIds.includes(gid);
+
+                          return (
+                            <motion.div
+                              key={gid}
+                              layout
+                              initial={{ opacity: 0, y: -4 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -4 }}
+                              className="overflow-hidden rounded-xl bg-neutral-50/90 dark:bg-neutral-800/50"
+                            >
+                              <div
+                                onClick={() =>
+                                  setExpandedOptionGroupIds((prev) =>
+                                    prev.includes(gid)
+                                      ? prev.filter((id) => id !== gid)
+                                      : [...prev, gid]
+                                  )
+                                }
+                                className="flex cursor-pointer items-center justify-between gap-2 px-3.5 py-2.5 transition-colors hover:bg-neutral-100/80 dark:hover:bg-neutral-800"
+                              >
+                                <div className="flex min-w-0 flex-1 items-center gap-2">
+                                  <span className="truncate text-xs font-bold text-neutral-900 dark:text-white">
+                                    {grp.name}
+                                  </span>
+                                  <span
+                                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                                      grp.is_required
+                                        ? "bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400"
+                                        : "bg-neutral-200/70 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300"
+                                    }`}
+                                  >
+                                    {grp.is_required ? "Bắt buộc" : "Tùy chọn"}
+                                  </span>
+                                  <span className="hidden sm:inline shrink-0 text-[10px] text-neutral-400">
+                                    {grp.selection_mode === "single"
+                                      ? "Chọn 1"
+                                      : `Chọn nhiều (${grp.min_selections}–${
+                                          grp.max_selections ?? "∞"
+                                        })`}{" "}
+                                    • {grp.items.length} lựa chọn
+                                  </span>
+                                </div>
+
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <motion.span
+                                    animate={{ rotate: isOpen ? 180 : 0 }}
+                                    transition={{ duration: 0.16 }}
+                                    className="grid h-6 w-6 place-items-center text-neutral-400"
+                                  >
+                                    <ChevronDown className="h-3.5 w-3.5" />
+                                  </motion.span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setProductOptionGroupIds((prev) =>
+                                        prev.filter((id) => id !== gid)
+                                      );
+                                    }}
+                                    title="Gỡ nhóm tùy chọn này"
+                                    className="grid h-6 w-6 place-items-center rounded-full text-neutral-400 hover:bg-neutral-200/70 hover:text-rose-600 dark:hover:bg-neutral-700"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              <AnimatePresence initial={false}>
+                                {isOpen && (
+                                  <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: "auto", opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={{
+                                      duration: 0.18,
+                                      ease: [0.16, 1, 0.3, 1],
+                                    }}
+                                    className="overflow-hidden border-t border-neutral-200/60 dark:border-neutral-700/60"
+                                  >
+                                    <div className="flex flex-wrap gap-1.5 px-3.5 py-2.5">
+                                      {grp.items.map((it, i) => (
+                                        <span
+                                          key={it.id || i}
+                                          className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium ${
+                                            it.is_default
+                                              ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
+                                              : "bg-white text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                                          }`}
+                                        >
+                                          <span className="max-w-[140px] truncate">
+                                            {it.name}
+                                          </span>
+                                          {Number(it.price_delta) > 0 && (
+                                            <span className="tabular-nums font-bold text-emerald-600 dark:text-emerald-400">
+                                              +{formatPriceNumber(it.price_delta)}
+                                            </span>
+                                          )}
+                                          {it.is_default && (
+                                            <Check className="h-2.5 w-2.5 shrink-0" />
+                                          )}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            )}
           </AnimatePresence>
           </div>
         </div>
