@@ -561,7 +561,7 @@ export function StoresMasterDetailView({
                                   {d.status === "active"
                                     ? "Đang kết nối"
                                     : d.status === "pending"
-                                      ? "Chờ kết nối"
+                                      ? "Chưa kết nối"
                                       : "Đã ngắt kết nối"}
                                 </span>
                               </div>
@@ -585,7 +585,9 @@ export function StoresMasterDetailView({
                                   title={
                                     d.status === "active"
                                       ? "Ngắt kết nối thiết bị"
-                                      : "Kết nối lại thiết bị"
+                                      : d.status === "pending"
+                                        ? "Kết nối thiết bị"
+                                        : "Kết nối lại thiết bị"
                                   }
                                   onClick={() =>
                                     onToggleDeviceStatus(

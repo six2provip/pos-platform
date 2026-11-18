@@ -1699,10 +1699,10 @@ export default function OrganizationWorkspace({
           serial_number: kioskSerial.trim().toUpperCase(),
           device_type: kioskType,
           platform: kioskType.startsWith("web") ? "web" : "android",
-          activate_immediately: true,
+          activate_immediately: false,
         }),
       });
-      notify("success", `Đã gắn máy "${kioskName.trim()}" (S/N: ${kioskSerial.trim().toUpperCase()})!`);
+      notify("success", `Đã thêm máy "${kioskName.trim()}" (S/N: ${kioskSerial.trim().toUpperCase()}) ở trạng thái Chưa kết nối. Nhấn nút Kết nối để kích hoạt.`);
       setActiveModal(null);
       setKioskName("");
       setKioskSerial("");

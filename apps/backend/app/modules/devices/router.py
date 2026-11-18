@@ -603,6 +603,12 @@ def activate_device_by_serial(
             message="Serial number không thuộc tổ chức được yêu cầu.",
         )
 
+    if device.status == "pending":
+        raise ForbiddenError(
+            code="DEVICE_PENDING_CONNECTION",
+            message="Thiết bị chưa được bật kết nối trên Org Admin. Vui lòng nhấn nút Kết nối để kích hoạt.",
+        )
+
     if device.status in ("disabled", "revoked"):
         raise ForbiddenError(
             code="DEVICE_NOT_ACTIVE",

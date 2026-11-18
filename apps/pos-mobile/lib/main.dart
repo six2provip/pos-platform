@@ -1343,6 +1343,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
     final isNoNetwork = _provisioningErrorCode == 'NO_NETWORK';
     final isServerNotFound = _provisioningErrorCode == 'SERVER_NOT_FOUND';
     final isNotRegistered = _provisioningErrorCode == 'SERIAL_NOT_REGISTERED';
+    final isPendingConn = _provisioningErrorCode == 'DEVICE_PENDING_CONNECTION';
     final isBlocked = _provisioningErrorCode == 'DEVICE_NOT_ACTIVE' ||
         _provisioningErrorCode == 'ORGANIZATION_INACTIVE' ||
         _provisioningErrorCode == 'STORE_INACTIVE';
@@ -1351,7 +1352,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
 
     final badgeColor = isBlocked
         ? Colors.red.shade400
-        : isNetworkErr
+        : (isNetworkErr || isPendingConn)
             ? Colors.amber.shade400
             : kEmeraldPrimary;
     final badgeText = isNoNetwork
@@ -1360,11 +1361,13 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
             ? 'KHÔNG TÌM THẤY MÁY CHỦ TRONG MẠNG NÀY'
             : isBlocked
                 ? 'THIẾT BỊ ĐANG BỊ TẠM KHÓA'
-                : isNetworkErr
-                    ? 'CHƯA KẾT NỐI ĐƯỢC MÁY CHỦ'
-                    : isNotRegistered
-                        ? 'CHỜ NHẬP SERIAL VÀO ORG ADMIN'
-                        : 'ZERO-TOUCH PROVISIONING';
+                : isPendingConn
+                    ? 'CHỜ ADMIN NHẤN KẾT NỐI'
+                    : isNetworkErr
+                        ? 'CHƯA KẾT NỐI ĐƯỢC MÁY CHỦ'
+                        : isNotRegistered
+                            ? 'CHỜ NHẬP SERIAL VÀO ORG ADMIN'
+                            : 'ZERO-TOUCH PROVISIONING';
 
     return Scaffold(
       backgroundColor: kDarkKioskBg,
