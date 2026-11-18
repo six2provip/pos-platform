@@ -33,7 +33,7 @@ String formatVnd(num amount) {
       buf.write('.');
     }
   }
-  return '${buf.toString()}₫';
+  return buf.toString();
 }
 
 final ValueNotifier<ThemeMode> posThemeModeNotifier = ValueNotifier(ThemeMode.light);
@@ -2410,79 +2410,85 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
       color: isDark ? const Color(0xFF0B1120) : const Color(0xFFF6F7F9),
       child: Column(
         children: [
-          // Top Search Bar
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: Row(
+          // Top Search & Category Header (cleanly separated from scrolling grid)
+          Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF0F172A) : Colors.white,
+              border: Border(
+                bottom: BorderSide(
+                  color: isDark ? Colors.white12 : const Color(0xFFEAECEF),
+                ),
+              ),
+            ),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: TextField(
-                    style: const TextStyle(fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: 'Tìm tên món hoặc mã vạch...',
-                      hintStyle: TextStyle(
-                        fontSize: 14,
-                        color: isDark ? Colors.white38 : Colors.grey.shade500,
-                      ),
-                      prefixIcon: Icon(
-                        Icons.search,
-                        size: 20,
-                        color: isDark ? Colors.white54 : Colors.grey.shade600,
-                      ),
-                      filled: true,
-                      fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(
-                        vertical: 12,
-                        horizontal: 14,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(
-                          color: isDark ? Colors.white12 : Colors.grey.shade200,
-                        ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(
-                          color: kEmeraldPrimary,
-                          width: 1.5,
-                        ),
+                TextField(
+                  style: const TextStyle(fontSize: 13.5),
+                  decoration: InputDecoration(
+                    hintText: 'Tìm tên món hoặc mã vạch...',
+                    hintStyle: TextStyle(
+                      fontSize: 13.5,
+                      color: isDark ? Colors.white38 : Colors.grey.shade500,
+                    ),
+                    prefixIcon: Icon(
+                      Icons.search,
+                      size: 19,
+                      color: isDark ? Colors.white54 : Colors.grey.shade600,
+                    ),
+                    filled: true,
+                    fillColor:
+                        isDark ? const Color(0xFF1E293B) : const Color(0xFFF6F7F9),
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 10,
+                      horizontal: 14,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: isDark ? Colors.white12 : const Color(0xFFE5E7EB),
                       ),
                     ),
-                    onChanged: (val) => setState(() => _searchQuery = val),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: kEmeraldPrimary,
+                        width: 1.5,
+                      ),
+                    ),
                   ),
+                  onChanged: (val) => setState(() => _searchQuery = val),
                 ),
+                if (_categories.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 44,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        _buildCategoryPill(
+                          id: 'all',
+                          label: 'Tất cả',
+                          icon: Icons.grid_view_rounded,
+                          isDark: isDark,
+                        ),
+                        for (final c in _categories)
+                          _buildCategoryPill(
+                            id: c['id']?.toString() ?? 'all',
+                            label: c['name']?.toString() ?? '',
+                            icon: Icons.restaurant_menu_rounded,
+                            isDark: isDark,
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
 
-          // Horizontal Category Cards (Reference Style)
-          if (_categories.isNotEmpty)
-            SizedBox(
-              height: 50,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                children: [
-                  _buildCategoryPill(
-                    id: 'all',
-                    label: 'Tất cả',
-                    icon: Icons.grid_view_rounded,
-                    isDark: isDark,
-                  ),
-                  for (final c in _categories)
-                    _buildCategoryPill(
-                      id: c['id']?.toString() ?? 'all',
-                      label: c['name']?.toString() ?? '',
-                      icon: Icons.restaurant_menu_rounded,
-                      isDark: isDark,
-                    ),
-                ],
-              ),
-            ),
-          const SizedBox(height: 10),
-
-          // Product Grid (3 Columns on Wide Tablet)
+          // Product Grid (4 Columns on Wide Tablet)
           Expanded(
             child: items.isEmpty
                 ? const Center(
@@ -2499,12 +2505,12 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                               ? 3
                               : 2;
                       return GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
+                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: cols,
                           mainAxisSpacing: 10,
                           crossAxisSpacing: 10,
-                          childAspectRatio: 0.72,
+                          childAspectRatio: 0.82,
                         ),
                         itemCount: items.length,
                         itemBuilder: (ctx, i) {
