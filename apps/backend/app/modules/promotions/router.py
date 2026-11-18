@@ -350,3 +350,4 @@ def delete_promotion(
     )
     db.commit()
     return ok_response({"deleted": True, "id": promo.id}, request_id=request_id)
+

@@ -113,3 +113,4 @@ Future<String?> discoverPosServerUrl({String? currentUrl}) async {
 
   return null;
 }
+
