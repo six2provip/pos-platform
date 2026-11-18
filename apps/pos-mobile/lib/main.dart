@@ -635,9 +635,26 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
         }
         final vid = v['id'].toString();
         final rawImg = prod?['image_url']?.toString() ?? '';
-        final fullImg = rawImg.isEmpty
-            ? ''
-            : (rawImg.startsWith('http') ? rawImg : '$_serverUrl$rawImg');
+        String fullImg = '';
+        if (rawImg.isNotEmpty) {
+          if (rawImg.startsWith('http://127.0.0.1') ||
+              rawImg.startsWith('http://localhost')) {
+            final parsedImg = Uri.tryParse(rawImg);
+            final serverOrigin = Uri.tryParse(_serverUrl);
+            if (parsedImg != null && serverOrigin != null) {
+              fullImg =
+                  '${serverOrigin.scheme}://${serverOrigin.authority}${parsedImg.path}${parsedImg.hasQuery ? '?${parsedImg.query}' : ''}';
+            } else {
+              fullImg = rawImg;
+            }
+          } else if (rawImg.startsWith('http')) {
+            fullImg = rawImg;
+          } else {
+            fullImg = rawImg.startsWith('/')
+                ? '$_serverUrl$rawImg'
+                : '$_serverUrl/$rawImg';
+          }
+        }
         final catIds = (prod?['category_ids'] as List? ?? [])
             .map((e) => e.toString())
             .toList();
@@ -2873,7 +2890,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
             ),
           ),
 
-          // Product Grid (4 Columns on Wide Tablet)
+          // Product Grid (3 Large Cards per Row on Wide Tablet)
           Expanded(
             child: items.isEmpty
                 ? const Center(
@@ -2884,18 +2901,14 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                   )
                 : LayoutBuilder(
                     builder: (context, constraints) {
-                      final cols = constraints.maxWidth >= 540
-                          ? 4
-                          : constraints.maxWidth >= 380
-                              ? 3
-                              : 2;
+                      final cols = constraints.maxWidth >= 460 ? 3 : 2;
                       return GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+                        padding: const EdgeInsets.fromLTRB(14, 14, 14, 18),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: cols,
-                          mainAxisSpacing: 10,
-                          crossAxisSpacing: 10,
-                          childAspectRatio: 0.82,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          childAspectRatio: 0.85,
                         ),
                         itemCount: items.length,
                         itemBuilder: (ctx, i) {
@@ -2951,7 +2964,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                 onTap: () => _onProductTap(prod),
                                 borderRadius: BorderRadius.circular(16),
                                 child: Padding(
-                                  padding: const EdgeInsets.all(8),
+                                  padding: const EdgeInsets.all(11),
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
@@ -3039,11 +3052,11 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w700,
-                                          fontSize: 12.5,
-                                          height: 1.2,
+                                          fontSize: 13.5,
+                                          height: 1.25,
                                         ),
                                       ),
-                                      const SizedBox(height: 3),
+                                      const SizedBox(height: 4),
 
                                       // Variant Count / Label & Price Row
                                       Row(
@@ -3058,14 +3071,14 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
-                                                fontSize: 11,
+                                                fontSize: 12,
                                                 color: isDark
                                                     ? Colors.white60
                                                     : Colors.grey.shade600,
                                               ),
                                             ),
                                           ),
-                                          const SizedBox(width: 4),
+                                          const SizedBox(width: 6),
                                           Column(
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.end,
@@ -3075,7 +3088,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                                 Text(
                                                   formatVnd(origPrice),
                                                   style: TextStyle(
-                                                    fontSize: 9.5,
+                                                    fontSize: 10.5,
                                                     decoration: TextDecoration
                                                         .lineThrough,
                                                     color: Colors.grey.shade500,
@@ -3086,37 +3099,37 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                                 style: const TextStyle(
                                                   color: kEmeraldDark,
                                                   fontWeight: FontWeight.w800,
-                                                  fontSize: 13,
+                                                  fontSize: 14,
                                                 ),
                                               ),
                                             ],
                                           ),
                                         ],
                                       ),
-                                      const SizedBox(height: 6),
+                                      const SizedBox(height: 8),
 
                                       // Soft Emerald "+ Thêm" CTA Button
                                       SizedBox(
                                         width: double.infinity,
-                                        height: 30,
+                                        height: 34,
                                         child: TextButton.icon(
                                           onPressed: () => _onProductTap(prod),
                                           style: TextButton.styleFrom(
                                             backgroundColor: kMintSoft,
                                             foregroundColor: kEmeraldDark,
                                             padding: const EdgeInsets.symmetric(
-                                              horizontal: 6,
+                                              horizontal: 8,
                                             ),
                                             shape: RoundedRectangleBorder(
                                               borderRadius:
-                                                  BorderRadius.circular(8),
+                                                  BorderRadius.circular(10),
                                             ),
                                           ),
-                                          icon: const Icon(Icons.add, size: 14),
+                                          icon: const Icon(Icons.add, size: 16),
                                           label: const Text(
                                             'Thêm',
                                             style: TextStyle(
-                                              fontSize: 11.5,
+                                              fontSize: 12.5,
                                               fontWeight: FontWeight.w700,
                                             ),
                                           ),
