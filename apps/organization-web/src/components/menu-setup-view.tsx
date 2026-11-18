@@ -4,7 +4,12 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   Check,
+  Coffee,
+  Cookie,
+  CupSoda,
+  IceCream,
   Layers,
+  LayoutGrid,
   Search,
   SlidersHorizontal,
   Smartphone,
@@ -42,6 +47,32 @@ type MenuCardItem = StoreMenuItem & {
   store_price_override?: string | null;
 };
 
+const PASTEL_PILL_STYLES = [
+  "bg-orange-50 text-orange-700 border-orange-200/70 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-900/60",
+  "bg-emerald-50 text-emerald-700 border-emerald-200/70 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/60",
+  "bg-sky-50 text-sky-700 border-sky-200/70 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-900/60",
+  "bg-rose-50 text-rose-700 border-rose-200/70 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/60",
+  "bg-violet-50 text-violet-700 border-violet-200/70 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900/60",
+  "bg-amber-50 text-amber-700 border-amber-200/70 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/60",
+];
+
+function getCategoryIcon(name: string) {
+  const lower = name.toLowerCase();
+  if (lower.includes("cà phê") || lower.includes("cafe") || lower.includes("coffee")) {
+    return Coffee;
+  }
+  if (lower.includes("trà") || lower.includes("nước") || lower.includes("uống")) {
+    return CupSoda;
+  }
+  if (lower.includes("bánh") || lower.includes("pastry") || lower.includes("bread")) {
+    return Cookie;
+  }
+  if (lower.includes("kem") || lower.includes("ice")) {
+    return IceCream;
+  }
+  return UtensilsCrossed;
+}
+
 export function MenuSetupView({
   stores,
   categories,
@@ -67,6 +98,7 @@ export function MenuSetupView({
   const [menuSaving, setMenuSaving] = useState(false);
   const [menuSearch, setMenuSearch] = useState("");
   const [menuFilter, setMenuFilter] = useState<"all" | "available" | "hidden">("all");
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("all");
 
   // Device Filter State
   const [deviceMenuMode, setDeviceMenuMode] = useState<"inherit_store" | "custom">(
@@ -77,6 +109,7 @@ export function MenuSetupView({
   const [deviceMenuLoading, setDeviceMenuLoading] = useState(false);
   const [deviceMenuSearch, setDeviceMenuSearch] = useState("");
   const [deviceMenuFilter, setDeviceMenuFilter] = useState<"all" | "available" | "hidden">("all");
+  const [deviceCategoryFilter, setDeviceCategoryFilter] = useState<string>("all");
   const [deviceSaving, setDeviceSaving] = useState(false);
 
   // Product Detail & Options Modal
@@ -93,6 +126,12 @@ export function MenuSetupView({
     for (const g of optionGroups) map.set(g.id, g);
     return map;
   }, [optionGroups]);
+
+  const categoryLookup = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; idx: number }>();
+    categories.forEach((c, idx) => map.set(c.id, { ...c, idx }));
+    return map;
+  }, [categories]);
 
   const loadAllDevices = useCallback(async () => {
     if (!accessToken) return;
@@ -141,6 +180,7 @@ export function MenuSetupView({
     if (selection.kind !== "store" || !activeStore || !accessToken) return;
     let cancelled = false;
     setMenuLoading(true);
+    setSelectedCategoryFilter("all");
     apiFetch(`/api/v1/stores/${activeStore.id}/menu`)
       .then((res) => {
         if (!cancelled) {
@@ -167,6 +207,7 @@ export function MenuSetupView({
     if (selection.kind !== "device" || !activeDevice || !accessToken) return;
     let cancelled = false;
     setDeviceMenuLoading(true);
+    setDeviceCategoryFilter("all");
     apiFetch(`/api/v1/devices/${activeDevice.id}/menu`)
       .then((res) => {
         if (cancelled) return;
@@ -218,6 +259,12 @@ export function MenuSetupView({
   const filteredMenuItems = useMemo(() => {
     const q = menuSearch.trim().toLowerCase();
     return menuItems.filter((item) => {
+      if (
+        selectedCategoryFilter !== "all" &&
+        !item.category_ids.includes(selectedCategoryFilter)
+      ) {
+        return false;
+      }
       if (menuFilter === "available" && !item.is_available) return false;
       if (menuFilter === "hidden" && item.is_available) return false;
       if (!q) return true;
@@ -226,7 +273,7 @@ export function MenuSetupView({
         item.code.toLowerCase().includes(q)
       );
     });
-  }, [menuItems, menuSearch, menuFilter]);
+  }, [menuItems, selectedCategoryFilter, menuSearch, menuFilter]);
 
   const filteredDeviceMenuItems = useMemo(() => {
     const q = deviceMenuSearch.trim().toLowerCase();
@@ -234,6 +281,12 @@ export function MenuSetupView({
       if (
         deviceAllowedCats.length > 0 &&
         !item.category_ids.some((cid) => deviceAllowedCats.includes(cid))
+      ) {
+        return false;
+      }
+      if (
+        deviceCategoryFilter !== "all" &&
+        !item.category_ids.includes(deviceCategoryFilter)
       ) {
         return false;
       }
@@ -245,7 +298,13 @@ export function MenuSetupView({
         item.code.toLowerCase().includes(q)
       );
     });
-  }, [deviceMenuItems, deviceAllowedCats, deviceMenuSearch, deviceMenuFilter]);
+  }, [
+    deviceMenuItems,
+    deviceAllowedCats,
+    deviceCategoryFilter,
+    deviceMenuSearch,
+    deviceMenuFilter,
+  ]);
 
   const handleSaveStoreMenu = async () => {
     if (!activeStore) return;
@@ -357,16 +416,103 @@ export function MenuSetupView({
     }
   };
 
+  const renderCategoryStrip = (
+    items: MenuCardItem[],
+    activeCatId: string,
+    onSelectCat: (catId: string) => void
+  ) => {
+    return (
+      <div className="flex shrink-0 gap-2.5 overflow-x-auto pb-1">
+        {/* All Menu Card */}
+        <button
+          type="button"
+          onClick={() => onSelectCat("all")}
+          className={`flex w-28 shrink-0 flex-col justify-between rounded-2xl border p-3 text-left transition-all ${
+            activeCatId === "all"
+              ? "border-blue-600 bg-blue-50/70 shadow-sm dark:border-blue-400 dark:bg-blue-950/35"
+              : "border-neutral-200/80 bg-white hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-950/60"
+          }`}
+        >
+          <span
+            className={`grid h-8 w-8 place-items-center rounded-full transition-colors ${
+              activeCatId === "all"
+                ? "bg-blue-600 text-white"
+                : "bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300"
+            }`}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </span>
+          <div className="mt-3">
+            <div
+              className={`truncate text-xs font-bold ${
+                activeCatId === "all"
+                  ? "text-blue-700 dark:text-blue-300"
+                  : "text-neutral-900 dark:text-white"
+              }`}
+            >
+              Tất cả Menu
+            </div>
+            <div className="text-[10px] text-neutral-400">
+              {items.length} Món
+            </div>
+          </div>
+        </button>
+
+        {/* Per-Category Cards */}
+        {categories.map((cat) => {
+          const count = items.filter((it) =>
+            it.category_ids.includes(cat.id)
+          ).length;
+          const isActive = activeCatId === cat.id;
+          const IconComp = getCategoryIcon(cat.name);
+          return (
+            <button
+              key={cat.id}
+              type="button"
+              onClick={() => onSelectCat(cat.id)}
+              className={`flex w-28 shrink-0 flex-col justify-between rounded-2xl border p-3 text-left transition-all ${
+                isActive
+                  ? "border-blue-600 bg-blue-50/70 shadow-sm dark:border-blue-400 dark:bg-blue-950/35"
+                  : "border-neutral-200/80 bg-white hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-950/60"
+              }`}
+            >
+              <span
+                className={`grid h-8 w-8 place-items-center rounded-full transition-colors ${
+                  isActive
+                    ? "bg-blue-600 text-white"
+                    : "bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300"
+                }`}
+              >
+                <IconComp className="h-4 w-4" />
+              </span>
+              <div className="mt-3">
+                <div
+                  className={`truncate text-xs font-bold ${
+                    isActive
+                      ? "text-blue-700 dark:text-blue-300"
+                      : "text-neutral-900 dark:text-white"
+                  }`}
+                >
+                  {cat.name}
+                </div>
+                <div className="text-[10px] text-neutral-400">{count} Món</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
   const renderProductCard = (item: MenuCardItem, isDeviceMode: boolean) => {
     const prod = productLookup.get(item.product_id);
     const imgUrl = item.image_url || prod?.image_url || null;
-    const variantsCount = prod?.variants?.length || item.variant_count || 0;
-    const optIds = new Set<string>();
-    for (const v of prod?.variants || []) {
-      for (const ogId of v.option_group_ids || []) {
-        optIds.add(ogId);
-      }
-    }
+    const firstCatId = item.category_ids[0];
+    const catMeta = firstCatId ? categoryLookup.get(firstCatId) : undefined;
+    const catPillCls = catMeta
+      ? PASTEL_PILL_STYLES[catMeta.idx % PASTEL_PILL_STYLES.length]
+      : PASTEL_PILL_STYLES[0];
+
     const baseDisplay = Number(
       isDeviceMode
         ? item.store_price_override ?? item.base_price ?? 0
@@ -379,14 +525,14 @@ export function MenuSetupView({
       <div
         key={item.product_id}
         onClick={() => setDetailProductId(item.product_id)}
-        className={`group flex aspect-square cursor-pointer flex-col overflow-hidden rounded-2xl border transition-all hover:shadow-md ${
+        className={`group flex aspect-square cursor-pointer flex-col overflow-hidden rounded-2xl border p-2.5 transition-all hover:shadow-md ${
           item.is_available
-            ? "border-neutral-200/80 bg-white hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-950/70 dark:hover:border-neutral-700"
-            : "border-neutral-200/60 bg-neutral-100/70 opacity-75 dark:border-neutral-800 dark:bg-neutral-900/40"
+            ? "border-neutral-200/80 bg-white hover:border-blue-300 dark:border-neutral-800 dark:bg-neutral-950/80 dark:hover:border-neutral-700"
+            : "border-neutral-200/60 bg-neutral-100/80 opacity-70 dark:border-neutral-800 dark:bg-neutral-900/40"
         }`}
       >
-        {/* Product Image Header */}
-        <div className="relative min-h-0 flex-1 w-full overflow-hidden bg-neutral-100 dark:bg-neutral-800">
+        {/* Soft Rounded Image Frame (Reference Style) */}
+        <div className="relative min-h-0 flex-1 w-full overflow-hidden rounded-xl bg-[#F7F8FA] dark:bg-neutral-800/80">
           {imgUrl ? (
             <img
               src={imgUrl}
@@ -399,21 +545,10 @@ export function MenuSetupView({
             </div>
           )}
 
-          {/* Status Pill */}
-          <span
-            className={`absolute left-2.5 top-2.5 rounded-full px-2 py-0.5 text-[10px] font-bold shadow-sm ${
-              item.is_available
-                ? "bg-emerald-600/90 text-white"
-                : "bg-neutral-900/75 text-white"
-            }`}
-          >
-            {item.is_available ? "Đang bán" : "Đang ẩn"}
-          </span>
-
-          {/* Quick Toggle Switch */}
+          {/* Quick Toggle Switch in Top-Right */}
           <div
             onClick={(e) => e.stopPropagation()}
-            className="absolute right-2.5 top-2 rounded-full bg-white/90 p-0.5 shadow-sm backdrop-blur dark:bg-neutral-900/90"
+            className="absolute right-2 top-2 rounded-full bg-white/90 p-0.5 shadow-sm backdrop-blur dark:bg-neutral-900/90"
           >
             <BeSwitch
               checked={item.is_available}
@@ -424,47 +559,43 @@ export function MenuSetupView({
             />
           </div>
 
+          {!item.is_available && (
+            <span className="absolute left-2 top-2 rounded-full bg-neutral-900/80 px-2 py-0.5 text-[9px] font-bold text-white">
+              Đang ẩn
+            </span>
+          )}
+
           {isDeviceMode && item.store_is_available === false && (
-            <span className="absolute bottom-2 left-2.5 rounded bg-amber-500/95 px-1.5 py-0.5 text-[9px] font-bold text-white shadow-sm">
-              Đang ẩn ở Chi nhánh
+            <span className="absolute bottom-2 left-2 rounded bg-amber-500/95 px-1.5 py-0.5 text-[9px] font-bold text-white shadow-sm">
+              Ẩn ở Chi nhánh
             </span>
           )}
         </div>
 
-        {/* Card Body */}
-        <div className="flex shrink-0 flex-col justify-between gap-1.5 p-2.5">
-          <div>
-            <h3 className="line-clamp-2 text-[11px] font-bold leading-snug text-neutral-900 dark:text-white">
-              {item.name}
-            </h3>
-          </div>
+        {/* Clean Minimal Footer: Name + Pastel Category Pill + Price */}
+        <div className="mt-2.5 flex shrink-0 flex-col gap-1.5 px-0.5">
+          <h3 className="truncate text-xs font-bold text-neutral-900 dark:text-white">
+            {item.name}
+          </h3>
 
-          <div className="flex items-center justify-between gap-1.5 border-t border-neutral-100 pt-1.5 dark:border-neutral-800">
-            <div>
-              {hasOverride ? (
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400">
-                    {Number(item.price_override).toLocaleString("vi-VN")}₫
-                  </span>
-                  <span className="text-[10px] text-neutral-400 line-through">
-                    {baseDisplay.toLocaleString("vi-VN")}₫
-                  </span>
-                </div>
-              ) : (
-                <span className="text-xs font-extrabold text-neutral-900 dark:text-white">
-                  {baseDisplay.toLocaleString("vi-VN")}₫
-                </span>
-              )}
-            </div>
+          <div className="flex items-center justify-between gap-2">
+            <span
+              className={`max-w-[55%] truncate rounded-md border px-2 py-0.5 text-[10px] font-semibold ${catPillCls}`}
+            >
+              {catMeta?.name || "Sản phẩm"}
+            </span>
 
-            <div className="flex items-center gap-1 text-[10px] font-medium text-neutral-500 dark:text-neutral-400">
-              {variantsCount > 0 && <span>{variantsCount} BT</span>}
-              {optIds.size > 0 && (
-                <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-                  +{optIds.size} tùy chọn
+            {hasOverride ? (
+              <div className="flex items-baseline gap-1">
+                <span className="text-xs font-extrabold tabular-nums text-blue-600 dark:text-blue-400">
+                  {Number(item.price_override).toLocaleString("vi-VN")}₫
                 </span>
-              )}
-            </div>
+              </div>
+            ) : (
+              <span className="text-xs font-extrabold tabular-nums text-neutral-900 dark:text-white">
+                {baseDisplay.toLocaleString("vi-VN")}₫
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -490,7 +621,7 @@ export function MenuSetupView({
             Thiết lập Menu Chi nhánh &amp; Thiết bị
           </h1>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            Bấm vào từng thẻ món để xem biến thể, nhóm tùy chọn đi kèm và cấu hình giá riêng.
+            Lọc theo danh mục và bấm vào từng thẻ món để xem biến thể, nhóm tùy chọn đi kèm và cấu hình giá riêng.
           </p>
         </div>
       </div>
@@ -610,16 +741,16 @@ export function MenuSetupView({
           </div>
         </div>
 
-        {/* Right 9 cols: 3-column Card Grid */}
-        <div className="flex min-h-0 flex-col rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 lg:col-span-9">
+        {/* Right 9 cols: Category Cards + Full Search + 4-Col Square Grid */}
+        <div className="flex min-h-0 flex-col rounded-2xl border border-neutral-200/80 bg-[#F9FAFB] p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 lg:col-span-9">
           {selection.kind === "device" && activeDevice ? (
             <>
-              <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-neutral-200/70 pb-4 dark:border-neutral-800">
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 pb-3">
                 <div>
                   <div className="flex items-center gap-2">
                     <Smartphone className="h-4 w-4 text-neutral-700 dark:text-neutral-300" />
                     <h2 className="text-sm font-bold text-neutral-900 dark:text-white">
-                      Thiết lập Menu cho máy: {activeDevice.name}
+                      Menu máy POS: {activeDevice.name}
                     </h2>
                   </div>
                   <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
@@ -630,25 +761,49 @@ export function MenuSetupView({
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  disabled={deviceSaving}
-                  onClick={handleSaveDeviceFilter}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                  {deviceSaving ? "Đang lưu..." : "Lưu Cấu Hình Máy"}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {deviceMenuMode === "custom" &&
+                    allDevices.filter((d) => d.id !== activeDevice.id).length > 0 && (
+                      <select
+                        defaultValue=""
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val) void handleCopyFromDevice(val);
+                          e.target.value = "";
+                        }}
+                        className="rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                      >
+                        <option value="">Sao chép từ máy khác...</option>
+                        {allDevices
+                          .filter((d) => d.id !== activeDevice.id)
+                          .map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name}
+                            </option>
+                          ))}
+                      </select>
+                    )}
+
+                  <button
+                    type="button"
+                    disabled={deviceSaving}
+                    onClick={handleSaveDeviceFilter}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    {deviceSaving ? "Đang lưu..." : "Lưu Cấu Hình Máy"}
+                  </button>
+                </div>
               </div>
 
-              <div className="mt-3 shrink-0 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="mb-3 grid shrink-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
                 <button
                   type="button"
                   onClick={() => setDeviceMenuMode("inherit_store")}
-                  className={`rounded-2xl border p-3.5 text-left transition-all ${
+                  className={`rounded-2xl border p-3 text-left transition-all ${
                     deviceMenuMode === "inherit_store"
-                      ? "border-neutral-900 bg-neutral-50 ring-1 ring-neutral-900/10 dark:border-white dark:bg-neutral-800/70"
-                      : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-800"
+                      ? "border-blue-600 bg-blue-50/70 dark:border-blue-400 dark:bg-blue-950/30"
+                      : "border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-950/60"
                   }`}
                 >
                   <div className="text-xs font-bold text-neutral-900 dark:text-white">
@@ -662,107 +817,54 @@ export function MenuSetupView({
                 <button
                   type="button"
                   onClick={() => setDeviceMenuMode("custom")}
-                  className={`rounded-2xl border p-3.5 text-left transition-all ${
+                  className={`rounded-2xl border p-3 text-left transition-all ${
                     deviceMenuMode === "custom"
-                      ? "border-neutral-900 bg-neutral-50 ring-1 ring-neutral-900/10 dark:border-white dark:bg-neutral-800/70"
-                      : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-800"
+                      ? "border-blue-600 bg-blue-50/70 dark:border-blue-400 dark:bg-blue-950/30"
+                      : "border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-950/60"
                   }`}
                 >
                   <div className="text-xs font-bold text-neutral-900 dark:text-white">
                     Menu riêng cho máy này
                   </div>
                   <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
-                    Lọc theo danh mục và bật/tắt chi tiết từng món riêng cho Kiosk/quầy.
+                    Chọn lọc danh mục &amp; bật/tắt từng món riêng cho Kiosk/quầy.
                   </p>
                 </button>
               </div>
 
               {deviceMenuMode === "custom" && (
                 <>
-                  <div className="mt-3 shrink-0 rounded-2xl border border-neutral-200/80 bg-neutral-50/60 p-3 dark:border-neutral-800 dark:bg-neutral-950/50">
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-[11px] font-bold text-neutral-900 dark:text-white">
-                        Lọc nhanh theo Danh mục (
-                        {deviceAllowedCats.length === 0
-                          ? "Tất cả"
-                          : `${deviceAllowedCats.length} danh mục`}
-                        )
-                      </span>
-                      <div className="flex items-center gap-2">
-                        {allDevices.filter((d) => d.id !== activeDevice.id)
-                          .length > 0 && (
-                          <select
-                            defaultValue=""
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (val) void handleCopyFromDevice(val);
-                              e.target.value = "";
-                            }}
-                            className="rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
-                          >
-                            <option value="">Sao chép từ máy khác...</option>
-                            {allDevices
-                              .filter((d) => d.id !== activeDevice.id)
-                              .map((d) => (
-                                <option key={d.id} value={d.id}>
-                                  {d.name}
-                                </option>
-                              ))}
-                          </select>
-                        )}
-                        {categories.length > 0 && deviceAllowedCats.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setDeviceAllowedCats([])}
-                            className="text-[11px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
-                          >
-                            Bỏ lọc
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    {categories.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {categories.map((cat) => {
-                          const selected = deviceAllowedCats.includes(cat.id);
-                          return (
-                            <button
-                              key={cat.id}
-                              type="button"
-                              onClick={() =>
-                                setDeviceAllowedCats((prev) =>
-                                  selected
-                                    ? prev.filter((id) => id !== cat.id)
-                                    : [...prev, cat.id]
-                                )
-                              }
-                              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                                selected
-                                  ? "border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900"
-                                  : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
-                              }`}
-                            >
-                              {selected && <Check className="h-3 w-3" />}
-                              {cat.name}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                  {/* Category Cards Strip */}
+                  {renderCategoryStrip(
+                    deviceMenuItems,
+                    deviceCategoryFilter,
+                    setDeviceCategoryFilter
+                  )}
 
-                  <div className="mt-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5">
+                  {/* Full-width Search Bar + Status Filter */}
+                  <div className="mt-2.5 flex shrink-0 flex-wrap items-center gap-2.5">
+                    <div className="flex min-w-[220px] flex-1 items-center justify-between gap-2 rounded-2xl border border-neutral-200/80 bg-white px-4 py-2.5 shadow-sm dark:border-neutral-700 dark:bg-neutral-800">
+                      <input
+                        type="text"
+                        value={deviceMenuSearch}
+                        onChange={(e) => setDeviceMenuSearch(e.target.value)}
+                        placeholder="Tìm kiếm món ăn, đồ uống hoặc mã SP..."
+                        className="w-full bg-transparent text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-white"
+                      />
+                      <Search className="h-4 w-4 shrink-0 text-neutral-400" />
+                    </div>
+
+                    <div className="flex items-center gap-1 rounded-2xl border border-neutral-200/80 bg-white p-1 dark:border-neutral-700 dark:bg-neutral-800">
                       {(
                         [
                           { id: "all", label: `Tất cả (${deviceMenuItems.length})` },
                           {
                             id: "available",
-                            label: `Bán trên máy (${deviceMenuItems.filter((i) => i.is_available).length})`,
+                            label: `Bán (${deviceMenuItems.filter((i) => i.is_available).length})`,
                           },
                           {
                             id: "hidden",
-                            label: `Ẩn trên máy (${deviceMenuItems.filter((i) => !i.is_available).length})`,
+                            label: `Ẩn (${deviceMenuItems.filter((i) => !i.is_available).length})`,
                           },
                         ] as const
                       ).map((f) => (
@@ -770,29 +872,19 @@ export function MenuSetupView({
                           key={f.id}
                           type="button"
                           onClick={() => setDeviceMenuFilter(f.id)}
-                          className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
+                          className={`rounded-xl px-2.5 py-1 text-[11px] font-semibold transition-colors ${
                             deviceMenuFilter === f.id
                               ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
-                              : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300"
+                              : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400"
                           }`}
                         >
                           {f.label}
                         </button>
                       ))}
                     </div>
-
-                    <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-700 dark:bg-neutral-800">
-                      <Search className="h-3.5 w-3.5 text-neutral-400" />
-                      <input
-                        type="text"
-                        value={deviceMenuSearch}
-                        onChange={(e) => setDeviceMenuSearch(e.target.value)}
-                        placeholder="Tìm món trên máy..."
-                        className="w-40 bg-transparent text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-white"
-                      />
-                    </div>
                   </div>
 
+                  {/* 4-Column Square Product Cards */}
                   <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
                     {deviceMenuLoading ? (
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
@@ -804,7 +896,7 @@ export function MenuSetupView({
                         ))}
                       </div>
                     ) : filteredDeviceMenuItems.length === 0 ? (
-                      <div className="flex h-full min-h-[200px] items-center justify-center rounded-2xl border border-dashed border-neutral-200 p-6 text-xs text-neutral-400 dark:border-neutral-800">
+                      <div className="flex h-full min-h-[180px] items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-white/60 p-6 text-xs text-neutral-400 dark:border-neutral-800 dark:bg-neutral-950/30">
                         Không có món nào khớp bộ lọc.
                       </div>
                     ) : (
@@ -820,7 +912,7 @@ export function MenuSetupView({
             </>
           ) : activeStore ? (
             <>
-              <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-neutral-200/70 pb-4 dark:border-neutral-800">
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 pb-3">
                 <div>
                   <div className="flex items-center gap-2">
                     <UtensilsCrossed className="h-4 w-4 text-neutral-700 dark:text-neutral-300" />
@@ -828,9 +920,6 @@ export function MenuSetupView({
                       Thực đơn Chi nhánh: {activeStore.name}
                     </h2>
                   </div>
-                  <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
-                    Bấm vào thẻ món để xem biến thể &amp; tùy chọn đi kèm, hoặc gạt công tắc để bật/tắt nhanh.
-                  </p>
                 </div>
 
                 <button
@@ -844,8 +933,27 @@ export function MenuSetupView({
                 </button>
               </div>
 
-              <div className="mt-3 flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-1.5">
+              {/* Category Cards Strip (Reference Style) */}
+              {renderCategoryStrip(
+                menuItems,
+                selectedCategoryFilter,
+                setSelectedCategoryFilter
+              )}
+
+              {/* Full-width Search Bar + Status Filter */}
+              <div className="mt-2.5 flex shrink-0 flex-wrap items-center gap-2.5">
+                <div className="flex min-w-[220px] flex-1 items-center justify-between gap-2 rounded-2xl border border-neutral-200/80 bg-white px-4 py-2.5 shadow-sm dark:border-neutral-700 dark:bg-neutral-800">
+                  <input
+                    type="text"
+                    value={menuSearch}
+                    onChange={(e) => setMenuSearch(e.target.value)}
+                    placeholder="Tìm kiếm món ăn, đồ uống hoặc mã SP..."
+                    className="w-full bg-transparent text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-white"
+                  />
+                  <Search className="h-4 w-4 shrink-0 text-neutral-400" />
+                </div>
+
+                <div className="flex items-center gap-1 rounded-2xl border border-neutral-200/80 bg-white p-1 dark:border-neutral-700 dark:bg-neutral-800">
                   {(
                     [
                       { id: "all", label: `Tất cả (${menuItems.length})` },
@@ -863,29 +971,19 @@ export function MenuSetupView({
                       key={f.id}
                       type="button"
                       onClick={() => setMenuFilter(f.id)}
-                      className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
+                      className={`rounded-xl px-2.5 py-1 text-[11px] font-semibold transition-colors ${
                         menuFilter === f.id
                           ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
-                          : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300"
+                          : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400"
                       }`}
                     >
                       {f.label}
                     </button>
                   ))}
                 </div>
-
-                <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-700 dark:bg-neutral-800">
-                  <Search className="h-3.5 w-3.5 text-neutral-400" />
-                  <input
-                    type="text"
-                    value={menuSearch}
-                    onChange={(e) => setMenuSearch(e.target.value)}
-                    placeholder="Tìm món hoặc mã SP..."
-                    className="w-44 bg-transparent text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-white"
-                  />
-                </div>
               </div>
 
+              {/* 4-Column Square Product Cards */}
               <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
                 {menuLoading ? (
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
@@ -897,7 +995,7 @@ export function MenuSetupView({
                     ))}
                   </div>
                 ) : filteredMenuItems.length === 0 ? (
-                  <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-neutral-50/50 p-8 text-center text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950/40">
+                  <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-white/60 p-8 text-center text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950/30">
                     Không có sản phẩm nào phù hợp.
                   </div>
                 ) : (
@@ -939,7 +1037,7 @@ export function MenuSetupView({
                 {/* Modal Header with Image */}
                 <div className="flex items-start justify-between gap-4 border-b border-neutral-200/80 p-5 dark:border-neutral-800">
                   <div className="flex min-w-0 items-center gap-3.5">
-                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900">
+                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl border border-neutral-200 bg-[#F7F8FA] dark:border-neutral-800 dark:bg-neutral-900">
                       {detailMenuItem.image_url || detailProduct?.image_url ? (
                         <img
                           src={
@@ -985,7 +1083,6 @@ export function MenuSetupView({
 
                 {/* Modal Body */}
                 <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
-                  {/* Availability & Custom Price */}
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="flex items-center justify-between rounded-2xl border border-neutral-200/80 bg-neutral-50/70 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900">
                       <div>
