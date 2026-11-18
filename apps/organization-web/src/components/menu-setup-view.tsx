@@ -379,14 +379,14 @@ export function MenuSetupView({
       <div
         key={item.product_id}
         onClick={() => setDetailProductId(item.product_id)}
-        className={`group flex cursor-pointer flex-col overflow-hidden rounded-2xl border transition-all hover:shadow-md ${
+        className={`group flex aspect-square cursor-pointer flex-col overflow-hidden rounded-2xl border transition-all hover:shadow-md ${
           item.is_available
             ? "border-neutral-200/80 bg-white hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-950/70 dark:hover:border-neutral-700"
             : "border-neutral-200/60 bg-neutral-100/70 opacity-75 dark:border-neutral-800 dark:bg-neutral-900/40"
         }`}
       >
         {/* Product Image Header */}
-        <div className="relative h-28 w-full overflow-hidden bg-neutral-100 dark:bg-neutral-800">
+        <div className="relative min-h-0 flex-1 w-full overflow-hidden bg-neutral-100 dark:bg-neutral-800">
           {imgUrl ? (
             <img
               src={imgUrl}
@@ -432,17 +432,14 @@ export function MenuSetupView({
         </div>
 
         {/* Card Body */}
-        <div className="flex flex-1 flex-col justify-between gap-2 p-3">
+        <div className="flex shrink-0 flex-col justify-between gap-1.5 p-2.5">
           <div>
-            <h3 className="line-clamp-2 text-xs font-bold leading-snug text-neutral-900 dark:text-white">
+            <h3 className="line-clamp-2 text-[11px] font-bold leading-snug text-neutral-900 dark:text-white">
               {item.name}
             </h3>
-            <p className="mt-0.5 truncate font-mono text-[10px] text-neutral-400">
-              {item.code}
-            </p>
           </div>
 
-          <div className="flex items-end justify-between gap-2 border-t border-neutral-100 pt-2 dark:border-neutral-800">
+          <div className="flex items-center justify-between gap-1.5 border-t border-neutral-100 pt-1.5 dark:border-neutral-800">
             <div>
               {hasOverride ? (
                 <div className="flex items-baseline gap-1.5">
@@ -798,11 +795,11 @@ export function MenuSetupView({
 
                   <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
                     {deviceMenuLoading ? (
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                        {[1, 2, 3, 4, 5, 6].map((idx) => (
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+                        {[1, 2, 3, 4, 5, 6, 7, 8].map((idx) => (
                           <Skeleton
                             key={idx}
-                            className="h-48 w-full rounded-2xl dark:bg-neutral-800"
+                            className="aspect-square w-full rounded-2xl dark:bg-neutral-800"
                           />
                         ))}
                       </div>
@@ -811,7 +808,7 @@ export function MenuSetupView({
                         Không có món nào khớp bộ lọc.
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
                         {filteredDeviceMenuItems.map((item) =>
                           renderProductCard(item, true)
                         )}
@@ -891,11 +888,11 @@ export function MenuSetupView({
 
               <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
                 {menuLoading ? (
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {[1, 2, 3, 4, 5, 6].map((idx) => (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map((idx) => (
                       <Skeleton
                         key={idx}
-                        className="h-48 w-full rounded-2xl dark:bg-neutral-800"
+                        className="aspect-square w-full rounded-2xl dark:bg-neutral-800"
                       />
                     ))}
                   </div>
@@ -904,7 +901,7 @@ export function MenuSetupView({
                     Không có sản phẩm nào phù hợp.
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
                     {filteredMenuItems.map((item) =>
                       renderProductCard(item, false)
                     )}
