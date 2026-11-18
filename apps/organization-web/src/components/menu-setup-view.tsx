@@ -45,15 +45,6 @@ type MenuCardItem = StoreMenuItem & {
   store_price_override?: string | null;
 };
 
-const PASTEL_PILL_STYLES = [
-  "bg-orange-50 text-orange-700 border-orange-200/70 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-900/60",
-  "bg-emerald-50 text-emerald-700 border-emerald-200/70 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/60",
-  "bg-sky-50 text-sky-700 border-sky-200/70 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-900/60",
-  "bg-rose-50 text-rose-700 border-rose-200/70 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/60",
-  "bg-violet-50 text-violet-700 border-violet-200/70 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900/60",
-  "bg-amber-50 text-amber-700 border-amber-200/70 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/60",
-];
-
 export function MenuSetupView({
   stores,
   categories,
@@ -1364,11 +1355,10 @@ export function MenuSetupView({
                         {detailMenuItem.name}
                       </h3>
                       <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
-                        {detailMenuItem.code} • Giá gốc:{" "}
+                        Giá gốc:{" "}
                         {Number(detailMenuItem.base_price || 0).toLocaleString(
                           "vi-VN"
                         )}
-                        ₫
                       </p>
                       {detailProduct?.description && (
                         <p className="mt-1 line-clamp-2 text-[11px] text-neutral-400">
@@ -1383,11 +1373,7 @@ export function MenuSetupView({
                             return (
                               <span
                                 key={cid}
-                                className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${
-                                  PASTEL_PILL_STYLES[
-                                    catMeta.idx % PASTEL_PILL_STYLES.length
-                                  ]
-                                }`}
+                                className="rounded-md border border-neutral-200 bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
                               >
                                 {catMeta.name}
                               </span>
