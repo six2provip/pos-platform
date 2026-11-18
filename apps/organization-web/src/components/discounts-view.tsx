@@ -3,17 +3,23 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
+  Calendar,
   Check,
   Copy,
   Pencil,
   Plus,
   Search,
+  Store,
   TicketPercent,
   Trash2,
   X,
 } from "lucide-react";
+import { BeButton } from "./motion/button";
 import { BeInput } from "./motion/input";
+import { BeMultiSelect } from "./motion/multi-select";
+import { BeSelect } from "./motion/select";
 import { BeSwitch } from "./motion/switch";
+import { BeTabs, BeTabsList, BeTabsTrigger } from "./motion/tabs";
 import { Skeleton } from "./ui/skeleton";
 import type { StoreRecord } from "./stores-master-detail-view";
 
@@ -50,6 +56,17 @@ function toDatetimeLocalValue(iso?: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
     d.getHours()
   )}:${pad(d.getMinutes())}`;
+}
+
+function formatShortDate(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }
 
 export function DiscountsView({
@@ -241,6 +258,16 @@ export function DiscountsView({
     });
   }, [discounts, search, statusFilter]);
 
+  const storeOptions = useMemo(
+    () =>
+      stores.map((st) => ({
+        value: st.id,
+        label: st.name,
+        description: st.code,
+      })),
+    [stores]
+  );
+
   const getRuntimeBadge = (dc: DiscountCodeRecord) => {
     const now = Date.now();
     if (dc.status !== "active") {
@@ -255,7 +282,11 @@ export function DiscountsView({
         cls: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900",
       };
     }
-    if (dc.usage_limit !== null && dc.usage_limit !== undefined && dc.used_count >= dc.usage_limit) {
+    if (
+      dc.usage_limit !== null &&
+      dc.usage_limit !== undefined &&
+      dc.used_count >= dc.usage_limit
+    ) {
       return {
         label: "Hết lượt",
         cls: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900",
@@ -267,8 +298,20 @@ export function DiscountsView({
     };
   };
 
+  // Live preview display values
+  const previewValueText = useMemo(() => {
+    const n = Number(valueDigits || 0);
+    if (!n) return discountType === "percentage" ? "0%" : "0đ";
+    return discountType === "percentage"
+      ? `-${n}%`
+      : `-${n.toLocaleString("vi-VN")}đ`;
+  }, [discountType, valueDigits]);
+
+  const previewMinOrder = Number(minOrderDigits || 0);
+  const previewMaxDiscount = maxDiscountDigits ? Number(maxDiscountDigits) : 0;
+
   return (
-    <div className="flex h-full flex-1 min-h-0 flex-col gap-3 overflow-hidden">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-3 overflow-hidden">
       {/* Header */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
@@ -280,58 +323,42 @@ export function DiscountsView({
           </p>
         </div>
 
-        <motion.button
-          type="button"
-          whileTap={{ scale: 0.97 }}
-          onClick={openCreateModal}
-          className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 dark:bg-white dark:text-neutral-900"
-        >
+        <BeButton variant="primary" size="md" onClick={openCreateModal}>
           <Plus className="h-3.5 w-3.5" />
           Tạo Mã Giảm Giá
-        </motion.button>
+        </BeButton>
       </div>
 
       {/* Main Card */}
       <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
         {/* Toolbar */}
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 pb-4">
-          <div className="flex items-center gap-1.5">
-            {(
-              [
-                { id: "all", label: `Tất cả (${discounts.length})` },
-                {
-                  id: "active",
-                  label: `Đang bật (${discounts.filter((d) => d.status === "active").length})`,
-                },
-                {
-                  id: "inactive",
-                  label: `Tạm dừng (${discounts.filter((d) => d.status === "inactive").length})`,
-                },
-              ] as const
-            ).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setStatusFilter(tab.id)}
-                className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-                  statusFilter === tab.id
-                    ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
-                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          <BeTabs
+            value={statusFilter}
+            onValueChange={(v) =>
+              setStatusFilter(v as "all" | "active" | "inactive")
+            }
+            variant="pill"
+          >
+            <BeTabsList>
+              <BeTabsTrigger value="all">
+                Tất cả ({discounts.length})
+              </BeTabsTrigger>
+              <BeTabsTrigger value="active">
+                Đang bật ({discounts.filter((d) => d.status === "active").length})
+              </BeTabsTrigger>
+              <BeTabsTrigger value="inactive">
+                Tạm dừng ({discounts.filter((d) => d.status === "inactive").length})
+              </BeTabsTrigger>
+            </BeTabsList>
+          </BeTabs>
 
-          <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-700 dark:bg-neutral-800">
-            <Search className="h-3.5 w-3.5 text-neutral-400" />
-            <input
-              type="text"
+          <div className="w-full sm:w-64">
+            <BeInput
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={setSearch}
               placeholder="Tìm mã hoặc tên chương trình..."
-              className="w-52 bg-transparent text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-white"
+              leftIcon={<Search className="h-3.5 w-3.5" />}
             />
           </div>
         </div>
@@ -343,7 +370,7 @@ export function DiscountsView({
               {[1, 2, 3, 4].map((idx) => (
                 <Skeleton
                   key={idx}
-                  className="h-32 w-full rounded-2xl dark:bg-neutral-800"
+                  className="h-36 w-full rounded-2xl dark:bg-neutral-800"
                 />
               ))}
             </div>
@@ -366,10 +393,13 @@ export function DiscountsView({
                 const maxNum = dc.max_discount_amount
                   ? Number(dc.max_discount_amount)
                   : null;
+                const usagePct = dc.usage_limit
+                  ? Math.min(100, Math.round((dc.used_count / dc.usage_limit) * 100))
+                  : null;
                 return (
                   <div
                     key={dc.id}
-                    className="flex flex-col justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4 transition-colors hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950/50"
+                    className="flex flex-col justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4 transition-colors hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950/50 dark:hover:border-neutral-700"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
@@ -402,12 +432,12 @@ export function DiscountsView({
                           {dc.discount_type === "percentage"
                             ? `Giảm ${valNum}%${
                                 maxNum
-                                  ? ` (tối đa ${maxNum.toLocaleString("vi-VN")})`
+                                  ? ` (tối đa ${maxNum.toLocaleString("vi-VN")}đ)`
                                   : ""
                               }`
-                            : `Giảm ${valNum.toLocaleString("vi-VN")}`}
+                            : `Giảm ${valNum.toLocaleString("vi-VN")}đ`}
                           {minNum > 0
-                            ? ` • Đơn tối thiểu ${minNum.toLocaleString("vi-VN")}`
+                            ? ` • Đơn tối thiểu ${minNum.toLocaleString("vi-VN")}đ`
                             : " • Mọi đơn hàng"}
                         </p>
                       </div>
@@ -419,40 +449,50 @@ export function DiscountsView({
                       />
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-200/70 pt-2.5 text-[11px] text-neutral-500 dark:border-neutral-800">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span>
-                          Đã dùng:{" "}
-                          <strong className="text-neutral-900 dark:text-white">
-                            {dc.used_count}
-                            {dc.usage_limit ? `/${dc.usage_limit}` : " (∞)"}
-                          </strong>
-                        </span>
-                        <span>•</span>
-                        <span>
-                          {dc.store_ids.length === 0
-                            ? "Tất cả chi nhánh"
-                            : `${dc.store_ids.length} chi nhánh`}
-                        </span>
-                      </div>
+                    <div className="space-y-2 border-t border-neutral-200/70 pt-2.5 text-[11px] text-neutral-500 dark:border-neutral-800">
+                      {usagePct !== null && (
+                        <div className="h-1 w-full overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+                          <div
+                            className="h-full rounded-full bg-neutral-900 transition-all dark:bg-white"
+                            style={{ width: `${usagePct}%` }}
+                          />
+                        </div>
+                      )}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>
+                            Đã dùng:{" "}
+                            <strong className="text-neutral-900 dark:text-white">
+                              {dc.used_count}
+                              {dc.usage_limit ? `/${dc.usage_limit}` : " (∞)"}
+                            </strong>
+                          </span>
+                          <span>•</span>
+                          <span>
+                            {dc.store_ids.length === 0
+                              ? "Tất cả chi nhánh"
+                              : `${dc.store_ids.length} chi nhánh`}
+                          </span>
+                        </div>
 
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(dc)}
-                          title="Chỉnh sửa"
-                          className="grid h-7 w-7 place-items-center rounded-lg text-neutral-500 hover:bg-neutral-200/70 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleDelete(dc)}
-                          title="Xóa mã"
-                          className="grid h-7 w-7 place-items-center rounded-lg text-rose-500 hover:bg-rose-100/70 hover:text-rose-600 dark:hover:bg-rose-950/40"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(dc)}
+                            title="Chỉnh sửa"
+                            className="grid h-7 w-7 place-items-center rounded-lg text-neutral-500 hover:bg-neutral-200/70 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDelete(dc)}
+                            title="Xóa mã"
+                            className="grid h-7 w-7 place-items-center rounded-lg text-rose-500 hover:bg-rose-100/70 hover:text-rose-600 dark:hover:bg-rose-950/40"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -463,7 +503,7 @@ export function DiscountsView({
         </div>
       </div>
 
-      {/* MODAL: CREATE / EDIT DISCOUNT CODE */}
+      {/* MODAL: CREATE / EDIT DISCOUNT CODE (2-COLUMN LAYOUT) */}
       <AnimatePresence>
         {modalOpen && (
           <>
@@ -481,282 +521,362 @@ export function DiscountsView({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 12, scale: 0.97 }}
                 transition={{ type: "spring", stiffness: 420, damping: 36 }}
-                className="pointer-events-auto flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-neutral-200/80 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950"
+                className="pointer-events-auto flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-neutral-200/80 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950"
               >
+                {/* Modal Header */}
                 <div className="flex items-center justify-between border-b border-neutral-200/80 px-6 py-4 dark:border-neutral-800">
-                  <div>
-                    <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
-                      {editing
-                        ? `Chỉnh sửa mã: ${editing.code}`
-                        : "Tạo Mã Giảm Giá Mới"}
-                    </h3>
-                    <p className="text-[11px] text-neutral-400">
-                      Thiết lập điều kiện áp dụng, mức giảm và phạm vi chi nhánh.
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <div className="grid h-9 w-9 place-items-center rounded-xl bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-white">
+                      <TicketPercent className="h-4.5 w-4.5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                        {editing
+                          ? `Chỉnh sửa mã: ${editing.code}`
+                          : "Tạo Mã Giảm Giá Mới"}
+                      </h3>
+                      <p className="text-[11px] text-neutral-400">
+                        Thiết lập mức giảm, điều kiện đơn hàng, thời gian và chi nhánh áp dụng.
+                      </p>
+                    </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setModalOpen(false)}
-                    className="grid h-8 w-8 place-items-center rounded-full text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    className="grid h-8 w-8 place-items-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-white"
                   >
                     <X className="h-4 w-4" />
                   </button>
                 </div>
 
-                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6">
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <BeInput
-                      label="Mã giảm giá *"
-                      disabled={Boolean(editing)}
-                      value={code}
-                      onChange={(v) => setCode(v.toUpperCase().replace(/\s+/g, ""))}
-                      placeholder="VD: KHAITRUONG20"
-                      success={code.trim().length >= 2}
-                    />
-                    <BeInput
-                      label="Tên chương trình *"
-                      value={name}
-                      onChange={setName}
-                      placeholder="VD: Giảm 20% mừng khai trương"
-                      success={Boolean(name.trim())}
-                    />
-                  </div>
-
-                  {/* Type & Value */}
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                    <div>
-                      <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                        Loại giảm giá
-                      </label>
-                      <select
-                        value={discountType}
-                        onChange={(e) =>
-                          setDiscountType(
-                            e.target.value === "fixed" ? "fixed" : "percentage"
-                          )
-                        }
-                        className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-xs font-semibold text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                      >
-                        <option value="percentage">Theo phần trăm (%)</option>
-                        <option value="fixed">Số tiền cố định</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                        {discountType === "percentage" ? "Mức giảm (%) *" : "Số tiền giảm *"}
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={
-                          valueDigits
-                            ? discountType === "fixed"
-                              ? Number(valueDigits).toLocaleString("vi-VN")
-                              : valueDigits
-                            : ""
-                        }
-                        onChange={(e) => {
-                          let digits = e.target.value.replace(/\D/g, "");
-                          if (discountType === "percentage" && Number(digits) > 100) {
-                            digits = "100";
-                          }
-                          setValueDigits(digits);
-                        }}
-                        placeholder={discountType === "percentage" ? "VD: 20" : "VD: 50.000"}
-                        className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-xs font-semibold tabular-nums text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                      />
-                    </div>
-
-                    {discountType === "percentage" ? (
-                      <div>
-                        <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                          Giảm tối đa (tùy chọn)
-                        </label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={
-                            maxDiscountDigits
-                              ? Number(maxDiscountDigits).toLocaleString("vi-VN")
-                              : ""
-                          }
-                          onChange={(e) =>
-                            setMaxDiscountDigits(e.target.value.replace(/\D/g, ""))
-                          }
-                          placeholder="Không giới hạn"
-                          className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-xs font-semibold tabular-nums text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                        />
+                {/* Modal Body: 2-Column Layout */}
+                <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+                    {/* LEFT COLUMN (7 cols): Identity, Pricing Rules, Limits & Schedule */}
+                    <div className="space-y-4 lg:col-span-7">
+                      {/* Section 1: Identity */}
+                      <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
+                        <div className="mb-3 text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                          1. Thông tin chương trình
+                        </div>
+                        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+                          <BeInput
+                            label="Mã giảm giá *"
+                            disabled={Boolean(editing)}
+                            value={code}
+                            onChange={(v) =>
+                              setCode(v.toUpperCase().replace(/\s+/g, ""))
+                            }
+                            placeholder="VD: KHAITRUONG20"
+                            success={code.trim().length >= 2}
+                          />
+                          <BeInput
+                            label="Tên chương trình *"
+                            value={name}
+                            onChange={setName}
+                            placeholder="VD: Giảm 20% khai trương"
+                            success={Boolean(name.trim())}
+                          />
+                        </div>
                       </div>
-                    ) : (
-                      <div>
-                        <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                          Đơn tối thiểu
-                        </label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={
-                            minOrderDigits
-                              ? Number(minOrderDigits).toLocaleString("vi-VN")
-                              : ""
-                          }
-                          onChange={(e) =>
-                            setMinOrderDigits(e.target.value.replace(/\D/g, ""))
-                          }
-                          placeholder="0"
-                          className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-xs font-semibold tabular-nums text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                        />
-                      </div>
-                    )}
-                  </div>
 
-                  {/* Min Order (when percentage) + Usage Limit */}
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    {discountType === "percentage" && (
-                      <div>
-                        <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                          Đơn hàng tối thiểu
-                        </label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={
-                            minOrderDigits
-                              ? Number(minOrderDigits).toLocaleString("vi-VN")
-                              : ""
-                          }
-                          onChange={(e) =>
-                            setMinOrderDigits(e.target.value.replace(/\D/g, ""))
-                          }
-                          placeholder="0"
-                          className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-xs font-semibold tabular-nums text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                        />
-                      </div>
-                    )}
-                    <div>
-                      <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                        Giới hạn tổng lượt dùng (để trống = không giới hạn)
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={usageLimitDigits}
-                        onChange={(e) =>
-                          setUsageLimitDigits(e.target.value.replace(/\D/g, ""))
-                        }
-                        placeholder="VD: 100"
-                        className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-xs font-semibold tabular-nums text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Schedule */}
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                        Bắt đầu từ (tùy chọn)
-                      </label>
-                      <input
-                        type="datetime-local"
-                        value={startsAt}
-                        onChange={(e) => setStartsAt(e.target.value)}
-                        className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2 text-xs text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                        Kết thúc lúc (tùy chọn)
-                      </label>
-                      <input
-                        type="datetime-local"
-                        value={endsAt}
-                        onChange={(e) => setEndsAt(e.target.value)}
-                        className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2 text-xs text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Store Scope */}
-                  <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900">
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-xs font-bold text-neutral-900 dark:text-white">
-                        Chi nhánh áp dụng (
-                        {selectedStoreIds.length === 0
-                          ? "Tất cả chi nhánh"
-                          : `${selectedStoreIds.length} chi nhánh`}
-                        )
-                      </span>
-                      {selectedStoreIds.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedStoreIds([])}
-                          className="text-[11px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
-                        >
-                          Áp dụng tất cả
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {stores.map((st) => {
-                        const checked = selectedStoreIds.includes(st.id);
-                        return (
-                          <button
-                            key={st.id}
-                            type="button"
-                            onClick={() =>
-                              setSelectedStoreIds((prev) =>
-                                checked
-                                  ? prev.filter((id) => id !== st.id)
-                                  : [...prev, st.id]
+                      {/* Section 2: Discount Rules */}
+                      <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
+                        <div className="mb-3 text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                          2. Chính sách giảm giá
+                        </div>
+                        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+                          <BeSelect
+                            label="Loại giảm giá"
+                            value={discountType}
+                            onValueChange={(v) =>
+                              setDiscountType(
+                                v === "fixed" ? "fixed" : "percentage"
                               )
                             }
-                            className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${
-                              checked
-                                ? "border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900"
-                                : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                            options={[
+                              {
+                                value: "percentage",
+                                label: "Theo phần trăm (%)",
+                              },
+                              {
+                                value: "fixed",
+                                label: "Số tiền cố định (đ)",
+                              },
+                            ]}
+                          />
+
+                          <BeInput
+                            label={
+                              discountType === "percentage"
+                                ? "Mức giảm (%) *"
+                                : "Số tiền giảm *"
+                            }
+                            inputMode="numeric"
+                            value={
+                              valueDigits
+                                ? discountType === "fixed"
+                                  ? Number(valueDigits).toLocaleString("vi-VN")
+                                  : valueDigits
+                                : ""
+                            }
+                            onChange={(val) => {
+                              let digits = val.replace(/\D/g, "");
+                              if (
+                                discountType === "percentage" &&
+                                Number(digits) > 100
+                              ) {
+                                digits = "100";
+                              }
+                              setValueDigits(digits);
+                            }}
+                            placeholder={
+                              discountType === "percentage"
+                                ? "VD: 20"
+                                : "VD: 50.000"
+                            }
+                            rightIcon={
+                              <span className="text-[11px] font-bold">
+                                {discountType === "percentage" ? "%" : "đ"}
+                              </span>
+                            }
+                          />
+
+                          {discountType === "percentage" && (
+                            <BeInput
+                              label="Giảm tối đa (tùy chọn)"
+                              inputMode="numeric"
+                              value={
+                                maxDiscountDigits
+                                  ? Number(maxDiscountDigits).toLocaleString(
+                                      "vi-VN"
+                                    )
+                                  : ""
+                              }
+                              onChange={(val) =>
+                                setMaxDiscountDigits(val.replace(/\D/g, ""))
+                              }
+                              placeholder="Không giới hạn"
+                              rightIcon={
+                                <span className="text-[11px] font-bold">đ</span>
+                              }
+                            />
+                          )}
+
+                          <BeInput
+                            label="Đơn hàng tối thiểu"
+                            inputMode="numeric"
+                            value={
+                              minOrderDigits
+                                ? Number(minOrderDigits).toLocaleString("vi-VN")
+                                : ""
+                            }
+                            onChange={(val) =>
+                              setMinOrderDigits(val.replace(/\D/g, ""))
+                            }
+                            placeholder="0"
+                            rightIcon={
+                              <span className="text-[11px] font-bold">đ</span>
+                            }
+                          />
+                        </div>
+                      </div>
+
+                      {/* Section 3: Schedule & Usage Limit */}
+                      <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
+                        <div className="mb-3 text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                          3. Thời gian &amp; giới hạn lượt dùng
+                        </div>
+                        <div className="space-y-3.5">
+                          <BeInput
+                            label="Giới hạn tổng lượt dùng"
+                            inputMode="numeric"
+                            value={usageLimitDigits}
+                            onChange={(val) =>
+                              setUsageLimitDigits(val.replace(/\D/g, ""))
+                            }
+                            placeholder="Để trống = Không giới hạn"
+                            rightIcon={
+                              <span className="text-[11px] font-medium">
+                                lượt
+                              </span>
+                            }
+                          />
+
+                          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+                            <div>
+                              <label className="mb-1.5 block text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+                                Bắt đầu từ
+                              </label>
+                              <input
+                                type="datetime-local"
+                                value={startsAt}
+                                onChange={(e) => setStartsAt(e.target.value)}
+                                className="w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-900 outline-none transition focus:border-neutral-900 focus:ring-2 focus:ring-neutral-900/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:focus:border-neutral-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1.5 block text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+                                Kết thúc lúc
+                              </label>
+                              <input
+                                type="datetime-local"
+                                value={endsAt}
+                                onChange={(e) => setEndsAt(e.target.value)}
+                                className="w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-900 outline-none transition focus:border-neutral-900 focus:ring-2 focus:ring-neutral-900/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:focus:border-neutral-400"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* RIGHT COLUMN (5 cols): Live Voucher Preview, Store Scope, Status */}
+                    <div className="flex flex-col gap-4 lg:col-span-5">
+                      {/* Live Voucher Preview Card */}
+                      <div className="rounded-2xl border border-neutral-200/80 bg-gradient-to-br from-neutral-900 to-neutral-800 p-4 text-white shadow-sm dark:border-neutral-700">
+                        <div className="flex items-center justify-between">
+                          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-neutral-300">
+                            <TicketPercent className="h-3.5 w-3.5" />
+                            Xem trước thẻ ưu đãi
+                          </span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                              isActive
+                                ? "bg-emerald-500/20 text-emerald-300"
+                                : "bg-white/10 text-neutral-300"
                             }`}
                           >
-                            {st.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                            {isActive ? "Đang kích hoạt" : "Tạm dừng"}
+                          </span>
+                        </div>
 
-                  <div className="flex items-center justify-between rounded-2xl border border-neutral-200/80 bg-neutral-50/70 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900">
-                    <div>
-                      <div className="text-xs font-bold text-neutral-900 dark:text-white">
-                        Kích hoạt mã giảm giá
+                        <div className="mt-4 flex items-baseline justify-between gap-2">
+                          <div className="font-mono text-lg font-extrabold tracking-wide text-white">
+                            {code.trim() || "MÃ_GIẢM_GIÁ"}
+                          </div>
+                          <div className="text-xl font-black tabular-nums text-emerald-400">
+                            {previewValueText}
+                          </div>
+                        </div>
+
+                        <div className="mt-1 truncate text-xs font-medium text-neutral-200">
+                          {name.trim() || "Tên chương trình khuyến mãi"}
+                        </div>
+
+                        <div className="mt-4 space-y-1.5 border-t border-dashed border-white/15 pt-3 text-[11px] text-neutral-300">
+                          <div className="flex items-center justify-between">
+                            <span>Đơn tối thiểu:</span>
+                            <span className="font-semibold text-white">
+                              {previewMinOrder > 0
+                                ? `${previewMinOrder.toLocaleString("vi-VN")}đ`
+                                : "Không yêu cầu"}
+                            </span>
+                          </div>
+                          {discountType === "percentage" && previewMaxDiscount > 0 && (
+                            <div className="flex items-center justify-between">
+                              <span>Giảm tối đa:</span>
+                              <span className="font-semibold text-white">
+                                {previewMaxDiscount.toLocaleString("vi-VN")}đ
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between">
+                            <span className="inline-flex items-center gap-1">
+                              <Store className="h-3 w-3" /> Phạm vi:
+                            </span>
+                            <span className="font-semibold text-white">
+                              {selectedStoreIds.length === 0
+                                ? "Tất cả chi nhánh"
+                                : `${selectedStoreIds.length} chi nhánh`}
+                            </span>
+                          </div>
+                          {(startsAt || endsAt) && (
+                            <div className="flex items-center justify-between">
+                              <span className="inline-flex items-center gap-1">
+                                <Calendar className="h-3 w-3" /> Hiệu lực:
+                              </span>
+                              <span className="font-semibold text-white">
+                                {startsAt ? formatShortDate(startsAt) : "Ngay"} →{" "}
+                                {endsAt ? formatShortDate(endsAt) : "Vô thời hạn"}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-[11px] text-neutral-400">
-                        Cho phép thu ngân &amp; Kiosk áp dụng mã này ngay
+
+                      {/* Store Scope via BeMultiSelect */}
+                      <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                            4. Phạm vi chi nhánh
+                          </span>
+                          {selectedStoreIds.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedStoreIds([])}
+                              className="text-[11px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                            >
+                              Áp dụng tất cả
+                            </button>
+                          )}
+                        </div>
+                        <BeMultiSelect
+                          options={storeOptions}
+                          values={selectedStoreIds}
+                          onChange={setSelectedStoreIds}
+                          placeholder="Tất cả chi nhánh (hoặc chọn riêng...)"
+                          emptyText="Không tìm thấy chi nhánh phù hợp."
+                          helperText={
+                            selectedStoreIds.length === 0
+                              ? "Để trống để áp dụng cho toàn bộ hệ thống."
+                              : `Đang giới hạn tại ${selectedStoreIds.length} chi nhánh đã chọn.`
+                          }
+                        />
+                      </div>
+
+                      {/* Active Switch */}
+                      <div className="flex items-center justify-between rounded-2xl border border-neutral-200/80 bg-neutral-50/50 px-4 py-3.5 dark:border-neutral-800 dark:bg-neutral-900/50">
+                        <div>
+                          <div className="text-xs font-bold text-neutral-900 dark:text-white">
+                            Kích hoạt mã giảm giá
+                          </div>
+                          <div className="text-[11px] text-neutral-400">
+                            Cho phép thu ngân &amp; Kiosk áp dụng ngay
+                          </div>
+                        </div>
+                        <BeSwitch
+                          checked={isActive}
+                          onCheckedChange={setIsActive}
+                          ariaLabel="Kích hoạt mã giảm giá"
+                        />
                       </div>
                     </div>
-                    <BeSwitch
-                      checked={isActive}
-                      onCheckedChange={setIsActive}
-                      ariaLabel="Kích hoạt mã giảm giá"
-                    />
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-2 border-t border-neutral-200/80 px-6 py-3.5 dark:border-neutral-800">
-                  <button
-                    type="button"
+                {/* Modal Footer */}
+                <div className="flex items-center justify-end gap-2.5 border-t border-neutral-200/80 px-6 py-3.5 dark:border-neutral-800">
+                  <BeButton
+                    variant="secondary"
+                    size="md"
                     onClick={() => setModalOpen(false)}
-                    className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"
                   >
                     Hủy
-                  </button>
-                  <button
+                  </BeButton>
+                  <BeButton
                     type="submit"
+                    variant="primary"
+                    size="md"
                     disabled={saving || !code.trim() || !name.trim()}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
                   >
                     <Check className="h-3.5 w-3.5" />
-                    {saving ? "Đang lưu..." : editing ? "Cập Nhật" : "Tạo Mã"}
-                  </button>
+                    {saving
+                      ? "Đang lưu..."
+                      : editing
+                        ? "Lưu thay đổi"
+                        : "Tạo Mã"}
+                  </BeButton>
                 </div>
               </motion.form>
             </div>
