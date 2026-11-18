@@ -544,7 +544,7 @@ def get_store_menu(
         items.append(
             {
                 "product_id": p.id,
-                "code": p.code,
+                "code": p.product_code,
                 "name": p.name,
                 "status": p.status,
                 "image_url": img_map.get(p.id),

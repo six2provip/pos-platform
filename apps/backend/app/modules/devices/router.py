@@ -1765,7 +1765,7 @@ def get_device_menu(
         items.append(
             {
                 "product_id": p.id,
-                "code": p.code,
+                "code": p.product_code,
                 "name": p.name,
                 "category_ids": cat_map.get(p.id) or ([p.category_id] if p.category_id else []),
                 "base_price": str(base_price),
