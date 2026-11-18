@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import 'core/network/lan_discovery_helper.dart';
 import 'core/network/local_ip_helper.dart';
 import 'core/network/pos_api_client.dart';
 import 'core/storage/local_pos_db.dart';
@@ -126,6 +127,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   // Provisioning & Pairing state (Serial-first Zero-Touch + IP fallback)
   bool _isPaired = false;
   bool _manualIpPairingMode = false;
+  bool _serverDiscoveredOnce = false;
   String _hardwareSerial = '';
   String _provisioningStatus = 'Đang kiểm tra Serial Number với máy chủ...';
   String? _provisioningErrorCode;
@@ -270,14 +272,86 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
     });
   }
 
-  Future<void> _attemptSerialActivation({bool silent = false}) async {
+  Future<bool> _checkNetworkConnection() async {
+    if (kIsWeb) return true;
+    try {
+      final res =
+          await _hardwareChannel.invokeMethod<bool>('hasNetworkConnection');
+      return res ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<void> _openWifiSettings() async {
+    if (kIsWeb) return;
+    try {
+      await _hardwareChannel.invokeMethod<bool>('openWifiSettings');
+    } catch (_) {
+      _showSnack('Không mở được cài đặt Wi-Fi trên thiết bị này', isError: true);
+    }
+  }
+
+  Future<void> _attemptSerialActivation({
+    bool silent = false,
+    bool forceDiscover = false,
+  }) async {
     if (_isPaired || _manualIpPairingMode || _hardwareSerial.isEmpty) return;
+
+    final hasNet = await _checkNetworkConnection();
+    if (!hasNet) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _provisioningErrorCode = 'NO_NETWORK';
+        _provisioningStatus =
+            'Thiết bị chưa kết nối Wi-Fi hoặc dây mạng LAN. Vui lòng kết nối vào mạng nội bộ chứa máy chủ POS.';
+      });
+      return;
+    }
+
     if (!silent && mounted) {
       setState(() {
         _busy = true;
         _provisioningStatus =
-            'Đang kiểm tra Serial $_hardwareSerial trên Org Admin...';
+            'Đang dò máy chủ POS trong mạng nội bộ & kiểm tra Serial $_hardwareSerial...';
       });
+    }
+
+    final shouldDiscover = forceDiscover ||
+        !_serverDiscoveredOnce ||
+        _provisioningErrorCode == 'SERVER_NOT_FOUND' ||
+        _provisioningErrorCode == 'NETWORK_ERROR' ||
+        _provisioningErrorCode == 'NO_NETWORK';
+
+    if (shouldDiscover) {
+      final discovered = await discoverPosServerUrl(currentUrl: _serverUrl);
+      if (discovered == null) {
+        if (!mounted) return;
+        setState(() {
+          _busy = false;
+          _serverDiscoveredOnce = false;
+          _provisioningErrorCode = 'SERVER_NOT_FOUND';
+          _provisioningStatus =
+              'Đã có mạng nhưng không tìm thấy máy chủ Docker POS trong mạng này (có thể bạn đang nối nhầm Wi-Fi Khách hoặc khác VLAN).';
+        });
+        return;
+      }
+
+      _serverDiscoveredOnce = true;
+      if (discovered != _serverUrl) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('pos_server_url', discovered);
+        if (mounted) {
+          setState(() {
+            _serverUrl = discovered;
+            _api.baseUrl = discovered;
+          });
+        } else {
+          _serverUrl = discovered;
+          _api.baseUrl = discovered;
+        }
+      }
     }
 
     try {
@@ -1266,24 +1340,31 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   }
 
   Widget _buildSerialProvisioningScreen() {
+    final isNoNetwork = _provisioningErrorCode == 'NO_NETWORK';
+    final isServerNotFound = _provisioningErrorCode == 'SERVER_NOT_FOUND';
     final isNotRegistered = _provisioningErrorCode == 'SERIAL_NOT_REGISTERED';
     final isBlocked = _provisioningErrorCode == 'DEVICE_NOT_ACTIVE' ||
         _provisioningErrorCode == 'ORGANIZATION_INACTIVE' ||
         _provisioningErrorCode == 'STORE_INACTIVE';
-    final isNetworkErr = _provisioningErrorCode == 'NETWORK_ERROR';
+    final isNetworkErr =
+        isNoNetwork || isServerNotFound || _provisioningErrorCode == 'NETWORK_ERROR';
 
     final badgeColor = isBlocked
         ? Colors.red.shade400
         : isNetworkErr
             ? Colors.amber.shade400
             : kEmeraldPrimary;
-    final badgeText = isBlocked
-        ? 'THIẾT BỊ ĐANG BỊ TẠM KHÓA'
-        : isNetworkErr
-            ? 'CHƯA KẾT NỐI ĐƯỢC MÁY CHỦ'
-            : isNotRegistered
-                ? 'CHỜ NHẬP SERIAL VÀO ORG ADMIN'
-                : 'ZERO-TOUCH PROVISIONING';
+    final badgeText = isNoNetwork
+        ? 'CHƯA KẾT NỐI MẠNG (WI-FI / LAN)'
+        : isServerNotFound
+            ? 'KHÔNG TÌM THẤY MÁY CHỦ TRONG MẠNG NÀY'
+            : isBlocked
+                ? 'THIẾT BỊ ĐANG BỊ TẠM KHÓA'
+                : isNetworkErr
+                    ? 'CHƯA KẾT NỐI ĐƯỢC MÁY CHỦ'
+                    : isNotRegistered
+                        ? 'CHỜ NHẬP SERIAL VÀO ORG ADMIN'
+                        : 'ZERO-TOUCH PROVISIONING';
 
     return Scaffold(
       backgroundColor: kDarkKioskBg,
@@ -1480,6 +1561,20 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                   runSpacing: 10,
                   alignment: WrapAlignment.center,
                   children: [
+                    if (isNoNetwork || isServerNotFound)
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.amber.shade600,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 12,
+                          ),
+                        ),
+                        onPressed: _openWifiSettings,
+                        icon: const Icon(Icons.wifi_rounded, size: 18),
+                        label: Text(isNoNetwork ? 'Mở Cài đặt Wi-Fi' : 'Đổi Wi-Fi'),
+                      ),
                     FilledButton.icon(
                       style: FilledButton.styleFrom(
                         backgroundColor: kEmeraldPrimary,
@@ -1489,9 +1584,13 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                           vertical: 12,
                         ),
                       ),
-                      onPressed: _busy ? null : () => _attemptSerialActivation(),
+                      onPressed: _busy
+                          ? null
+                          : () => _attemptSerialActivation(forceDiscover: true),
                       icon: const Icon(Icons.refresh_rounded, size: 18),
-                      label: const Text('Kiểm tra kích hoạt ngay'),
+                      label: Text(
+                        isNetworkErr ? 'Quét lại mạng LAN' : 'Kiểm tra kích hoạt ngay',
+                      ),
                     ),
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(foregroundColor: Colors.white70),

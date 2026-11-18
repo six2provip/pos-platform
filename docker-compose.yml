@@ -115,6 +115,20 @@ services:
       - "${ORG_WEB_PORT:-13000}:13000"
     restart: unless-stopped
 
+  pos-lan-discovery:
+    image: pos-platform-pos-backend:latest
+    container_name: pos-lan-discovery
+    network_mode: host
+    depends_on:
+      - pos-organization-web
+    environment:
+      POS_DISCOVERY_PORT: "${POS_DISCOVERY_PORT:-13535}"
+      ORG_WEB_PORT: "${ORG_WEB_PORT:-13000}"
+    volumes:
+      - ./deploy/lan-discovery:/workspace/deploy/lan-discovery:ro
+    command: ["python3", "/workspace/deploy/lan-discovery/discovery_server.py"]
+    restart: unless-stopped
+
 volumes:
   postgres_business_data: {}
   postgres_control_data: {}
