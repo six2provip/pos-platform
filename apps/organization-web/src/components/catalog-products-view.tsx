@@ -1348,22 +1348,46 @@ export function CatalogProductsView({
                             placeholder="VD: 8934563123456"
                           />
                           <BeInput
-                            type="number"
+                            type="text"
+                            inputMode="numeric"
                             label="Giá vốn"
-                            value={activeVar.default_cost}
+                            value={
+                              activeVar.default_cost.trim() === ""
+                                ? ""
+                                : Number.isNaN(Number(activeVar.default_cost))
+                                  ? activeVar.default_cost.replace(/\D/g, "")
+                                  : Math.max(
+                                      0,
+                                      Math.round(Number(activeVar.default_cost))
+                                    ).toLocaleString("vi-VN")
+                            }
                             onChange={(val) =>
-                              updateDraftVariant(safeVarIdx, { default_cost: val })
+                              updateDraftVariant(safeVarIdx, {
+                                default_cost: val.replace(/\D/g, ""),
+                              })
                             }
                             placeholder="0"
                           />
                           <BeInput
-                            type="number"
+                            type="text"
+                            inputMode="numeric"
                             label="Giá bán *"
-                            value={activeVar.default_price}
-                            onChange={(val) =>
-                              updateDraftVariant(safeVarIdx, { default_price: val })
+                            value={
+                              activeVar.default_price.trim() === ""
+                                ? ""
+                                : Number.isNaN(Number(activeVar.default_price))
+                                  ? activeVar.default_price.replace(/\D/g, "")
+                                  : Math.max(
+                                      0,
+                                      Math.round(Number(activeVar.default_price))
+                                    ).toLocaleString("vi-VN")
                             }
-                            placeholder="35000"
+                            onChange={(val) =>
+                              updateDraftVariant(safeVarIdx, {
+                                default_price: val.replace(/\D/g, ""),
+                              })
+                            }
+                            placeholder="35.000"
                             success={
                               activeVar.default_price.trim() !== "" &&
                               Number(activeVar.default_price) >= 0
