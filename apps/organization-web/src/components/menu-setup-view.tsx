@@ -98,8 +98,10 @@ export function MenuSetupView({
   const [deviceCategoryFilter, setDeviceCategoryFilter] = useState<string>("all");
   const [deviceSaving, setDeviceSaving] = useState(false);
 
-  // Product Detail & Options Modal
+  // Product Detail & Options Modal (with draft state so changes only commit on "Xong")
   const [detailProductId, setDetailProductId] = useState<string | null>(null);
+  const [draftDetailAvailable, setDraftDetailAvailable] = useState(true);
+  const [draftDetailPrice, setDraftDetailPrice] = useState("");
   const [filterModalOpen, setFilterModalOpen] = useState(false);
   const [priceFilter, setPriceFilter] = useState<"all" | "custom_price">("all");
   const categoryStripRef = useRef<HTMLDivElement | null>(null);
@@ -585,10 +587,19 @@ export function MenuSetupView({
       item.price_override !== null && String(item.price_override).trim() !== "";
     const effectivePrice = hasOverride ? Number(item.price_override) : baseDisplay;
 
+    const openDetail = () => {
+      setDetailProductId(item.product_id);
+      setDraftDetailAvailable(item.is_available);
+      const initialNum = hasOverride
+        ? Math.max(0, Math.round(Number(item.price_override)))
+        : Math.max(0, Math.round(baseDisplay));
+      setDraftDetailPrice(String(initialNum));
+    };
+
     return (
       <div
         key={item.product_id}
-        onClick={() => setDetailProductId(item.product_id)}
+        onClick={openDetail}
         className={`group flex aspect-square cursor-pointer flex-col overflow-hidden rounded-2xl border p-2.5 transition-all hover:shadow-md ${
           item.is_available
             ? "border-neutral-200/80 bg-white hover:border-blue-300 dark:border-neutral-800 dark:bg-neutral-950/80 dark:hover:border-neutral-700"
@@ -1423,13 +1434,8 @@ export function MenuSetupView({
                         </div>
                       </div>
                       <BeSwitch
-                        checked={detailMenuItem.is_available}
-                        onCheckedChange={(checked) =>
-                          toggleItemAvailability(
-                            detailMenuItem.product_id,
-                            checked
-                          )
-                        }
+                        checked={draftDetailAvailable}
+                        onCheckedChange={setDraftDetailAvailable}
                         ariaLabel="Bật tắt món"
                       />
                     </div>
@@ -1437,21 +1443,23 @@ export function MenuSetupView({
                     <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/70 px-4 py-2.5 dark:border-neutral-800 dark:bg-neutral-900">
                       <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300">
                         {selection.kind === "device"
-                          ? "Giá riêng trên máy (để trống = giá chi nhánh)"
-                          : "Giá riêng chi nhánh (để trống = giá gốc)"}
+                          ? "Giá bán trên máy (để trống = giá chi nhánh)"
+                          : "Giá bán chi nhánh (để trống = giá gốc)"}
                       </label>
                       <input
-                        type="number"
-                        min={0}
-                        value={detailMenuItem.price_override ?? ""}
-                        onChange={(e) =>
-                          updateItemPriceOverride(
-                            detailMenuItem.product_id,
-                            e.target.value
-                          )
+                        type="text"
+                        inputMode="numeric"
+                        value={
+                          draftDetailPrice
+                            ? Number(draftDetailPrice).toLocaleString("vi-VN")
+                            : ""
                         }
-                        placeholder="Nhập giá bán riêng..."
-                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, "");
+                          setDraftDetailPrice(digits);
+                        }}
+                        placeholder="Nhập giá bán..."
+                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold tabular-nums text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
                       />
                     </div>
                   </div>
@@ -1557,7 +1565,34 @@ export function MenuSetupView({
                   </span>
                   <button
                     type="button"
-                    onClick={() => setDetailProductId(null)}
+                    onClick={() => {
+                      const baseCompare = Math.max(
+                        0,
+                        Math.round(
+                          Number(
+                            selection.kind === "device"
+                              ? (detailMenuItem.store_price_override ??
+                                  detailMenuItem.base_price ??
+                                  0)
+                              : (detailMenuItem.base_price ?? 0)
+                          )
+                        )
+                      );
+                      const nextPrice =
+                        !draftDetailPrice ||
+                        Number(draftDetailPrice) === baseCompare
+                          ? ""
+                          : draftDetailPrice;
+                      toggleItemAvailability(
+                        detailMenuItem.product_id,
+                        draftDetailAvailable
+                      );
+                      updateItemPriceOverride(
+                        detailMenuItem.product_id,
+                        nextPrice
+                      );
+                      setDetailProductId(null);
+                    }}
                     className="rounded-full bg-neutral-900 px-5 py-2 text-xs font-bold text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900"
                   >
                     Xong
