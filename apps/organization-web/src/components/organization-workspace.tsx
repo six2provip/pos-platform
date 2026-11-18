@@ -2255,17 +2255,6 @@ export default function OrganizationWorkspace({
                     />
                     {item.label}
                   </span>
-                  {item.badge && (
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                        isActive
-                          ? "bg-white/20 text-white dark:bg-neutral-900/15 dark:text-neutral-900"
-                          : "bg-neutral-900 text-white dark:bg-neutral-700"
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
                 </Link>
               );
             })}
@@ -2323,35 +2312,24 @@ export default function OrganizationWorkspace({
                           label: "Quản lý Danh mục",
                           icon: FolderTree,
                           path: "/categories",
-                          badge:
-                            categories.length > 0
-                              ? `${categories.length}`
-                              : undefined,
                         },
                         {
                           id: "products",
                           label: "Quản lý Sản phẩm",
                           icon: Link2,
                           path: "/products",
-                          badge:
-                            products.length > 0 ? `${products.length}` : undefined,
                         },
                         {
                           id: "options",
                           label: "Quản lý Tùy chọn",
                           icon: SlidersHorizontal,
                           path: "/options",
-                          badge:
-                            optionGroups.length > 0
-                              ? `${optionGroups.length}`
-                              : undefined,
                         },
                         {
                           id: "menu_setup",
                           label: "Thiết lập Menu",
                           icon: UtensilsCrossed,
                           path: "/menu-setup",
-                          badge: undefined,
                         },
                       ].map((sub) => {
                         const SubIcon = sub.icon;
@@ -2380,17 +2358,6 @@ export default function OrganizationWorkspace({
                               />
                               {sub.label}
                             </span>
-                            {sub.badge && (
-                              <span
-                                className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                                  subActive
-                                    ? "bg-white/20 text-white dark:bg-neutral-900/15 dark:text-neutral-900"
-                                    : "bg-neutral-200 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200"
-                                }`}
-                              >
-                                {sub.badge}
-                              </span>
-                            )}
                           </Link>
                         );
                       })}
@@ -2407,7 +2374,6 @@ export default function OrganizationWorkspace({
                 label: "Chi nhánh & Thiết bị",
                 icon: StoreIcon,
                 path: "/stores",
-                badge: stores.length > 0 ? `${stores.length}` : undefined,
               },
               { id: "settings", label: "Cài đặt hệ thống", icon: Settings, path: "/settings" },
             ].map((item) => {
@@ -2437,17 +2403,6 @@ export default function OrganizationWorkspace({
                     />
                     {item.label}
                   </span>
-                  {item.badge && (
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                        isActive
-                          ? "bg-white/20 text-white dark:bg-neutral-900/15 dark:text-neutral-900"
-                          : "bg-neutral-900 text-white dark:bg-neutral-700"
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
                 </Link>
               );
             })}
