@@ -91,6 +91,49 @@ function formatShortDate(iso?: string | null): string {
   });
 }
 
+function BarcodeGraphic({ code }: { code: string }) {
+  // Deterministic crisp barcode bars from code string
+  const bars = useMemo(() => {
+    const seed = code || "VOUCHER";
+    const items: { x: number; w: number }[] = [];
+    let x = 0;
+    for (let i = 0; i < 42; i++) {
+      const ch = seed.charCodeAt(i % seed.length);
+      const w = ((ch + i * 7) % 3) + 1;
+      const gap = ((ch + i * 3) % 2) + 1.5;
+      items.push({ x, w });
+      x += w + gap;
+    }
+    return { items, totalWidth: x };
+  }, [code]);
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <svg
+        viewBox={`0 0 ${bars.totalWidth} 38`}
+        className="h-11 w-full max-w-[230px] text-neutral-900 dark:text-neutral-100"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        {bars.items.map((b, i) => (
+          <rect
+            key={i}
+            x={b.x}
+            y={0}
+            width={b.w}
+            height={38}
+            fill="currentColor"
+            rx={0.4}
+          />
+        ))}
+      </svg>
+      <span className="font-mono text-[10px] font-semibold tracking-[0.25em] text-neutral-400">
+        {code}
+      </span>
+    </div>
+  );
+}
+
 const VOUCHER_VISUAL_THEMES = [
   {
     bg: "from-violet-500 via-purple-500 to-indigo-600",
@@ -140,7 +183,7 @@ export function DiscountsView({
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
-  const [revealedCodeId, setRevealedCodeId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -379,6 +422,17 @@ export function DiscountsView({
     };
   };
 
+  const selectedDiscount = useMemo(() => {
+    if (filtered.length === 0) return null;
+    return filtered.find((d) => d.id === selectedId) ?? filtered[0];
+  }, [filtered, selectedId]);
+
+  const selectedThemeIndex = useMemo(() => {
+    if (!selectedDiscount) return 0;
+    const idx = filtered.findIndex((d) => d.id === selectedDiscount.id);
+    return idx >= 0 ? idx % VOUCHER_VISUAL_THEMES.length : 0;
+  }, [filtered, selectedDiscount]);
+
   // Live preview display values
   const previewValueText = useMemo(() => {
     const n = Number(valueDigits || 0);
@@ -444,19 +498,24 @@ export function DiscountsView({
           </div>
         </div>
 
-        {/* List (2 Visual Promo Cards per Row on Desktop) */}
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-xl bg-neutral-50/70 p-3 dark:bg-neutral-950/40">
+        {/* Master-Detail Coupon Workspace */}
+        <div className="min-h-0 flex-1 overflow-hidden rounded-xl bg-neutral-100/70 p-3 dark:bg-neutral-950/40">
           {loading ? (
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              {[1, 2, 3, 4].map((idx) => (
-                <Skeleton
-                  key={idx}
-                  className="h-36 w-full rounded-2xl dark:bg-neutral-800"
-                />
-              ))}
+            <div className="grid h-full grid-cols-1 gap-4 lg:grid-cols-12">
+              <div className="space-y-3 lg:col-span-7">
+                {[1, 2, 3, 4].map((idx) => (
+                  <Skeleton
+                    key={idx}
+                    className="h-28 w-full rounded-2xl dark:bg-neutral-800"
+                  />
+                ))}
+              </div>
+              <div className="hidden lg:col-span-5 lg:block">
+                <Skeleton className="h-full min-h-[380px] w-full rounded-3xl dark:bg-neutral-800" />
+              </div>
             </div>
           ) : filtered.length === 0 ? (
-            <div className="flex h-full min-h-[240px] flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-white/60 p-10 text-center dark:border-neutral-800 dark:bg-neutral-950/30">
+            <div className="flex h-full min-h-[240px] flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-white/70 p-10 text-center dark:border-neutral-800 dark:bg-neutral-950/30">
               <TicketPercent className="mb-2.5 h-8 w-8 text-neutral-400" />
               <div className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
                 Chưa có mã giảm giá nào
@@ -466,185 +525,355 @@ export function DiscountsView({
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              {filtered.map((dc, idx) => {
-                const badge = getRuntimeBadge(dc);
-                const valNum = Number(dc.value || 0);
-                const minNum = Number(dc.min_order_amount || 0);
-                const maxNum = dc.max_discount_amount
-                  ? Number(dc.max_discount_amount)
-                  : null;
-                const isRevealed = revealedCodeId === dc.id;
-                const isPercent = dc.discount_type === "percentage";
-                const theme =
-                  VOUCHER_VISUAL_THEMES[idx % VOUCHER_VISUAL_THEMES.length];
+            <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-12">
+              {/* LEFT: Coupon Ticket List */}
+              <div className="min-h-0 space-y-3 overflow-y-auto pr-1 lg:col-span-7">
+                {filtered.map((dc, idx) => {
+                  const badge = getRuntimeBadge(dc);
+                  const valNum = Number(dc.value || 0);
+                  const minNum = Number(dc.min_order_amount || 0);
+                  const maxNum = dc.max_discount_amount
+                    ? Number(dc.max_discount_amount)
+                    : null;
+                  const isPercent = dc.discount_type === "percentage";
+                  const isSelected = selectedDiscount?.id === dc.id;
+                  const theme =
+                    VOUCHER_VISUAL_THEMES[idx % VOUCHER_VISUAL_THEMES.length];
 
-                const shortHeroValue = isPercent
-                  ? `-${valNum}%`
-                  : valNum >= 1000
-                    ? `-${Math.round(valNum / 1000)}K`
-                    : `-${valNum}đ`;
+                  const shortHeroValue = isPercent
+                    ? `-${valNum}%`
+                    : valNum >= 1000
+                      ? `-${Math.round(valNum / 1000)}K`
+                      : `-${valNum}đ`;
 
-                const headline = isPercent
-                  ? `Giảm ${valNum}%${
-                      maxNum
-                        ? ` (tối đa ${maxNum.toLocaleString("vi-VN")}đ)`
-                        : ""
-                    }`
-                  : `Giảm ${valNum.toLocaleString("vi-VN")}đ`;
-
-                const dateLabel =
-                  dc.starts_at || dc.ends_at
-                    ? `${dc.starts_at ? formatShortDate(dc.starts_at) : "Ngay"} → ${
-                        dc.ends_at ? formatShortDate(dc.ends_at) : "Không giới hạn"
+                  const headline = isPercent
+                    ? `Giảm ${valNum}%${
+                        maxNum
+                          ? ` (tối đa ${maxNum.toLocaleString("vi-VN")}đ)`
+                          : ""
                       }`
-                    : "Không giới hạn ngày";
+                    : `Giảm ${valNum.toLocaleString("vi-VN")}đ`;
 
-                const usageLabel = dc.usage_limit
-                  ? `${dc.used_count}/${dc.usage_limit} lượt`
-                  : dc.used_count > 0
-                    ? `${dc.used_count} lượt (∞)`
-                    : "Không giới hạn lượt";
+                  const dateLabel =
+                    dc.starts_at || dc.ends_at
+                      ? `${dc.starts_at ? formatShortDate(dc.starts_at) : "Ngay"} → ${
+                          dc.ends_at
+                            ? formatShortDate(dc.ends_at)
+                            : "Không giới hạn"
+                        }`
+                      : "Không giới hạn ngày";
 
-                return (
-                  <Card
-                    key={dc.id}
-                    variant={dc.status === "active" ? "outlined" : "muted"}
-                    size="compact"
-                    className={`group overflow-hidden rounded-2xl border-neutral-200/80 bg-white p-3 shadow-[0_2px_10px_rgba(0,0,0,0.03)] transition-all hover:border-neutral-300 hover:shadow-[0_6px_20px_rgba(0,0,0,0.06)] dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700 ${
-                      dc.status !== "active" ? "opacity-80" : ""
-                    }`}
-                  >
-                    <CardContent className="flex flex-col gap-4 px-0 sm:flex-row sm:items-stretch">
-                      {/* Left Visual Voucher Artwork */}
-                      <div
-                        className={`relative flex h-32 w-full shrink-0 flex-col justify-between overflow-hidden rounded-xl bg-gradient-to-br p-3 text-white shadow-inner sm:h-auto sm:min-h-[124px] sm:w-44 ${theme.bg}`}
-                      >
-                        {/* Decorative Background Shapes */}
+                  return (
+                    <Card
+                      key={dc.id}
+                      interactive
+                      variant="outlined"
+                      size="compact"
+                      onClick={() => setSelectedId(dc.id)}
+                      className={`group relative cursor-pointer overflow-hidden rounded-2xl bg-white py-0 transition-all dark:bg-neutral-900 ${
+                        isSelected
+                          ? "border-neutral-900 shadow-[0_8px_24px_rgba(0,0,0,0.08)] ring-1 ring-neutral-900/10 dark:border-white dark:ring-white/15"
+                          : "border-neutral-200/80 shadow-[0_1px_4px_rgba(0,0,0,0.03)] hover:border-neutral-300 dark:border-neutral-800 dark:hover:border-neutral-700"
+                      } ${dc.status !== "active" ? "opacity-75" : ""}`}
+                    >
+                      <CardContent className="flex flex-row items-stretch gap-0 px-0">
+                        {/* Left Mini Visual Stub */}
                         <div
-                          aria-hidden="true"
-                          className="pointer-events-none absolute -right-5 -top-5 h-24 w-24 rounded-full bg-white/15 blur-xl"
-                        />
-                        <div
-                          aria-hidden="true"
-                          className={`pointer-events-none absolute -bottom-3 -right-3 h-20 w-28 rotate-[-10deg] rounded-xl border backdrop-blur-sm transition-transform duration-300 group-hover:rotate-[-6deg] group-hover:scale-105 ${theme.cardBg}`}
-                        />
-
-                        {/* Top-Left Circular Brand/Type Badge (like reference image) */}
-                        <div className="relative z-10 flex items-center justify-between">
+                          className={`relative flex w-28 shrink-0 flex-col justify-between overflow-hidden bg-gradient-to-br p-3 text-white sm:w-36 ${theme.bg}`}
+                        >
+                          <div
+                            aria-hidden="true"
+                            className={`pointer-events-none absolute -bottom-3 -right-3 h-16 w-20 rotate-[-12deg] rounded-lg border ${theme.cardBg}`}
+                          />
                           <span
-                            className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-black shadow-sm ${theme.badgeBg}`}
+                            className={`relative z-10 inline-flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-black shadow-sm ${theme.badgeBg}`}
                           >
                             {isPercent ? "%" : "đ"}
                           </span>
-                          <span className="rounded-md bg-black/25 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white/90 backdrop-blur-sm">
-                            Voucher
-                          </span>
-                        </div>
-
-                        {/* Hero Discount Value */}
-                        <div className="relative z-10 mt-auto">
-                          <div
-                            className={`text-[10px] font-bold uppercase tracking-wider ${theme.accent}`}
-                          >
-                            Ưu đãi POS
-                          </div>
-                          <div className="text-2xl font-black leading-none tracking-tight text-white drop-shadow-sm">
-                            {shortHeroValue}
+                          <div className="relative z-10 mt-auto">
+                            <div className="text-lg font-black leading-none tracking-tight">
+                              {shortHeroValue}
+                            </div>
+                            <div className="mt-0.5 truncate font-mono text-[9px] font-semibold text-white/80">
+                              {dc.code}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Right Content & Actions */}
-                      <div className="flex min-w-0 flex-1 flex-col justify-between gap-2.5 py-0.5">
-                        <div>
-                          <div className="flex items-start justify-between gap-2">
-                            <h3 className="line-clamp-1 text-sm font-bold text-neutral-900 dark:text-white">
+                        {/* Vertical Perforated Divider with Notches */}
+                        <div className="relative w-px border-l border-dashed border-neutral-200 dark:border-neutral-800">
+                          <span
+                            aria-hidden="true"
+                            className="absolute -left-2 -top-2 h-4 w-4 rounded-full border border-neutral-200/80 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950"
+                          />
+                          <span
+                            aria-hidden="true"
+                            className="absolute -bottom-2 -left-2 h-4 w-4 rounded-full border border-neutral-200/80 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950"
+                          />
+                        </div>
+
+                        {/* Right Ticket Info */}
+                        <div className="flex min-w-0 flex-1 flex-col justify-between gap-2 p-3.5 sm:p-4">
+                          <div>
+                            <div className="flex items-start justify-between gap-2">
+                              <h3 className="truncate text-sm font-bold text-neutral-900 dark:text-white">
+                                {headline}
+                              </h3>
+                              <span
+                                className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.cls}`}
+                              >
+                                {badge.label}
+                              </span>
+                            </div>
+                            <p className="mt-0.5 truncate text-xs font-medium text-neutral-600 dark:text-neutral-300">
                               {dc.name}
-                            </h3>
-                            <span
-                              className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.cls}`}
-                            >
-                              {badge.label}
-                            </span>
+                              {minNum > 0
+                                ? ` • Đơn từ ${minNum.toLocaleString("vi-VN")}đ`
+                                : ""}
+                            </p>
                           </div>
 
-                          <p className="mt-1 line-clamp-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                            {headline}
-                            {minNum > 0
-                              ? ` • Đơn từ ${minNum.toLocaleString("vi-VN")}đ`
-                              : " • Mọi đơn hàng"}
-                          </p>
-
-                          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-neutral-500 dark:text-neutral-400">
-                            <span className="inline-flex items-center gap-1">
+                          <div className="flex items-center justify-between gap-2 pt-1">
+                            <span className="inline-flex items-center gap-1.5 text-[11px] text-neutral-500 dark:text-neutral-400">
                               <Calendar className="h-3 w-3 text-neutral-400" />
                               {dateLabel}
                             </span>
-                            <span className="inline-flex items-center gap-1">
-                              <Repeat className="h-3 w-3 text-neutral-400" />
-                              {usageLabel}
-                            </span>
-                            <span className="inline-flex items-center gap-1">
-                              <Store className="h-3 w-3 text-neutral-400" />
-                              {dc.store_ids.length === 0
-                                ? "Tất cả chi nhánh"
-                                : `${dc.store_ids.length} chi nhánh`}
-                            </span>
+
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              onPointerDown={(e) => e.stopPropagation()}
+                            >
+                              <BeSwitch
+                                checked={dc.status === "active"}
+                                onCheckedChange={() =>
+                                  void handleToggleStatus(dc)
+                                }
+                                ariaLabel={`Bật tắt mã ${dc.code}`}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+
+              {/* RIGHT: Vertical Coupon Pass Detail (Mobile Pass Inspired) */}
+              {selectedDiscount && (
+                <div className="min-h-0 overflow-y-auto lg:col-span-5">
+                  {(() => {
+                    const dc = selectedDiscount;
+                    const badge = getRuntimeBadge(dc);
+                    const valNum = Number(dc.value || 0);
+                    const minNum = Number(dc.min_order_amount || 0);
+                    const maxNum = dc.max_discount_amount
+                      ? Number(dc.max_discount_amount)
+                      : null;
+                    const isPercent = dc.discount_type === "percentage";
+                    const theme = VOUCHER_VISUAL_THEMES[selectedThemeIndex];
+
+                    const shortHeroValue = isPercent
+                      ? `-${valNum}%`
+                      : valNum >= 1000
+                        ? `-${Math.round(valNum / 1000)}K`
+                        : `-${valNum}đ`;
+
+                    const headline = isPercent
+                      ? `Giảm ${valNum}%${
+                          maxNum
+                            ? ` (tối đa ${maxNum.toLocaleString("vi-VN")}đ)`
+                            : ""
+                        }`
+                      : `Giảm ${valNum.toLocaleString("vi-VN")}đ`;
+
+                    const dateLabel =
+                      dc.starts_at || dc.ends_at
+                        ? `${dc.starts_at ? formatShortDate(dc.starts_at) : "Ngay"} → ${
+                            dc.ends_at
+                              ? formatShortDate(dc.ends_at)
+                              : "Không giới hạn"
+                          }`
+                        : "Không giới hạn thời gian";
+
+                    const storeNames =
+                      dc.store_ids.length === 0
+                        ? "Tất cả chi nhánh"
+                        : dc.store_ids
+                            .map(
+                              (sid) =>
+                                stores.find((s) => s.id === sid)?.name || sid
+                            )
+                            .join(", ");
+
+                    return (
+                      <div className="mx-auto flex w-full max-w-md flex-col overflow-hidden rounded-3xl border border-neutral-200/90 bg-white shadow-[0_12px_36px_rgba(0,0,0,0.06)] dark:border-neutral-800 dark:bg-neutral-900">
+                        {/* Top Pass Visual Banner */}
+                        <div className="p-4 pb-3">
+                          <div
+                            className={`relative flex h-36 flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br p-4 text-white ${theme.bg}`}
+                          >
+                            <div
+                              aria-hidden="true"
+                              className="pointer-events-none absolute -right-6 -top-6 h-28 w-28 rounded-full bg-white/15 blur-xl"
+                            />
+                            <div
+                              aria-hidden="true"
+                              className={`pointer-events-none absolute -bottom-4 -right-4 h-24 w-36 rotate-[-10deg] rounded-2xl border backdrop-blur-sm ${theme.cardBg}`}
+                            />
+
+                            <div className="relative z-10 flex items-center justify-between">
+                              <span
+                                className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-black shadow-sm ${theme.badgeBg}`}
+                              >
+                                {isPercent ? "%" : "đ"}
+                              </span>
+                              <span
+                                className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold backdrop-blur-sm ${badge.cls}`}
+                              >
+                                {badge.label}
+                              </span>
+                            </div>
+
+                            <div className="relative z-10 flex items-end justify-between gap-2">
+                              <div className="min-w-0">
+                                <div
+                                  className={`text-[10px] font-bold uppercase tracking-wider ${theme.accent}`}
+                                >
+                                  Phiếu ưu đãi POS
+                                </div>
+                                <div className="truncate text-sm font-bold text-white">
+                                  {dc.name}
+                                </div>
+                              </div>
+                              <div className="shrink-0 text-3xl font-black leading-none tracking-tight text-white drop-shadow-sm">
+                                {shortHeroValue}
+                              </div>
+                            </div>
                           </div>
                         </div>
 
-                        {/* Bottom Action Row (Shop Now style CTA + Switch + Edit/Delete) */}
-                        <div className="flex items-center justify-between gap-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setRevealedCodeId(dc.id);
-                              void navigator.clipboard?.writeText(dc.code);
-                              notify("info", `Đã sao chép mã ${dc.code}`);
-                            }}
-                            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-50 hover:text-blue-800 dark:text-blue-400 dark:hover:bg-blue-950/50"
-                          >
-                            <TicketPercent className="h-3.5 w-3.5" />
-                            {isRevealed ? (
-                              <span className="inline-flex items-center gap-1 font-mono tracking-wide">
-                                {dc.code}
-                                <Copy className="h-3 w-3" />
-                              </span>
-                            ) : (
-                              <span>Xem &amp; Sao chép mã</span>
-                            )}
-                          </button>
+                        {/* Horizontal Ticket Perforation with Side Notches */}
+                        <div className="relative my-1 border-t border-dashed border-neutral-200 dark:border-neutral-800">
+                          <span
+                            aria-hidden="true"
+                            className="absolute -left-3 -top-3 h-6 w-6 rounded-full border border-neutral-200/80 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950"
+                          />
+                          <span
+                            aria-hidden="true"
+                            className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-neutral-200/80 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950"
+                          />
+                        </div>
 
-                          <div className="flex items-center gap-1.5">
+                        {/* Middle: Code + Conditions */}
+                        <div className="space-y-4 px-5 py-4">
+                          <div className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-neutral-50/70 px-3.5 py-2.5 dark:border-neutral-800 dark:bg-neutral-950/60">
+                            <div>
+                              <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                                Mã áp dụng
+                              </div>
+                              <div className="font-mono text-base font-extrabold tracking-wider text-neutral-900 dark:text-white">
+                                {dc.code}
+                              </div>
+                            </div>
+                            <BeButton
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => {
+                                void navigator.clipboard?.writeText(dc.code);
+                                notify("info", `Đã sao chép mã ${dc.code}`);
+                              }}
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                              Sao chép
+                            </BeButton>
+                          </div>
+
+                          <div>
+                            <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                              Điều kiện áp dụng
+                            </div>
+                            <ul className="space-y-1.5 text-xs text-neutral-600 dark:text-neutral-300">
+                              <li className="flex items-center justify-between gap-2">
+                                <span className="text-neutral-400">Ưu đãi:</span>
+                                <span className="font-semibold text-neutral-900 dark:text-white">
+                                  {headline}
+                                </span>
+                              </li>
+                              <li className="flex items-center justify-between gap-2">
+                                <span className="text-neutral-400">
+                                  Đơn tối thiểu:
+                                </span>
+                                <span className="font-semibold text-neutral-900 dark:text-white">
+                                  {minNum > 0
+                                    ? `${minNum.toLocaleString("vi-VN")}đ`
+                                    : "Không yêu cầu"}
+                                </span>
+                              </li>
+                              <li className="flex items-center justify-between gap-2">
+                                <span className="text-neutral-400">Thời hạn:</span>
+                                <span className="font-semibold text-neutral-900 dark:text-white">
+                                  {dateLabel}
+                                </span>
+                              </li>
+                              <li className="flex items-center justify-between gap-2">
+                                <span className="text-neutral-400">Lượt dùng:</span>
+                                <span className="font-semibold text-neutral-900 dark:text-white">
+                                  {dc.used_count}
+                                  {dc.usage_limit
+                                    ? ` / ${dc.usage_limit} lượt`
+                                    : " (Không giới hạn)"}
+                                </span>
+                              </li>
+                              <li className="flex items-start justify-between gap-3">
+                                <span className="shrink-0 text-neutral-400">
+                                  Chi nhánh:
+                                </span>
+                                <span className="text-right font-semibold text-neutral-900 dark:text-white">
+                                  {storeNames}
+                                </span>
+                              </li>
+                            </ul>
+                          </div>
+                        </div>
+
+                        {/* Bottom Barcode & Quick Actions */}
+                        <div className="border-t border-dashed border-neutral-200 bg-neutral-50/50 px-5 py-4 dark:border-neutral-800 dark:bg-neutral-950/40">
+                          <BarcodeGraphic code={dc.code} />
+
+                          <div className="mt-4 flex items-center justify-between gap-2 border-t border-neutral-200/70 pt-3 dark:border-neutral-800">
                             <BeSwitch
                               checked={dc.status === "active"}
-                              onCheckedChange={() => void handleToggleStatus(dc)}
+                              onCheckedChange={() =>
+                                void handleToggleStatus(dc)
+                              }
                               ariaLabel={`Bật tắt mã ${dc.code}`}
                             />
-                            <button
-                              type="button"
-                              onClick={() => openEditModal(dc)}
-                              title="Chỉnh sửa"
-                              className="grid h-7 w-7 place-items-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleDelete(dc)}
-                              title="Xóa mã"
-                              className="grid h-7 w-7 place-items-center rounded-lg text-rose-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <BeButton
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => openEditModal(dc)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                                Chỉnh sửa
+                              </BeButton>
+                              <BeButton
+                                variant="danger"
+                                size="sm"
+                                onClick={() => void handleDelete(dc)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Xóa
+                              </BeButton>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+                    );
+                  })()}
+                </div>
+              )}
             </div>
           )}
         </div>
