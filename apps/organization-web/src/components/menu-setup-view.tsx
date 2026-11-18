@@ -6,12 +6,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Coffee,
-  Cookie,
-  CupSoda,
-  IceCream,
   Layers,
-  LayoutGrid,
   Search,
   SlidersHorizontal,
   Smartphone,
@@ -57,23 +52,6 @@ const PASTEL_PILL_STYLES = [
   "bg-violet-50 text-violet-700 border-violet-200/70 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900/60",
   "bg-amber-50 text-amber-700 border-amber-200/70 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/60",
 ];
-
-function getCategoryIcon(name: string) {
-  const lower = name.toLowerCase();
-  if (lower.includes("cà phê") || lower.includes("cafe") || lower.includes("coffee")) {
-    return Coffee;
-  }
-  if (lower.includes("trà") || lower.includes("nước") || lower.includes("uống")) {
-    return CupSoda;
-  }
-  if (lower.includes("bánh") || lower.includes("pastry") || lower.includes("bread")) {
-    return Cookie;
-  }
-  if (lower.includes("kem") || lower.includes("ice")) {
-    return IceCream;
-  }
-  return UtensilsCrossed;
-}
 
 export function MenuSetupView({
   stores,
@@ -136,22 +114,10 @@ export function MenuSetupView({
   const slideCategories = (direction: "left" | "right") => {
     const el = categoryStripRef.current;
     if (!el) return;
-    const maxScroll = el.scrollWidth - el.clientWidth;
-    if (maxScroll <= 0) return;
-
-    if (direction === "right") {
-      if (el.scrollLeft >= maxScroll - 4) {
-        el.scrollTo({ left: 0, behavior: "smooth" });
-      } else {
-        el.scrollBy({ left: 280, behavior: "smooth" });
-      }
-    } else {
-      if (el.scrollLeft <= 4) {
-        el.scrollTo({ left: maxScroll, behavior: "smooth" });
-      } else {
-        el.scrollBy({ left: -280, behavior: "smooth" });
-      }
-    }
+    el.scrollBy({
+      left: direction === "right" ? 280 : -280,
+      behavior: "smooth",
+    });
   };
 
   const productLookup = useMemo(() => {
@@ -461,14 +427,27 @@ export function MenuSetupView({
     onSelectCat: (catId: string) => void
   ) => {
     const hasOverflow = canScrollCatLeft || canScrollCatRight;
+    const handleCategoryClick = (
+      catId: string,
+      e: React.MouseEvent<HTMLButtonElement>
+    ) => {
+      onSelectCat(catId);
+      e.currentTarget.scrollIntoView({
+        behavior: "smooth",
+        inline: "center",
+        block: "nearest",
+      });
+    };
+
     return (
       <div className="relative flex shrink-0 items-center gap-1.5">
         {hasOverflow && (
           <button
             type="button"
+            disabled={!canScrollCatLeft}
             onClick={() => slideCategories("left")}
             title="Trượt sang trái"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-neutral-200 bg-white text-neutral-600 shadow-sm transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-neutral-200 bg-white text-neutral-600 shadow-sm transition-colors hover:bg-neutral-100 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-35 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
@@ -477,27 +456,18 @@ export function MenuSetupView({
         <div
           ref={categoryStripRef}
           onScroll={updateCategoryScrollState}
-          className="flex min-w-0 flex-1 gap-2.5 overflow-x-auto scroll-smooth py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex min-w-0 flex-1 gap-2 overflow-x-auto scroll-smooth py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
-          {/* All Menu Card (Wide Horizontal Rectangle) */}
+          {/* All Menu Card (No Icon, Full Name) */}
           <button
             type="button"
-            onClick={() => onSelectCat("all")}
-            className={`flex shrink-0 items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-left transition-all ${
+            onClick={(e) => handleCategoryClick("all", e)}
+            className={`shrink-0 rounded-2xl border px-4 py-2.5 text-left transition-all ${
               activeCatId === "all"
                 ? "border-blue-600 bg-blue-50/70 shadow-sm dark:border-blue-400 dark:bg-blue-950/35"
                 : "border-neutral-200/80 bg-white hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-950/60"
             }`}
           >
-            <span
-              className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors ${
-                activeCatId === "all"
-                  ? "bg-blue-600 text-white"
-                  : "bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300"
-              }`}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </span>
             <div className="whitespace-nowrap">
               <div
                 className={`text-xs font-bold ${
@@ -514,33 +484,23 @@ export function MenuSetupView({
             </div>
           </button>
 
-          {/* Per-Category Wide Rectangular Cards (Full Name, No Ellipsis) */}
+          {/* Per-Category Cards (No Icon, Full Name, Auto Scroll Into View) */}
           {categories.map((cat) => {
             const count = items.filter((it) =>
               it.category_ids.includes(cat.id)
             ).length;
             const isActive = activeCatId === cat.id;
-            const IconComp = getCategoryIcon(cat.name);
             return (
               <button
                 key={cat.id}
                 type="button"
-                onClick={() => onSelectCat(cat.id)}
-                className={`flex shrink-0 items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-left transition-all ${
+                onClick={(e) => handleCategoryClick(cat.id, e)}
+                className={`shrink-0 rounded-2xl border px-4 py-2.5 text-left transition-all ${
                   isActive
                     ? "border-blue-600 bg-blue-50/70 shadow-sm dark:border-blue-400 dark:bg-blue-950/35"
                     : "border-neutral-200/80 bg-white hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-950/60"
                 }`}
               >
-                <span
-                  className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors ${
-                    isActive
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300"
-                  }`}
-                >
-                  <IconComp className="h-4 w-4" />
-                </span>
                 <div className="whitespace-nowrap">
                   <div
                     className={`text-xs font-bold ${
@@ -561,9 +521,10 @@ export function MenuSetupView({
         {hasOverflow && (
           <button
             type="button"
+            disabled={!canScrollCatRight}
             onClick={() => slideCategories("right")}
             title="Trượt sang phải"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-neutral-200 bg-white text-neutral-600 shadow-sm transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-neutral-200 bg-white text-neutral-600 shadow-sm transition-colors hover:bg-neutral-100 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-35 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
