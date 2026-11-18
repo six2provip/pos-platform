@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import (
     Boolean,
@@ -26,7 +26,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
@@ -1942,6 +1942,94 @@ class PlatformAdmin(Base):
         ),
         CheckConstraint(
             "status IN ('active', 'locked')", name="ck_platform_admins_status"
+        ),
+    )
+
+
+class Promotion(Base):
+    """Variant-level product promotional campaign (e.g. Happy Hour, Flash Sale)."""
+
+    __tablename__ = "promotions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    starts_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    ends_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    store_ids_json: Mapped[List[str]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    items: Mapped[List["PromotionItem"]] = relationship(
+        "PromotionItem",
+        back_populates="promotion",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'inactive')", name="ck_promotions_status"
+        ),
+    )
+
+
+class PromotionItem(Base):
+    """Per-variant discount rule inside a Promotion campaign."""
+
+    __tablename__ = "promotion_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    promotion_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("promotions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    product_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("products.id"), nullable=False, index=True
+    )
+    variant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("product_variants.id"), nullable=False, index=True
+    )
+    discount_type: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="percentage"
+    )
+    discount_value: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    promotion: Mapped["Promotion"] = relationship("Promotion", back_populates="items")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "promotion_id", "variant_id", name="uq_promotion_items_promo_variant"
+        ),
+        CheckConstraint(
+            "discount_type IN ('percentage', 'fixed', 'override_price')",
+            name="ck_promotion_items_discount_type",
+        ),
+        CheckConstraint(
+            "discount_value >= 0", name="ck_promotion_items_discount_value"
         ),
     )
 

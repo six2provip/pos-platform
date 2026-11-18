@@ -27,6 +27,7 @@ from app.modules.inventory.router import router as inventory_router
 from app.modules.organizations.router import router as organizations_router
 from app.modules.platform.router import router as platform_router
 from app.modules.products.router import router as products_router
+from app.modules.promotions.router import router as promotions_router
 from app.modules.sales.router import router as sales_router
 from app.modules.stores.router import router as stores_router
 from app.modules.synchronization.router import router as sync_router
@@ -43,6 +44,7 @@ api_v1_router.include_router(products_router)
 api_v1_router.include_router(inventory_router)
 api_v1_router.include_router(sales_router)
 api_v1_router.include_router(discounts_router)
+api_v1_router.include_router(promotions_router)
 api_v1_router.include_router(sync_router)
 
 

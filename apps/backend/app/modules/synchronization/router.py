@@ -37,6 +37,7 @@ from app.infrastructure.models import (
     DeviceEvent,
     DeviceProductConfig,
     DiscountCode,
+    Promotion,
     PaymentMethod,
     Product,
     ProductBarcode,
@@ -439,6 +440,31 @@ def pos_bootstrap(
                 )
                 .all()
                 if not (dc.store_ids_json or []) or store.id in (dc.store_ids_json or [])
+            ],
+            "promotions": [
+                {
+                    "id": pr.id,
+                    "name": pr.name,
+                    "starts_at": pr.starts_at.isoformat() if pr.starts_at else None,
+                    "ends_at": pr.ends_at.isoformat() if pr.ends_at else None,
+                    "items": [
+                        {
+                            "product_id": it.product_id,
+                            "variant_id": it.variant_id,
+                            "discount_type": it.discount_type,
+                            "discount_value": format_decimal(it.discount_value),
+                        }
+                        for it in pr.items
+                    ],
+                }
+                for pr in db.query(Promotion)
+                .filter(
+                    Promotion.organization_id == org.id,
+                    Promotion.status == "active",
+                    Promotion.deleted_at.is_(None),
+                )
+                .all()
+                if not (pr.store_ids_json or []) or store.id in (pr.store_ids_json or [])
             ],
             "current_cash_session": (
                 _serialize_cash_session(open_session) if open_session else None
