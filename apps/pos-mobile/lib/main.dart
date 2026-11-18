@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
@@ -112,6 +113,8 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   static const int _maxOfflineOrders = 30;
   static const int _maxOfflineAmount = 5000000;
   static const int _defaultGraceSeconds = 7200;
+  static const MethodChannel _hardwareChannel =
+      MethodChannel('com.posplatform.pos_mobile/hardware');
 
   final Uuid _uuid = const Uuid();
   late final PosApiClient _api;
@@ -120,8 +123,13 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   bool _busy = false;
   String _serverUrl = _defaultServerUrl;
 
-  // Pairing state
+  // Provisioning & Pairing state (Serial-first Zero-Touch + IP fallback)
   bool _isPaired = false;
+  bool _manualIpPairingMode = false;
+  String _hardwareSerial = '';
+  String _provisioningStatus = 'Đang kiểm tra Serial Number với máy chủ...';
+  String? _provisioningErrorCode;
+  int _serialRetryCountdown = 5;
   String? _sessionId;
   String _deviceIp = 'Đang lấy IP...';
   int _pairingSecondsLeft = 900;
@@ -153,6 +161,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
 
   Timer? _pairingPollTimer;
   Timer? _pairingCountdownTimer;
+  Timer? _serialPollTimer;
   Timer? _heartbeatTimer;
   Timer? _graceTimer;
 
@@ -172,8 +181,35 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   void _stopAllTimers() {
     _pairingPollTimer?.cancel();
     _pairingCountdownTimer?.cancel();
+    _serialPollTimer?.cancel();
     _heartbeatTimer?.cancel();
     _graceTimer?.cancel();
+  }
+
+  Future<String> _resolveHardwareSerial(SharedPreferences prefs) async {
+    final override = prefs.getString('pos_custom_serial')?.trim();
+    if (override != null && override.isNotEmpty) {
+      return override.toUpperCase();
+    }
+
+    if (!kIsWeb) {
+      try {
+        final nativeSerial =
+            await _hardwareChannel.invokeMethod<String>('getHardwareSerial');
+        if (nativeSerial != null && nativeSerial.trim().length >= 4) {
+          return nativeSerial.trim().toUpperCase();
+        }
+      } catch (_) {
+        // Fallback below when platform channel unavailable
+      }
+    }
+
+    var fallback = prefs.getString('pos_generated_serial');
+    if (fallback == null || fallback.isEmpty) {
+      fallback = 'POS-${_uuid.v4().substring(0, 8).toUpperCase()}';
+      await prefs.setString('pos_generated_serial', fallback);
+    }
+    return fallback.toUpperCase();
   }
 
   Future<void> _bootstrapFromStorage() async {
@@ -181,6 +217,9 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
     final savedUrl = prefs.getString('pos_server_url') ?? _defaultServerUrl;
     _serverUrl = savedUrl;
     _api.baseUrl = savedUrl;
+
+    _hardwareSerial = await _resolveHardwareSerial(prefs);
+    _api.deviceSerial = _hardwareSerial;
 
     final devStr = prefs.getString('pos_paired_device');
     final storeStr = prefs.getString('pos_paired_store');
@@ -194,6 +233,11 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
       _api.deviceToken = token;
       _api.organizationId = _org?['id']?.toString();
       _api.storeId = _store?['id']?.toString();
+      final devSerial = _device?['serial_number']?.toString().trim();
+      if (devSerial != null && devSerial.isNotEmpty) {
+        _hardwareSerial = devSerial.toUpperCase();
+        _api.deviceSerial = _hardwareSerial;
+      }
       _isPaired = true;
 
       // Load offline SQLite cache immediately
@@ -205,7 +249,100 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
       await _refreshTerminalData();
     } else {
       setState(() => _initializing = false);
-      await _requestPairingSession();
+      _startSerialAutoPoll();
+      await _attemptSerialActivation();
+    }
+  }
+
+  void _startSerialAutoPoll() {
+    _serialPollTimer?.cancel();
+    _serialRetryCountdown = 5;
+    _serialPollTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || _isPaired || _manualIpPairingMode) return;
+      if (_serialRetryCountdown <= 1) {
+        setState(() => _serialRetryCountdown = 5);
+        if (!_busy) {
+          _attemptSerialActivation(silent: true);
+        }
+      } else {
+        setState(() => _serialRetryCountdown--);
+      }
+    });
+  }
+
+  Future<void> _attemptSerialActivation({bool silent = false}) async {
+    if (_isPaired || _manualIpPairingMode || _hardwareSerial.isEmpty) return;
+    if (!silent && mounted) {
+      setState(() {
+        _busy = true;
+        _provisioningStatus =
+            'Đang kiểm tra Serial $_hardwareSerial trên Org Admin...';
+      });
+    }
+
+    try {
+      final localIp = await detectLocalLanIp();
+      final data = await _api.activateBySerial(
+        serialNumber: _hardwareSerial,
+        appVersion: '1.0.0',
+        deviceInfo: {
+          'device_model': 'Android POS Smart Terminal (Flutter APK)',
+          'os': 'Android',
+          'app_version': '1.0.0',
+          if (localIp != null && localIp.isNotEmpty) 'ip_address': localIp,
+        },
+      );
+
+      _serialPollTimer?.cancel();
+      _pairingPollTimer?.cancel();
+      _pairingCountdownTimer?.cancel();
+
+      final dev = Map<String, dynamic>.from(data['device'] as Map);
+      final st = Map<String, dynamic>.from(data['store'] as Map);
+      final org = data['organization'] != null
+          ? Map<String, dynamic>.from(data['organization'] as Map)
+          : <String, dynamic>{};
+      final token = data['access_token']?.toString() ?? '';
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('pos_paired_device', jsonEncode(dev));
+      await prefs.setString('pos_paired_store', jsonEncode(st));
+      await prefs.setString('pos_paired_org', jsonEncode(org));
+      await prefs.setString('pos_device_token', token);
+
+      _api.deviceToken = token;
+      _api.organizationId = org['id']?.toString();
+      _api.storeId = st['id']?.toString();
+      _api.deviceSerial = _hardwareSerial;
+
+      if (!mounted) return;
+      setState(() {
+        _device = dev;
+        _store = st;
+        _org = org;
+        _isPaired = true;
+        _busy = false;
+        _provisioningErrorCode = null;
+      });
+
+      _startPairedGuards();
+      await _refreshTerminalData();
+      _showSnack('Kích hoạt thành công ${dev['name']}!');
+    } on PosApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _provisioningErrorCode =
+            e.isNetworkError ? 'NETWORK_ERROR' : (e.errorCode ?? 'ERROR');
+        _provisioningStatus = e.message;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _provisioningErrorCode = 'NETWORK_ERROR';
+        _provisioningStatus = 'Không thể kết nối máy chủ $_serverUrl: $e';
+      });
     }
   }
 
@@ -951,6 +1088,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
     if (!mounted) return;
     setState(() {
       _isPaired = false;
+      _manualIpPairingMode = false;
       _isRevoked = false;
       _isOfflineGraceExpired = false;
       _offlineGraceSeconds = _defaultGraceSeconds;
@@ -959,13 +1097,18 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
       _store = null;
       _org = null;
       _api.deviceToken = null;
+      _api.organizationId = null;
+      _api.storeId = null;
       _variants = [];
       _orders = [];
       _outboxQueue = [];
       _cart.clear();
       _activeCashSession = null;
+      _provisioningErrorCode = null;
+      _provisioningStatus = 'Đang kiểm tra Serial Number với máy chủ...';
     });
-    await _requestPairingSession();
+    _startSerialAutoPoll();
+    await _attemptSerialActivation();
   }
 
   Future<void> _showServerConfigDialog() async {
@@ -1012,10 +1155,78 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
         _api.baseUrl = updated;
       });
       if (!_isPaired) {
-        await _requestPairingSession();
+        if (_manualIpPairingMode) {
+          await _requestPairingSession();
+        } else {
+          await _attemptSerialActivation();
+        }
       } else {
         await _refreshTerminalData();
       }
+    }
+  }
+
+  Future<void> _showSerialOverrideDialog() async {
+    final ctrl = TextEditingController(text: _hardwareSerial);
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Serial Number Thiết Bị'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Mặc định máy tự đọc Serial phần cứng. Bạn có thể nhập Serial giả lập để test hoặc khôi phục Serial gốc.',
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Serial Number',
+                hintText: 'VD: POS-SN-001',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, '__RESET__'),
+            child: const Text('Khôi phục gốc'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim().toUpperCase()),
+            child: const Text('Áp dụng'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (result == '__RESET__') {
+      await prefs.remove('pos_custom_serial');
+    } else if (result.length >= 4) {
+      await prefs.setString('pos_custom_serial', result);
+    } else {
+      _showSnack('Serial Number phải có ít nhất 4 ký tự', isError: true);
+      return;
+    }
+
+    final resolved = await _resolveHardwareSerial(prefs);
+    setState(() {
+      _hardwareSerial = resolved;
+      _api.deviceSerial = resolved;
+    });
+    if (!_isPaired && !_manualIpPairingMode) {
+      await _attemptSerialActivation();
     }
   }
 
@@ -1046,10 +1257,266 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
     }
 
     if (!_isPaired) {
-      return _buildPairingScreen();
+      return _manualIpPairingMode
+          ? _buildPairingScreen()
+          : _buildSerialProvisioningScreen();
     }
 
     return _buildPosTerminalScreen();
+  }
+
+  Widget _buildSerialProvisioningScreen() {
+    final isNotRegistered = _provisioningErrorCode == 'SERIAL_NOT_REGISTERED';
+    final isBlocked = _provisioningErrorCode == 'DEVICE_NOT_ACTIVE' ||
+        _provisioningErrorCode == 'ORGANIZATION_INACTIVE' ||
+        _provisioningErrorCode == 'STORE_INACTIVE';
+    final isNetworkErr = _provisioningErrorCode == 'NETWORK_ERROR';
+
+    final badgeColor = isBlocked
+        ? Colors.red.shade400
+        : isNetworkErr
+            ? Colors.amber.shade400
+            : kEmeraldPrimary;
+    final badgeText = isBlocked
+        ? 'THIẾT BỊ ĐANG BỊ TẠM KHÓA'
+        : isNetworkErr
+            ? 'CHƯA KẾT NỐI ĐƯỢC MÁY CHỦ'
+            : isNotRegistered
+                ? 'CHỜ NHẬP SERIAL VÀO ORG ADMIN'
+                : 'ZERO-TOUCH PROVISIONING';
+
+    return Scaffold(
+      backgroundColor: kDarkKioskBg,
+      appBar: AppBar(
+        backgroundColor: kDarkPanelBg,
+        foregroundColor: Colors.white,
+        title: const Text(
+          'Kích Hoạt Máy POS Mới',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          IconButton(
+            onPressed: _showSerialOverrideDialog,
+            icon: const Icon(Icons.qr_code_2_rounded),
+            tooltip: 'Sửa / Kiểm tra Serial',
+          ),
+          IconButton(
+            onPressed: _showServerConfigDialog,
+            icon: const Icon(Icons.settings_ethernet),
+            tooltip: 'Cấu hình Server URL',
+          ),
+        ],
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 620),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: kDarkPanelBg,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: badgeColor.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: badgeColor.withOpacity(0.6)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_busy)
+                        SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: badgeColor,
+                          ),
+                        )
+                      else
+                        Icon(
+                          isBlocked
+                              ? Icons.gpp_bad_rounded
+                              : isNetworkErr
+                                  ? Icons.wifi_off_rounded
+                                  : Icons.hourglass_top_rounded,
+                          size: 14,
+                          color: badgeColor,
+                        ),
+                      const SizedBox(width: 8),
+                      Text(
+                        badgeText,
+                        style: TextStyle(
+                          color: badgeColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Máy POS Chưa Được Gán Chi Nhánh',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _provisioningStatus,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: isBlocked ? Colors.red.shade300 : Colors.grey.shade400,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: kEmeraldPrimary.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: kEmeraldPrimary.withOpacity(0.7)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'SERIAL NUMBER PHẦN CỨNG',
+                              style: TextStyle(
+                                color: Colors.white60,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.1,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            SelectableText(
+                              _hardwareSerial.isEmpty ? 'Đang đọc...' : _hardwareSerial,
+                              style: const TextStyle(
+                                color: Color(0xFF34D399),
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                fontFamily: 'monospace',
+                                letterSpacing: 1.1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton.filledTonal(
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.white10,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: _hardwareSerial));
+                          _showSnack('Đã sao chép Serial: $_hardwareSerial');
+                        },
+                        icon: const Icon(Icons.copy_rounded, size: 18),
+                        tooltip: 'Sao chép Serial',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.04),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Hướng dẫn kích hoạt khi giao máy mới:',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        '1. Quản trị viên mở Org Admin → Chi nhánh → Thiết bị.\n'
+                        '2. Nhập đúng Serial Number phía trên vào thiết bị POS.\n'
+                        '3. Máy POS sẽ tự động tải cấu hình, thực đơn & vào quầy bán.',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Tự động kiểm tra lại sau ${_serialRetryCountdown}s • Máy chủ: $_serverUrl',
+                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: kEmeraldPrimary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 12,
+                        ),
+                      ),
+                      onPressed: _busy ? null : () => _attemptSerialActivation(),
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('Kiểm tra kích hoạt ngay'),
+                    ),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(foregroundColor: Colors.white70),
+                      onPressed: _showServerConfigDialog,
+                      icon: const Icon(Icons.dns_rounded, size: 18),
+                      label: const Text('Đổi Server'),
+                    ),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(foregroundColor: Colors.white70),
+                      onPressed: () {
+                        _serialPollTimer?.cancel();
+                        setState(() => _manualIpPairingMode = true);
+                        _requestPairingSession();
+                      },
+                      icon: const Icon(Icons.sensors_rounded, size: 18),
+                      label: const Text('Ghép nối bằng IP'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildLockoutScreen() {
@@ -1297,6 +1764,18 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                       icon: const Icon(Icons.dns, size: 18),
                       label: const Text('Đổi IP Server'),
                     ),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF34D399)),
+                      onPressed: () {
+                        _pairingPollTimer?.cancel();
+                        _pairingCountdownTimer?.cancel();
+                        setState(() => _manualIpPairingMode = false);
+                        _startSerialAutoPoll();
+                        _attemptSerialActivation();
+                      },
+                      icon: const Icon(Icons.qr_code_2_rounded, size: 18),
+                      label: const Text('Kích hoạt bằng Serial'),
+                    ),
                   ],
                 ),
               ],
@@ -1308,7 +1787,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   }
 
   Widget _buildPosTerminalScreen() {
-    final isWide = MediaQuery.of(context).size.width >= 760;
+    final isWide = MediaQuery.of(context).size.width >= 680;
     final filteredVariants = _variants.where((v) {
       if (_selectedCategoryId != 'all') {
         final cids = (v['categoryIds'] as List?)?.map((e) => e.toString()).toList() ?? [];
@@ -1452,189 +1931,212 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   Widget _buildWideSidebar() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final items = [
-      (idx: 0, icon: Icons.grid_view_rounded, label: 'Bán hàng POS'),
+      (idx: 0, icon: Icons.point_of_sale_rounded, label: 'Bán hàng POS'),
       (idx: 2, icon: Icons.receipt_long_rounded, label: 'Đơn hàng'),
     ];
 
-    return Container(
-      width: 214,
-      color: isDark ? const Color(0xFF111827) : Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.white : const Color(0xFF18181B),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.storefront_rounded,
-                  size: 18,
-                  color: isDark ? const Color(0xFF18181B) : Colors.white,
-                ),
+    Widget buildRailIcon({
+      required IconData icon,
+      required String tooltip,
+      required bool active,
+      required VoidCallback onTap,
+      Color? activeBg,
+      Color? activeFg,
+      Color? idleFg,
+      int badgeCount = 0,
+    }) {
+      return Tooltip(
+        message: tooltip,
+        waitDuration: const Duration(milliseconds: 250),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: active
+                    ? (activeBg ??
+                        (isDark ? Colors.white : const Color(0xFF18181B)))
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(14),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'POS.com',
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
-                    ),
-                    Text(
-                      _store?['code']?.toString() ?? 'CHI NHÁNH',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white54 : Colors.black45,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Icon(
+                    icon,
+                    size: 21,
+                    color: active
+                        ? (activeFg ??
+                            (isDark ? const Color(0xFF18181B) : Colors.white))
+                        : (idleFg ??
+                            (isDark ? Colors.white60 : Colors.black54)),
+                  ),
+                  if (badgeCount > 0)
+                    Positioned(
+                      top: 7,
+                      right: 7,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Colors.amber,
+                          shape: BoxShape.circle,
+                        ),
                       ),
                     ),
-                  ],
-                ),
+                ],
               ),
-            ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: 66,
+      color: isDark ? const Color(0xFF111827) : Colors.white,
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Column(
+        children: [
+          Tooltip(
+            message:
+                '${_store?['name'] ?? 'POS.com'}\nS/N: $_hardwareSerial',
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white : const Color(0xFF18181B),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.storefront_rounded,
+                size: 20,
+                color: isDark ? const Color(0xFF18181B) : Colors.white,
+              ),
+            ),
           ),
           const SizedBox(height: 18),
           for (final nav in items)
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(999),
+              padding: const EdgeInsets.only(bottom: 8),
+              child: buildRailIcon(
+                icon: nav.icon,
+                tooltip: nav.label,
+                active: _mobileTabIndex == nav.idx,
                 onTap: () => setState(() => _mobileTabIndex = nav.idx),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: _mobileTabIndex == nav.idx
-                        ? (isDark ? Colors.white : const Color(0xFF18181B))
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        nav.icon,
-                        size: 18,
-                        color: _mobileTabIndex == nav.idx
-                            ? (isDark ? const Color(0xFF18181B) : Colors.white)
-                            : (isDark ? Colors.white60 : Colors.black54),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        nav.label,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: _mobileTabIndex == nav.idx
-                              ? (isDark ? const Color(0xFF18181B) : Colors.white)
-                              : (isDark ? Colors.white70 : Colors.black87),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                badgeCount: nav.idx == 2 ? _outboxQueue.length : 0,
               ),
             ),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF0B0F17) : const Color(0xFF18181B),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _activeCashSession != null ? 'Ca đang mở' : 'Chưa mở ca',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _offlineMode
-                      ? 'Ngoại tuyến • ${_outboxQueue.length} đơn chờ'
-                      : 'Đồng bộ đám mây sẵn sàng',
-                  style: const TextStyle(color: Colors.white60, fontSize: 11),
-                ),
-                if (_activeCashSession == null) ...[
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                      ),
-                      onPressed: _openCashSession,
-                      child: const Text('Mở ca ngay', style: TextStyle(fontSize: 11)),
-                    ),
-                  ),
-                ],
-              ],
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: buildRailIcon(
+              icon: Icons.sync_rounded,
+              tooltip: _outboxQueue.isNotEmpty
+                  ? 'Đồng bộ ${_outboxQueue.length} đơn chờ'
+                  : 'Tải lại thực đơn & tồn kho',
+              active: false,
+              idleFg: _outboxQueue.isNotEmpty ? Colors.amber.shade700 : null,
+              badgeCount: _outboxQueue.length,
+              onTap: () {
+                if (_busy) return;
+                if (_outboxQueue.isNotEmpty) {
+                  _flushOutbox();
+                } else {
+                  _refreshTerminalData();
+                }
+              },
             ),
           ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF0B0F17) : const Color(0xFFF3F4F6),
-              borderRadius: BorderRadius.circular(12),
+          const Spacer(),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: buildRailIcon(
+              icon: _activeCashSession != null
+                  ? Icons.lock_open_rounded
+                  : Icons.lock_clock_rounded,
+              tooltip: _activeCashSession != null
+                  ? 'Ca thu ngân đang mở'
+                  : 'Mở ca thu ngân ngay',
+              active: _activeCashSession != null,
+              activeBg: kEmeraldPrimary.withOpacity(0.14),
+              activeFg: kEmeraldPrimary,
+              idleFg: Colors.amber.shade700,
+              onTap: () {
+                if (_activeCashSession == null) {
+                  _openCashSession();
+                } else {
+                  _showSnack('Ca thu ngân hiện đang mở');
+                }
+              },
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => posThemeModeNotifier.value = ThemeMode.light,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 7),
-                      decoration: BoxDecoration(
-                        color: !isDark ? Colors.white : Colors.transparent,
-                        borderRadius: BorderRadius.circular(9),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        'Sáng',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: !isDark ? Colors.black : Colors.white60,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => posThemeModeNotifier.value = ThemeMode.dark,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 7),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1F2937) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(9),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        'Tối',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white : Colors.black54,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: buildRailIcon(
+              icon: isDark
+                  ? Icons.light_mode_rounded
+                  : Icons.dark_mode_rounded,
+              tooltip: isDark ? 'Chuyển giao diện Sáng' : 'Chuyển giao diện Tối',
+              active: false,
+              onTap: () {
+                posThemeModeNotifier.value =
+                    isDark ? ThemeMode.light : ThemeMode.dark;
+              },
             ),
+          ),
+          buildRailIcon(
+            icon: Icons.settings_rounded,
+            tooltip: 'Thông tin máy & Cài đặt',
+            active: false,
+            onTap: _showDeviceInfoDialog,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showDeviceInfoDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Thông tin Thiết bị POS'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Tên máy: ${_device?['name'] ?? '--'}'),
+            const SizedBox(height: 6),
+            Text('Chi nhánh: ${_store?['name'] ?? '--'}'),
+            const SizedBox(height: 6),
+            SelectableText('Serial Number: $_hardwareSerial'),
+            const SizedBox(height: 6),
+            Text('Server API: $_serverUrl'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showServerConfigDialog();
+            },
+            child: const Text('Đổi Server'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _resetAndRepair();
+            },
+            child: const Text('Hủy kích hoạt'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Đóng'),
           ),
         ],
       ),

@@ -4,11 +4,13 @@ import 'package:http/http.dart' as http;
 class PosApiException implements Exception {
   final String message;
   final int? statusCode;
+  final String? errorCode;
   final bool isNetworkError;
 
   PosApiException(
     this.message, {
     this.statusCode,
+    this.errorCode,
     this.isNetworkError = false,
   });
 
@@ -21,12 +23,14 @@ class PosApiClient {
   String? deviceToken;
   String? organizationId;
   String? storeId;
+  String? deviceSerial;
 
   PosApiClient({
     required this.baseUrl,
     this.deviceToken,
     this.organizationId,
     this.storeId,
+    this.deviceSerial,
   });
 
   String get _cleanBase => baseUrl.endsWith('/')
@@ -48,6 +52,9 @@ class PosApiClient {
     }
     if (storeId != null && storeId!.isNotEmpty) {
       h['X-Store-ID'] = storeId!;
+    }
+    if (deviceSerial != null && deviceSerial!.trim().isNotEmpty) {
+      h['X-Device-Serial'] = deviceSerial!.trim().toUpperCase();
     }
     if (extra != null) h.addAll(extra);
     return h;
@@ -92,13 +99,39 @@ class PosApiClient {
     } catch (_) {}
 
     if (res.statusCode < 200 || res.statusCode >= 300 || decoded['success'] == false) {
-      final msg = decoded['message']?.toString() ??
+      final errObj = decoded['error'];
+      final errCode = errObj is Map ? errObj['code']?.toString() : decoded['code']?.toString();
+      final msg = (errObj is Map ? errObj['message']?.toString() : null) ??
+          decoded['message']?.toString() ??
           decoded['detail']?.toString() ??
           'Lỗi máy chủ (${res.statusCode})';
-      throw PosApiException(msg, statusCode: res.statusCode);
+      throw PosApiException(
+        msg,
+        statusCode: res.statusCode,
+        errorCode: errCode,
+      );
     }
 
     return decoded.containsKey('data') ? decoded['data'] : decoded;
+  }
+
+  Future<Map<String, dynamic>> activateBySerial({
+    required String serialNumber,
+    String appVersion = '1.0.0',
+    Map<String, dynamic>? deviceInfo,
+  }) async {
+    final data = await _request(
+      'POST',
+      '/api/v1/devices/activate-by-serial',
+      auth: false,
+      timeout: const Duration(seconds: 6),
+      body: {
+        'serial_number': serialNumber.trim().toUpperCase(),
+        'app_version': appVersion,
+        if (deviceInfo != null) 'device_info': deviceInfo,
+      },
+    );
+    return Map<String, dynamic>.from(data as Map);
   }
 
   Future<Map<String, dynamic>> createPairingSession({String? ipAddress}) async {
