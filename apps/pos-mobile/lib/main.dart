@@ -80,6 +80,7 @@ class CartEntry {
   final String productName;
   final String variantName;
   final String sku;
+  final String imageUrl;
   final int price;
   final List<Map<String, dynamic>> selectedOptions;
   int quantity;
@@ -89,6 +90,7 @@ class CartEntry {
     required this.productName,
     required this.variantName,
     required this.sku,
+    this.imageUrl = '',
     required this.price,
     this.selectedOptions = const [],
     this.quantity = 1,
@@ -160,6 +162,11 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   String _searchQuery = '';
   String _paymentMethod = 'CASH';
   int _mobileTabIndex = 0; // 0: Menu, 1: Cart, 2: Orders
+  final TextEditingController _promoCodeCtrl = TextEditingController();
+  String _appliedDiscountCode = '';
+  int _appliedDiscountAmount = 0;
+  bool _applyingPromo = false;
+  List<Map<String, dynamic>> _discountCodes = [];
 
   Timer? _pairingPollTimer;
   Timer? _pairingCountdownTimer;
@@ -177,6 +184,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
   @override
   void dispose() {
     _stopAllTimers();
+    _promoCodeCtrl.dispose();
     super.dispose();
   }
 
@@ -592,6 +600,31 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
         }
       }
 
+      final nowUtc = DateTime.now().toUtc();
+      final promoByVariant = <String, Map<String, dynamic>>{};
+      for (final pr in (boot['promotions'] as List? ?? [])) {
+        if (pr is! Map) continue;
+        final sAt = pr['starts_at'] != null
+            ? DateTime.tryParse(pr['starts_at'].toString())?.toUtc()
+            : null;
+        final eAt = pr['ends_at'] != null
+            ? DateTime.tryParse(pr['ends_at'].toString())?.toUtc()
+            : null;
+        if (sAt != null && nowUtc.isBefore(sAt)) continue;
+        if (eAt != null && nowUtc.isAfter(eAt)) continue;
+        for (final it in (pr['items'] as List? ?? [])) {
+          if (it is! Map) continue;
+          final vid = it['variant_id']?.toString() ?? '';
+          if (vid.isEmpty) continue;
+          promoByVariant[vid] = {
+            'promoName': pr['name']?.toString() ?? '',
+            'discountType': it['discount_type']?.toString() ?? 'percentage',
+            'discountValue':
+                double.tryParse(it['discount_value']?.toString() ?? '0') ?? 0.0,
+          };
+        }
+      }
+
       final mappedVariants = <Map<String, dynamic>>[];
       for (final v in (boot['variants'] as List? ?? [])) {
         if (v is! Map) continue;
@@ -610,6 +643,26 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
         if (catIds.isEmpty && prod?['category_id'] != null) {
           catIds.add(prod!['category_id'].toString());
         }
+        final basePrice =
+            (double.tryParse(v['default_price']?.toString() ?? '0') ?? 0).round();
+        int effectivePrice = basePrice;
+        String promoBadge = '';
+        final promoRule = promoByVariant[vid];
+        if (promoRule != null) {
+          final dtype = promoRule['discountType']?.toString() ?? 'percentage';
+          final dval = (promoRule['discountValue'] as double?) ?? 0.0;
+          if (dtype == 'percentage') {
+            final pct = dval.clamp(0.0, 100.0);
+            effectivePrice = (basePrice * (100.0 - pct) / 100.0).round();
+            if (pct > 0) promoBadge = '-${pct.round()}%';
+          } else if (dtype == 'fixed') {
+            effectivePrice = (basePrice - dval.round()).clamp(0, basePrice);
+            if (dval > 0) promoBadge = '-${(dval / 1000).round()}K';
+          } else if (dtype == 'override_price') {
+            effectivePrice = dval.round().clamp(0, 999999999);
+            if (effectivePrice < basePrice) promoBadge = 'KM';
+          }
+        }
         mappedVariants.add({
           'variantId': vid,
           'productId': v['product_id']?.toString() ?? '',
@@ -618,13 +671,20 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
           'variantName': v['variant_name']?.toString() ?? 'Tiêu chuẩn',
           'sku': v['sku']?.toString() ?? v['variant_code']?.toString() ?? '',
           'barcode': barcodeMap[vid] ?? v['sku']?.toString() ?? '',
-          'price': (double.tryParse(v['default_price']?.toString() ?? '0') ?? 0).round(),
+          'price': effectivePrice,
+          'originalPrice': basePrice,
+          'promoBadge': promoBadge,
           'onHand': invMap[vid] ?? 0,
           'imageUrl': fullImg,
           'categoryIds': catIds,
           'optionGroups': (v['option_groups'] as List?) ?? const [],
         });
       }
+
+      final mappedDiscounts = (boot['discount_codes'] as List? ?? [])
+          .whereType<Map>()
+          .map((d) => Map<String, dynamic>.from(d))
+          .toList();
 
       final mappedCats = (boot['categories'] as List? ?? [])
           .whereType<Map>()
@@ -649,6 +709,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
       setState(() {
         _categories = mappedCats;
         _variants = mappedVariants;
+        _discountCodes = mappedDiscounts;
         _activeCashSession = boot['current_cash_session'] != null
             ? Map<String, dynamic>.from(boot['current_cash_session'] as Map)
             : null;
@@ -681,8 +742,99 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
     }
   }
 
-  int get _cartTotal =>
+  int get _cartSubtotal =>
       _cart.fold(0, (sum, item) => sum + (item.price * item.quantity));
+
+  int get _cartDiscount =>
+      _appliedDiscountAmount.clamp(0, _cartSubtotal);
+
+  int get _cartTotal =>
+      (_cartSubtotal - _cartDiscount).clamp(0, 999999999);
+
+  void _clearPromoCode() {
+    setState(() {
+      _appliedDiscountCode = '';
+      _appliedDiscountAmount = 0;
+      _promoCodeCtrl.clear();
+    });
+  }
+
+  Future<void> _applyPromoCode() async {
+    final code = _promoCodeCtrl.text.trim().toUpperCase();
+    if (code.isEmpty) {
+      _showSnack('Vui lòng nhập mã giảm giá.', isError: true);
+      return;
+    }
+    if (_cart.isEmpty) {
+      _showSnack('Vui lòng thêm món trước khi áp dụng mã.', isError: true);
+      return;
+    }
+    final storeId = _store?['id']?.toString();
+    if (storeId == null) return;
+
+    setState(() => _applyingPromo = true);
+    try {
+      if (!_offlineMode) {
+        final res = await _api.validateDiscountCode(
+          storeId: storeId,
+          code: code,
+          orderSubtotal: _cartSubtotal,
+        );
+        final disc =
+            (double.tryParse(res['discount_amount']?.toString() ?? '0') ?? 0)
+                .round();
+        if (!mounted) return;
+        setState(() {
+          _appliedDiscountCode = code;
+          _appliedDiscountAmount = disc;
+        });
+        _showSnack('Đã áp dụng mã $code (-${formatVnd(disc)})');
+      } else {
+        final found = _discountCodes.firstWhere(
+          (d) => d['code']?.toString().toUpperCase() == code,
+          orElse: () => <String, dynamic>{},
+        );
+        if (found.isEmpty) {
+          _showSnack('Mã giảm giá không tồn tại.', isError: true);
+          return;
+        }
+        final minOrd =
+            (double.tryParse(found['min_order_amount']?.toString() ?? '0') ?? 0)
+                .round();
+        if (_cartSubtotal < minOrd) {
+          _showSnack(
+            'Đơn tối thiểu ${formatVnd(minOrd)} để dùng mã $code.',
+            isError: true,
+          );
+          return;
+        }
+        final dtype = found['discount_type']?.toString() ?? 'percentage';
+        final val =
+            double.tryParse(found['value']?.toString() ?? '0') ?? 0.0;
+        int disc = dtype == 'percentage'
+            ? (_cartSubtotal * val / 100.0).round()
+            : val.round();
+        final maxDisc = found['max_discount_amount'] != null
+            ? (double.tryParse(found['max_discount_amount'].toString()) ?? 0)
+                .round()
+            : 0;
+        if (dtype == 'percentage' && maxDisc > 0 && disc > maxDisc) {
+          disc = maxDisc;
+        }
+        setState(() {
+          _appliedDiscountCode = code;
+          _appliedDiscountAmount = disc.clamp(0, _cartSubtotal);
+        });
+        _showSnack('Đã áp dụng mã $code (-${formatVnd(disc)})');
+      }
+    } on PosApiException catch (e) {
+      _showSnack(e.message, isError: true);
+    } catch (e) {
+      _showSnack('Không thể áp dụng mã: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _applyingPromo = false);
+    }
+  }
 
   void _addToCart(
     Map<String, dynamic> variant, {
@@ -711,6 +863,7 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
             productName: variant['productName'].toString(),
             variantName: variant['variantName'].toString(),
             sku: variant['sku'].toString(),
+            imageUrl: variant['imageUrl']?.toString() ?? '',
             price: finalPrice,
             selectedOptions: selectedOptions,
           ),
@@ -1028,6 +1181,9 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
           'occurred_at': nowIso,
         });
         _cart.clear();
+        _appliedDiscountCode = '';
+        _appliedDiscountAmount = 0;
+        _promoCodeCtrl.clear();
       });
       _showSnack(customNotice ?? 'Đã lưu đơn $clientOrderId vào hàng đợi ngoại tuyến!');
     }
@@ -1057,11 +1213,15 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
             .toList(),
         paymentMethodCode: _paymentMethod,
         paidAmount: _cartTotal,
+        discountCode: _appliedDiscountCode.isNotEmpty ? _appliedDiscountCode : null,
       );
 
       if (!mounted) return;
       setState(() {
         _cart.clear();
+        _appliedDiscountCode = '';
+        _appliedDiscountAmount = 0;
+        _promoCodeCtrl.clear();
         _busy = false;
       });
       await _refreshTerminalData();
@@ -2247,152 +2407,618 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
 
   Widget _buildCatalogPane(List<Map<String, dynamic>> items) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-          child: TextField(
-            decoration: InputDecoration(
-              hintText: 'Tìm tên món, SKU hoặc mã vạch...',
-              prefixIcon: const Icon(Icons.search),
-              filled: true,
-              fillColor: isDark ? const Color(0xFF1F2937) : Colors.white,
-              contentPadding: const EdgeInsets.symmetric(vertical: 10),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: isDark ? Colors.white12 : Colors.grey.shade300,
-                ),
-              ),
-            ),
-            onChanged: (val) => setState(() => _searchQuery = val),
-          ),
-        ),
-        if (_categories.isNotEmpty)
-          SizedBox(
-            height: 40,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+    return Container(
+      color: isDark ? const Color(0xFF0B1120) : const Color(0xFFF6F7F9),
+      child: Column(
+        children: [
+          // Top Search Bar
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: ChoiceChip(
-                    label: const Text('Tất cả', style: TextStyle(fontSize: 12)),
-                    selected: _selectedCategoryId == 'all',
-                    onSelected: (_) => setState(() => _selectedCategoryId = 'all'),
+                Expanded(
+                  child: TextField(
+                    style: const TextStyle(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Tìm tên món hoặc mã vạch...',
+                      hintStyle: TextStyle(
+                        fontSize: 14,
+                        color: isDark ? Colors.white38 : Colors.grey.shade500,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        size: 20,
+                        color: isDark ? Colors.white54 : Colors.grey.shade600,
+                      ),
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 14,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(
+                          color: isDark ? Colors.white12 : Colors.grey.shade200,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(
+                          color: kEmeraldPrimary,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                    onChanged: (val) => setState(() => _searchQuery = val),
                   ),
                 ),
-                for (final c in _categories)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ChoiceChip(
-                      label: Text(
-                        c['name']?.toString() ?? '',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      selected: _selectedCategoryId == c['id']?.toString(),
-                      onSelected: (_) => setState(
-                        () => _selectedCategoryId = c['id']?.toString() ?? 'all',
+              ],
+            ),
+          ),
+
+          // Horizontal Category Cards (Reference Style)
+          if (_categories.isNotEmpty)
+            SizedBox(
+              height: 50,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: [
+                  _buildCategoryPill(
+                    id: 'all',
+                    label: 'Tất cả',
+                    icon: Icons.grid_view_rounded,
+                    isDark: isDark,
+                  ),
+                  for (final c in _categories)
+                    _buildCategoryPill(
+                      id: c['id']?.toString() ?? 'all',
+                      label: c['name']?.toString() ?? '',
+                      icon: Icons.restaurant_menu_rounded,
+                      isDark: isDark,
+                    ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 10),
+
+          // Product Grid (3 Columns on Wide Tablet)
+          Expanded(
+            child: items.isEmpty
+                ? const Center(
+                    child: Text(
+                      'Chưa có sản phẩm nào trong chi nhánh.',
+                      style: TextStyle(fontSize: 14, color: Colors.black54),
+                    ),
+                  )
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final cols = constraints.maxWidth >= 560
+                          ? 3
+                          : constraints.maxWidth >= 360
+                              ? 2
+                              : 1;
+                      return GridView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: cols,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          childAspectRatio: 0.78,
+                        ),
+                        itemCount: items.length,
+                        itemBuilder: (ctx, i) {
+                          final v = items[i];
+                          final imgUrl = v['imageUrl']?.toString() ?? '';
+                          final price = (v['price'] as int?) ?? 0;
+                          final origPrice = (v['originalPrice'] as int?) ?? price;
+                          final promoBadge = v['promoBadge']?.toString() ?? '';
+                          final hasPromo = promoBadge.isNotEmpty && price < origPrice;
+                          final onHand = (v['onHand'] as int?) ?? 0;
+
+                          return Container(
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF111827) : Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: isDark
+                                    ? Colors.white12
+                                    : const Color(0xFFEAECEF),
+                              ),
+                              boxShadow: isDark
+                                  ? null
+                                  : [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.03),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              borderRadius: BorderRadius.circular(16),
+                              child: InkWell(
+                                onTap: () => _onVariantTap(v),
+                                borderRadius: BorderRadius.circular(16),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      // Image Container
+                                      Expanded(
+                                        child: Stack(
+                                          children: [
+                                            Container(
+                                              width: double.infinity,
+                                              height: double.infinity,
+                                              decoration: BoxDecoration(
+                                                color: isDark
+                                                    ? const Color(0xFF1F2937)
+                                                    : const Color(0xFFF3F5F7),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                              child: imgUrl.isNotEmpty
+                                                  ? ClipRRect(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              12),
+                                                      child: Image.network(
+                                                        imgUrl,
+                                                        fit: BoxFit.cover,
+                                                        errorBuilder:
+                                                            (_, __, ___) =>
+                                                                Center(
+                                                          child: Icon(
+                                                            Icons
+                                                                .fastfood_rounded,
+                                                            size: 32,
+                                                            color: Colors
+                                                                .grey.shade400,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    )
+                                                  : Center(
+                                                      child: Icon(
+                                                        Icons.fastfood_rounded,
+                                                        size: 32,
+                                                        color:
+                                                            Colors.grey.shade400,
+                                                      ),
+                                                    ),
+                                            ),
+                                            if (hasPromo)
+                                              Positioned(
+                                                left: 6,
+                                                top: 6,
+                                                child: Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                    horizontal: 7,
+                                                    vertical: 3,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFFE11D48),
+                                                    borderRadius:
+                                                        BorderRadius.circular(8),
+                                                  ),
+                                                  child: Text(
+                                                    promoBadge,
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.w800,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            Positioned(
+                                              right: 6,
+                                              top: 6,
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 6,
+                                                  vertical: 2,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black
+                                                      .withOpacity(0.55),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                child: Text(
+                                                  'Kho: $onHand',
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+
+                                      // Product Name
+                                      Text(
+                                        v['productName'].toString(),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 13.5,
+                                          height: 1.25,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+
+                                      // Variant Name & Price Row
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              v['variantName'].toString(),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: isDark
+                                                    ? Colors.white60
+                                                    : Colors.grey.shade600,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.end,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (hasPromo)
+                                                Text(
+                                                  formatVnd(origPrice),
+                                                  style: TextStyle(
+                                                    fontSize: 10.5,
+                                                    decoration: TextDecoration
+                                                        .lineThrough,
+                                                    color: Colors.grey.shade500,
+                                                  ),
+                                                ),
+                                              Text(
+                                                formatVnd(price),
+                                                style: const TextStyle(
+                                                  color: kEmeraldDark,
+                                                  fontWeight: FontWeight.w800,
+                                                  fontSize: 14.5,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+
+                                      // Soft Emerald "+ Thêm vào đơn" CTA Button
+                                      SizedBox(
+                                        width: double.infinity,
+                                        height: 34,
+                                        child: TextButton.icon(
+                                          onPressed: () => _onVariantTap(v),
+                                          style: TextButton.styleFrom(
+                                            backgroundColor: kMintSoft,
+                                            foregroundColor: kEmeraldDark,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                          ),
+                                          icon: const Icon(Icons.add, size: 16),
+                                          label: const Text(
+                                            'Thêm vào đơn',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryPill({
+    required String id,
+    required String label,
+    required IconData icon,
+    required bool isDark,
+  }) {
+    final selected = _selectedCategoryId == id;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        onTap: () => setState(() => _selectedCategoryId = id),
+        borderRadius: BorderRadius.circular(14),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? kMintSoft
+                : (isDark ? const Color(0xFF1E293B) : Colors.white),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected
+                  ? kEmeraldPrimary
+                  : (isDark ? Colors.white12 : const Color(0xFFE5E7EB)),
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: selected
+                    ? kEmeraldDark
+                    : (isDark ? Colors.white70 : Colors.grey.shade700),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                  color: selected
+                      ? kEmeraldDark
+                      : (isDark ? Colors.white : Colors.grey.shade800),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCartPane() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      color: isDark ? const Color(0xFF0F172A) : Colors.white,
+      child: Column(
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 14, 10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Chi tiết đơn hàng',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+                if (_cart.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _cart.clear();
+                        _appliedDiscountCode = '';
+                        _appliedDiscountAmount = 0;
+                        _promoCodeCtrl.clear();
+                      });
+                    },
+                    icon: const Icon(Icons.delete_outline,
+                        size: 16, color: Color(0xFFE11D48)),
+                    label: const Text(
+                      'Xóa hết',
+                      style: TextStyle(
+                        color: Color(0xFFE11D48),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
               ],
             ),
           ),
-        const SizedBox(height: 6),
-        Expanded(
-          child: items.isEmpty
-              ? const Center(child: Text('Chưa có sản phẩm nào trong chi nhánh.'))
-              : GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 210,
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
-                    childAspectRatio: 0.92,
-                  ),
-                  itemCount: items.length,
-                  itemBuilder: (ctx, i) {
-                    final v = items[i];
-                    final imgUrl = v['imageUrl']?.toString() ?? '';
-                    return InkWell(
-                      onTap: () => _onVariantTap(v),
-                      borderRadius: BorderRadius.circular(14),
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF111827) : Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: isDark ? Colors.white12 : Colors.grey.shade200,
+          Divider(height: 1, color: isDark ? Colors.white12 : Colors.grey.shade200),
+
+          // Cart Items
+          Expanded(
+            child: _cart.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.shopping_bag_outlined,
+                            size: 40, color: Colors.grey.shade300),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Chạm vào món để thêm vào đơn',
+                          style: TextStyle(
+                            color: Colors.grey.shade500,
+                            fontSize: 13,
                           ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      ],
+                    ),
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _cart.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (_, i) {
+                      final item = _cart[i];
+                      return Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? const Color(0xFF1E293B)
+                              : const Color(0xFFF9FAFB),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.white10
+                                : const Color(0xFFECEEF2),
+                          ),
+                        ),
+                        child: Row(
                           children: [
-                            if (imgUrl.isNotEmpty)
-                              ClipRRect(
+                            // Thumbnail
+                            Container(
+                              width: 46,
+                              height: 46,
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFF334155)
+                                    : Colors.white,
                                 borderRadius: BorderRadius.circular(10),
-                                child: Image.network(
-                                  imgUrl,
-                                  height: 62,
-                                  width: double.infinity,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                                ),
                               ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  v['productName'].toString(),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '${v['variantName']} • ${v['sku']}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: isDark ? Colors.white54 : Colors.grey.shade600,
-                                  ),
-                                ),
-                              ],
+                              child: item.imageUrl.isNotEmpty
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: Image.network(
+                                        item.imageUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Icon(
+                                          Icons.fastfood_rounded,
+                                          size: 20,
+                                          color: Colors.grey.shade400,
+                                        ),
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.fastfood_rounded,
+                                      size: 20,
+                                      color: Colors.grey.shade400,
+                                    ),
                             ),
+                            const SizedBox(width: 10),
+                            // Title + Variant + Price
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.productName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    item.selectedOptions.isNotEmpty
+                                        ? '${item.variantName} • ${item.selectedOptions.map((o) => o['name']?.toString() ?? '').where((n) => n.isNotEmpty).join(', ')}'
+                                        : item.variantName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: isDark
+                                          ? Colors.white60
+                                          : Colors.grey.shade600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    formatVnd(item.price),
+                                    style: const TextStyle(
+                                      color: kEmeraldDark,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Stepper - 1 +
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(
-                                  formatVnd(v['price'] as int),
-                                  style: const TextStyle(
-                                    color: kEmeraldDark,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 14,
+                                InkWell(
+                                  onTap: () {
+                                    setState(() {
+                                      if (item.quantity > 1) {
+                                        item.quantity--;
+                                      } else {
+                                        _cart.removeAt(i);
+                                      }
+                                    });
+                                  },
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Container(
+                                    width: 28,
+                                    height: 28,
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? const Color(0xFF334155)
+                                          : Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: isDark
+                                            ? Colors.white12
+                                            : Colors.grey.shade300,
+                                      ),
+                                    ),
+                                    child: const Icon(Icons.remove, size: 16),
                                   ),
                                 ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
+                                SizedBox(
+                                  width: 28,
+                                  child: Center(
+                                    child: Text(
+                                      '${item.quantity}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 13.5,
+                                      ),
+                                    ),
                                   ),
-                                  decoration: BoxDecoration(
-                                    color: kMintSoft,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    'Kho: ${v['onHand']}',
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      color: kEmeraldDark,
-                                      fontWeight: FontWeight.bold,
+                                ),
+                                InkWell(
+                                  onTap: () => setState(() => item.quantity++),
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Container(
+                                    width: 28,
+                                    height: 28,
+                                    decoration: BoxDecoration(
+                                      color: kEmeraldPrimary,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(
+                                      Icons.add,
+                                      size: 16,
+                                      color: Colors.white,
                                     ),
                                   ),
                                 ),
@@ -2400,152 +3026,258 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                             ),
                           ],
                         ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCartPane() {
-    return Container(
-      color: Colors.white,
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Đơn hàng hiện tại',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                ),
-                if (_cart.isNotEmpty)
-                  TextButton(
-                    onPressed: () => setState(() => _cart.clear()),
-                    child: const Text('Xóa hết', style: TextStyle(color: Colors.red)),
-                  ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: _cart.isEmpty
-                ? const Center(
-                    child: Text(
-                      'Chạm vào món để thêm vào đơn',
-                      style: TextStyle(color: Colors.black45),
-                    ),
-                  )
-                : ListView.separated(
-                    itemCount: _cart.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, i) {
-                      final item = _cart[i];
-                      return ListTile(
-                        dense: true,
-                        title: Text(
-                          item.productName,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(formatVnd(item.price)),
-                            if (item.selectedOptions.isNotEmpty)
-                              Text(
-                                item.selectedOptions
-                                    .map((o) => o['name']?.toString() ?? '')
-                                    .where((n) => n.isNotEmpty)
-                                    .join(', '),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.black54,
-                                ),
-                              ),
-                          ],
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.remove_circle_outline, size: 20),
-                              onPressed: () {
-                                setState(() {
-                                  if (item.quantity > 1) {
-                                    item.quantity--;
-                                  } else {
-                                    _cart.removeAt(i);
-                                  }
-                                });
-                              },
-                            ),
-                            Text(
-                              '${item.quantity}',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.add_circle_outline, size: 20),
-                              onPressed: () => setState(() => item.quantity++),
-                            ),
-                          ],
-                        ),
                       );
                     },
                   ),
           ),
+
+          // Bottom Summary + Promo Code + Payment + Checkout Button
           Container(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
             decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              border: Border(top: BorderSide(color: Colors.grey.shade200)),
+              color: isDark ? const Color(0xFF111827) : Colors.white,
+              border: Border(
+                top: BorderSide(
+                  color: isDark ? Colors.white12 : Colors.grey.shade200,
+                ),
+              ),
             ),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                DropdownButtonFormField<String>(
-                  value: _paymentMethod,
-                  decoration: const InputDecoration(
-                    labelText: 'Phương thức thanh toán',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'CASH', child: Text('Tiền mặt')),
-                    DropdownMenuItem(value: 'BANK_TRANSFER', child: Text('Chuyển khoản / QR')),
-                    DropdownMenuItem(value: 'CARD', child: Text('Thẻ ngân hàng')),
-                  ],
-                  onChanged: (v) {
-                    if (v != null) setState(() => _paymentMethod = v);
-                  },
-                ),
-                const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Tổng thanh toán:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text(
+                      'Tạm tính',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: isDark ? Colors.white60 : Colors.grey.shade600,
+                      ),
+                    ),
+                    Text(
+                      formatVnd(_cartSubtotal),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                if (_cartDiscount > 0) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Giảm giá ($_appliedDiscountCode)',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: kEmeraldDark,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '-${formatVnd(_cartDiscount)}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: kEmeraldDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Tổng thanh toán',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14.5,
+                      ),
+                    ),
                     Text(
                       formatVnd(_cartTotal),
                       style: const TextStyle(
-                        fontSize: 20,
+                        fontSize: 19,
                         fontWeight: FontWeight.w900,
                         color: kEmeraldDark,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
+
+                // Promo Code Input Row
+                if (_appliedDiscountCode.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: kMintSoft,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: kEmeraldPrimary.withOpacity(0.4),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.local_offer_rounded,
+                          size: 16,
+                          color: kEmeraldDark,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Đang dùng mã $_appliedDiscountCode (-${formatVnd(_cartDiscount)})',
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: kEmeraldDark,
+                            ),
+                          ),
+                        ),
+                        InkWell(
+                          onTap: _clearPromoCode,
+                          child: const Icon(
+                            Icons.close,
+                            size: 18,
+                            color: kEmeraldDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _promoCodeCtrl,
+                          textCapitalization: TextCapitalization.characters,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: InputDecoration(
+                            hintText: 'Nhập mã giảm giá...',
+                            hintStyle: TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.grey.shade500,
+                            ),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            filled: true,
+                            fillColor: isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFF6F7F9),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(
+                                color: isDark
+                                    ? Colors.white12
+                                    : Colors.grey.shade300,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(
+                                color: kEmeraldPrimary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        height: 38,
+                        child: OutlinedButton(
+                          onPressed: _applyingPromo ? null : _applyPromoCode,
+                          style: OutlinedButton.styleFrom(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: _applyingPromo
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text(
+                                  'Áp dụng',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                const SizedBox(height: 8),
+
+                // Payment Method
+                DropdownButtonFormField<String>(
+                  value: _paymentMethod,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    filled: true,
+                    fillColor: isDark
+                        ? const Color(0xFF1E293B)
+                        : const Color(0xFFF6F7F9),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                        color: isDark ? Colors.white12 : Colors.grey.shade300,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: kEmeraldPrimary),
+                    ),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'CASH', child: Text('Tiền mặt')),
+                    DropdownMenuItem(
+                        value: 'BANK_TRANSFER',
+                        child: Text('Chuyển khoản / QR')),
+                    DropdownMenuItem(
+                        value: 'CARD', child: Text('Thẻ ngân hàng')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setState(() => _paymentMethod = v);
+                  },
+                ),
+                const SizedBox(height: 10),
+
+                // Place Order Button
                 SizedBox(
                   width: double.infinity,
+                  height: 44,
                   child: FilledButton(
                     style: FilledButton.styleFrom(
                       backgroundColor: kEmeraldPrimary,
-                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     onPressed: (_cart.isEmpty || _busy) ? null : _checkoutOrder,
                     child: _busy
@@ -2562,8 +3294,8 @@ class _PosTerminalRootState extends State<PosTerminalRoot> {
                                 ? 'Lưu đơn ngoại tuyến (${formatVnd(_cartTotal)})'
                                 : 'Thanh toán (${formatVnd(_cartTotal)})',
                             style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14.5,
                             ),
                           ),
                   ),

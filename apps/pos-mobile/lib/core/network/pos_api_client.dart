@@ -246,6 +246,7 @@ class PosApiClient {
     required List<Map<String, dynamic>> items,
     required String paymentMethodCode,
     required int paidAmount,
+    String? discountCode,
   }) async {
     final data = await _request(
       'POST',
@@ -255,12 +256,31 @@ class PosApiClient {
         'store_id': targetStoreId,
         'client_order_id': clientOrderId,
         'items': items,
+        if (discountCode != null && discountCode.isNotEmpty)
+          'discount_code': discountCode,
         'payments': [
           {
             'payment_method_code': paymentMethodCode,
             'amount': '$paidAmount.0000',
           }
         ],
+      },
+    );
+    return Map<String, dynamic>.from(data as Map);
+  }
+
+  Future<Map<String, dynamic>> validateDiscountCode({
+    required String storeId,
+    required String code,
+    required int orderSubtotal,
+  }) async {
+    final data = await _request(
+      'POST',
+      '/api/v1/discounts/validate',
+      body: {
+        'store_id': storeId,
+        'code': code.trim().toUpperCase(),
+        'order_subtotal': '$orderSubtotal.00',
       },
     );
     return Map<String, dynamic>.from(data as Map);
