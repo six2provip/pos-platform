@@ -71,7 +71,13 @@ export function MenuSetupView({
     setLoadingDevices(true);
     try {
       const res = await apiFetch("/api/v1/devices");
-      const list = Array.isArray(res?.data) ? (res.data as DeviceRecord[]) : [];
+      const list = Array.isArray(res)
+        ? (res as DeviceRecord[])
+        : Array.isArray(res?.data)
+          ? (res.data as DeviceRecord[])
+          : Array.isArray(res?.items)
+            ? (res.items as DeviceRecord[])
+            : [];
       setAllDevices(list);
     } catch {
       setAllDevices([]);
@@ -110,7 +116,12 @@ export function MenuSetupView({
     apiFetch(`/api/v1/stores/${activeStore.id}/menu`)
       .then((res) => {
         if (!cancelled) {
-          setMenuItems(Array.isArray(res?.data?.items) ? res.data.items : []);
+          const items = Array.isArray(res?.items)
+            ? res.items
+            : Array.isArray(res?.data?.items)
+              ? res.data.items
+              : [];
+          setMenuItems(items);
         }
       })
       .catch(() => {
@@ -131,7 +142,7 @@ export function MenuSetupView({
     apiFetch(`/api/v1/devices/${activeDevice.id}/menu`)
       .then((res) => {
         if (cancelled) return;
-        const data = res?.data || {};
+        const data = res?.items ? res : res?.data || res || {};
         setDeviceMenuMode(
           data.menu_mode === "custom" ? "custom" : "inherit_store"
         );
@@ -271,7 +282,7 @@ export function MenuSetupView({
     if (!sourceDeviceId || !accessToken) return;
     try {
       const res = await apiFetch(`/api/v1/devices/${sourceDeviceId}/menu`);
-      const data = res?.data || {};
+      const data = res?.items ? res : res?.data || res || {};
       setDeviceMenuMode("custom");
       setDeviceAllowedCats(
         Array.isArray(data.allowed_category_ids) ? data.allowed_category_ids : []

@@ -3182,7 +3182,7 @@ export default function OrganizationWorkspace({
             onFetchStoreMenu={async (storeId) => {
               if (!accessToken) return [];
               const res = await apiFetch(`/api/v1/stores/${storeId}/menu`);
-              return res?.data?.items || [];
+              return res?.items || res?.data?.items || [];
             }}
             onSaveStoreMenu={async (storeId, items) => {
               if (!accessToken) return;
