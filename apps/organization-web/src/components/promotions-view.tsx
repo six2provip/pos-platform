@@ -153,6 +153,7 @@ export function PromotionsView({
 
   // Variant Picker & Bulk Apply
   const [variantQuery, setVariantQuery] = useState("");
+  const [variantTabFilter, setVariantTabFilter] = useState<"all" | "selected">("all");
   const [bulkType, setBulkType] = useState<PromoDiscountType>("percentage");
   const [bulkDigits, setBulkDigits] = useState("20");
 
@@ -191,6 +192,7 @@ export function PromotionsView({
     setIsActive(true);
     setDraftItems([]);
     setVariantQuery("");
+    setVariantTabFilter("all");
     setBulkType("percentage");
     setBulkDigits("20");
     setModalOpen(true);
@@ -219,6 +221,7 @@ export function PromotionsView({
       }))
     );
     setVariantQuery("");
+    setVariantTabFilter("all");
     setModalOpen(true);
   };
 
@@ -407,14 +410,21 @@ export function PromotionsView({
 
   const filteredCatalogProducts = useMemo(() => {
     const q = variantQuery.trim().toLowerCase();
-    const activeProds = products.filter((p) => (p.variants || []).length > 0);
-    if (!q) return activeProds;
-    return activeProds.filter(
-      (p) =>
+    return products.filter((p) => {
+      if ((p.variants || []).length === 0) return false;
+      if (
+        variantTabFilter === "selected" &&
+        !p.variants.some((v) => selectedVariantIds.has(v.id))
+      ) {
+        return false;
+      }
+      if (!q) return true;
+      return (
         p.name.toLowerCase().includes(q) ||
         p.variants.some((v) => v.variant_name.toLowerCase().includes(q))
-    );
-  }, [products, variantQuery]);
+      );
+    });
+  }, [products, variantQuery, variantTabFilter, selectedVariantIds]);
 
   const storeOptions = useMemo(
     () =>
@@ -692,7 +702,7 @@ export function PromotionsView({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 12, scale: 0.97 }}
                 transition={{ type: "spring", stiffness: 420, damping: 36 }}
-                className="pointer-events-auto flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-neutral-200/80 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950"
+                className="pointer-events-auto flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-neutral-200/80 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950"
               >
                 {/* Modal Header */}
                 <div className="flex items-center justify-between border-b border-neutral-200/80 px-6 py-4 dark:border-neutral-800">
@@ -720,11 +730,11 @@ export function PromotionsView({
                   </button>
                 </div>
 
-                {/* Modal Body: 2 Columns */}
+                {/* Modal Body: 4/8 Unified Settings + Inline Variant Matrix */}
                 <div className="min-h-0 flex-1 overflow-y-auto p-6">
                   <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-                    {/* LEFT COLUMN (5 cols): Program Info, Schedule, Store Scope, Active Switch */}
-                    <div className="flex flex-col gap-4 lg:col-span-5">
+                    {/* LEFT COLUMN (4 cols): Program Settings & Summary */}
+                    <div className="flex flex-col gap-4 lg:col-span-4">
                       <div className="space-y-3.5 rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
                         <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
                           1. Thông tin chương trình
@@ -777,7 +787,7 @@ export function PromotionsView({
                           closeOnSelect
                           labels={{
                             label: "Thời gian áp dụng",
-                            placeholder: "Không giới hạn (chọn ngày bắt đầu → kết thúc)",
+                            placeholder: "Không giới hạn ngày",
                             startDate: "Bắt đầu từ",
                             endDate: "Kết thúc lúc",
                             selectEnd: "Chọn ngày kết thúc",
@@ -812,7 +822,7 @@ export function PromotionsView({
                           emptyText="Không tìm thấy chi nhánh phù hợp."
                           helperText={
                             selectedStoreIds.length === 0
-                              ? "Để trống để áp dụng cho toàn bộ hệ thống."
+                              ? "Để trống để áp dụng toàn bộ hệ thống."
                               : `Đang áp dụng tại ${selectedStoreIds.length} chi nhánh.`
                           }
                         />
@@ -824,7 +834,7 @@ export function PromotionsView({
                             Kích hoạt chương trình
                           </div>
                           <div className="text-[11px] text-neutral-400">
-                            Tự động áp dụng giá khuyến mãi trên POS &amp; Kiosk
+                            Áp dụng ngay trên POS &amp; Kiosk
                           </div>
                         </div>
                         <BeSwitch
@@ -833,296 +843,367 @@ export function PromotionsView({
                           ariaLabel="Kích hoạt chương trình khuyến mãi"
                         />
                       </div>
+
+                      {/* Quick Summary */}
+                      <div className="rounded-2xl border border-neutral-200/80 bg-neutral-900 px-4 py-3 text-white dark:border-neutral-700 dark:bg-neutral-900">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-neutral-300">Số variant áp dụng:</span>
+                          <span className="font-bold tabular-nums text-emerald-400">
+                            {draftItems.length} variant
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between text-xs">
+                          <span className="text-neutral-300">Số sản phẩm:</span>
+                          <span className="font-bold tabular-nums">
+                            {new Set(draftItems.map((i) => i.product_id)).size} sản phẩm
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* RIGHT COLUMN (7 cols): Per-Variant Picker & Discount Pricing */}
-                    <div className="flex flex-col gap-4 lg:col-span-7">
-                      {/* Variant Catalog Picker */}
-                      <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
-                        <div className="mb-2.5 flex items-center justify-between gap-2">
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
-                            3. Chọn sản phẩm theo Variant ({draftItems.length} đã chọn)
+                    {/* RIGHT COLUMN (8 cols): Unified Nested Product -> Variant Inline Editor */}
+                    <div className="flex min-h-0 flex-col rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4 lg:col-span-8 dark:border-neutral-800 dark:bg-neutral-900/50">
+                      {/* Header & Filter Bar */}
+                      <div className="flex flex-wrap items-center justify-between gap-2.5 pb-3">
+                        <div className="flex items-center gap-2">
+                          <Layers className="h-4 w-4 text-neutral-500" />
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-600 dark:text-neutral-300">
+                            3. Sản phẩm &amp; Giá khuyến mãi theo Variant
                           </span>
                         </div>
 
-                        <BeInput
-                          value={variantQuery}
-                          onChange={setVariantQuery}
-                          placeholder="Tìm tên sản phẩm hoặc tên variant (Size M, Size L...)"
-                          leftIcon={<Search className="h-3.5 w-3.5" />}
-                        />
+                        <BeTabs
+                          value={variantTabFilter}
+                          onValueChange={(v) =>
+                            setVariantTabFilter(v as "all" | "selected")
+                          }
+                          variant="pill"
+                        >
+                          <BeTabsList>
+                            <BeTabsTrigger value="all">
+                              Tất cả ({products.filter((p) => (p.variants || []).length > 0).length})
+                            </BeTabsTrigger>
+                            <BeTabsTrigger value="selected">
+                              Đã chọn ({draftItems.length})
+                            </BeTabsTrigger>
+                          </BeTabsList>
+                        </BeTabs>
+                      </div>
 
-                        <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
-                          {filteredCatalogProducts.length === 0 ? (
-                            <div className="rounded-xl border border-dashed border-neutral-200 py-6 text-center text-xs text-neutral-400">
-                              Không tìm thấy sản phẩm / variant phù hợp.
-                            </div>
-                          ) : (
-                            filteredCatalogProducts.map((prod) => {
-                              const allSelected =
-                                prod.variants.length > 0 &&
-                                prod.variants.every((v) =>
-                                  selectedVariantIds.has(v.id)
-                                );
-                              return (
-                                <div
-                                  key={prod.id}
-                                  className="rounded-xl border border-neutral-200/80 bg-white p-2.5 dark:border-neutral-800 dark:bg-neutral-900"
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div className="flex min-w-0 items-center gap-2">
-                                      <div className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
-                                        {prod.image_url ? (
-                                          <img
-                                            src={prod.image_url}
-                                            alt={prod.name}
-                                            className="h-full w-full object-cover"
-                                          />
-                                        ) : (
-                                          <UtensilsCrossed className="h-3.5 w-3.5 text-neutral-400" />
-                                        )}
-                                      </div>
-                                      <span className="truncate text-xs font-bold text-neutral-900 dark:text-white">
-                                        {prod.name}
-                                      </span>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => selectAllProductVariants(prod)}
-                                      className="shrink-0 text-[11px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
-                                    >
-                                      {allSelected ? "Bỏ chọn hết" : "Chọn tất cả"}
-                                    </button>
-                                  </div>
-
-                                  <div className="mt-2 flex flex-wrap gap-1.5">
-                                    {prod.variants.map((v) => {
-                                      const picked = selectedVariantIds.has(v.id);
-                                      return (
-                                        <button
-                                          key={v.id}
-                                          type="button"
-                                          onClick={() =>
-                                            toggleVariantSelection(prod, v)
-                                          }
-                                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                                            picked
-                                              ? "border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900"
-                                              : "border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
-                                          }`}
-                                        >
-                                          {picked && <Check className="h-3 w-3" />}
-                                          <span>{v.variant_name}</span>
-                                          <span className="opacity-75 tabular-nums">
-                                            {Number(v.default_price || 0).toLocaleString(
-                                              "vi-VN"
-                                            )}
-                                            đ
-                                          </span>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
+                      {/* Search + Bulk Apply Bar */}
+                      <div className="flex flex-col gap-2.5 pb-3 sm:flex-row sm:items-center">
+                        <div className="flex-1">
+                          <BeInput
+                            value={variantQuery}
+                            onChange={setVariantQuery}
+                            placeholder="Tìm sản phẩm hoặc variant (Size M, Size L...)"
+                            leftIcon={<Search className="h-3.5 w-3.5" />}
+                          />
+                        </div>
+                        <div className="flex items-center gap-1.5 rounded-xl border border-neutral-200 bg-white p-1 dark:border-neutral-700 dark:bg-neutral-900">
+                          <div className="w-28">
+                            <BeSelect
+                              value={bulkType}
+                              onValueChange={(v) =>
+                                setBulkType(v as PromoDiscountType)
+                              }
+                              options={[
+                                { value: "percentage", label: "Giảm %" },
+                                { value: "fixed", label: "Giảm đ" },
+                                { value: "override_price", label: "Đồng giá" },
+                              ]}
+                            />
+                          </div>
+                          <div className="w-20">
+                            <BeInput
+                              inputMode="numeric"
+                              value={
+                                bulkDigits
+                                  ? bulkType === "percentage"
+                                    ? bulkDigits
+                                    : Number(bulkDigits).toLocaleString("vi-VN")
+                                  : ""
+                              }
+                              onChange={(val) => {
+                                let digits = val.replace(/\D/g, "");
+                                if (
+                                  bulkType === "percentage" &&
+                                  Number(digits) > 100
+                                ) {
+                                  digits = "100";
+                                }
+                                setBulkDigits(digits);
+                              }}
+                              placeholder="20"
+                              rightIcon={
+                                <span className="text-[10px] font-bold">
+                                  {bulkType === "percentage" ? "%" : "đ"}
+                                </span>
+                              }
+                            />
+                          </div>
+                          <BeButton
+                            variant="primary"
+                            size="sm"
+                            onClick={applyBulkRuleToSelected}
+                          >
+                            Áp dụng
+                          </BeButton>
                         </div>
                       </div>
 
-                      {/* Selected Variants Pricing Table + Bulk Bar */}
-                      <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
-                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-neutral-500">
-                            <Layers className="h-3.5 w-3.5" />
-                            4. Cấu hình giá theo từng Variant
-                          </span>
-
-                          {/* Quick Bulk Apply */}
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <div className="w-32">
-                              <BeSelect
-                                value={bulkType}
-                                onValueChange={(v) =>
-                                  setBulkType(v as PromoDiscountType)
-                                }
-                                options={[
-                                  { value: "percentage", label: "Giảm %" },
-                                  { value: "fixed", label: "Giảm tiền" },
-                                  { value: "override_price", label: "Đồng giá" },
-                                ]}
-                              />
-                            </div>
-                            <div className="w-24">
-                              <BeInput
-                                inputMode="numeric"
-                                value={
-                                  bulkDigits
-                                    ? bulkType === "percentage"
-                                      ? bulkDigits
-                                      : Number(bulkDigits).toLocaleString("vi-VN")
-                                    : ""
-                                }
-                                onChange={(val) => {
-                                  let digits = val.replace(/\D/g, "");
-                                  if (
-                                    bulkType === "percentage" &&
-                                    Number(digits) > 100
-                                  ) {
-                                    digits = "100";
-                                  }
-                                  setBulkDigits(digits);
-                                }}
-                                placeholder="20"
-                                rightIcon={
-                                  <span className="text-[10px] font-bold">
-                                    {bulkType === "percentage" ? "%" : "đ"}
-                                  </span>
-                                }
-                              />
-                            </div>
-                            <BeButton
-                              variant="secondary"
-                              size="sm"
-                              onClick={applyBulkRuleToSelected}
-                            >
-                              Áp dụng tất cả
-                            </BeButton>
-                          </div>
-                        </div>
-
-                        {draftItems.length === 0 ? (
-                          <div className="flex flex-1 min-h-[140px] flex-col items-center justify-center rounded-xl border border-dashed border-neutral-200 bg-white/60 p-6 text-center text-xs text-neutral-400 dark:border-neutral-800 dark:bg-neutral-950/30">
-                            Chọn các variant ở mục 3 để cấu hình mức giảm hoặc giá khuyến mãi riêng cho từng variant.
+                      {/* Unified Nested Product -> Variant Rows */}
+                      <div className="min-h-[340px] max-h-[52vh] flex-1 space-y-2.5 overflow-y-auto pr-1">
+                        {filteredCatalogProducts.length === 0 ? (
+                          <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-xl border border-dashed border-neutral-200 bg-white/60 p-8 text-center text-xs text-neutral-400 dark:border-neutral-800 dark:bg-neutral-950/30">
+                            {variantTabFilter === "selected"
+                              ? "Chưa có variant nào được chọn. Chuyển sang tab 'Tất cả' để tick chọn sản phẩm."
+                              : "Không tìm thấy sản phẩm / variant phù hợp."}
                           </div>
                         ) : (
-                          <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
-                            {draftItems.map((it) => {
-                              const numVal = Number(it.discount_value_digits || 0);
-                              const finalPrice = computePromoPrice(
-                                it.base_price,
-                                it.discount_type,
-                                numVal
-                              );
-                              return (
-                                <div
-                                  key={it.variant_id}
-                                  className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-neutral-200/80 bg-white px-3 py-2.5 dark:border-neutral-800 dark:bg-neutral-900"
-                                >
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="truncate text-xs font-bold text-neutral-900 dark:text-white">
-                                        {it.product_name}
-                                      </span>
-                                      <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
-                                        {it.variant_name}
-                                      </span>
+                          filteredCatalogProducts.map((prod) => {
+                            const selectedCount = prod.variants.filter((v) =>
+                              selectedVariantIds.has(v.id)
+                            ).length;
+                            const allSelected =
+                              prod.variants.length > 0 &&
+                              selectedCount === prod.variants.length;
+
+                            return (
+                              <div
+                                key={prod.id}
+                                className="overflow-hidden rounded-2xl border border-neutral-200/80 bg-white dark:border-neutral-800 dark:bg-neutral-900"
+                              >
+                                {/* Product Header Row */}
+                                <div className="flex items-center justify-between gap-3 border-b border-neutral-100 bg-neutral-50/70 px-3.5 py-2.5 dark:border-neutral-800 dark:bg-neutral-950/50">
+                                  <div className="flex min-w-0 items-center gap-2.5">
+                                    <div className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-lg border border-neutral-200/70 bg-white dark:border-neutral-700 dark:bg-neutral-800">
+                                      {prod.image_url ? (
+                                        <img
+                                          src={prod.image_url}
+                                          alt={prod.name}
+                                          className="h-full w-full object-cover"
+                                        />
+                                      ) : (
+                                        <UtensilsCrossed className="h-3.5 w-3.5 text-neutral-400" />
+                                      )}
                                     </div>
-                                    <div className="mt-0.5 text-[11px] tabular-nums text-neutral-500">
-                                      Giá gốc:{" "}
-                                      <span className="line-through">
-                                        {it.base_price.toLocaleString("vi-VN")}đ
-                                      </span>{" "}
-                                      →{" "}
-                                      <strong className="text-emerald-600 dark:text-emerald-400">
-                                        {finalPrice.toLocaleString("vi-VN")}đ
-                                      </strong>
+                                    <div className="min-w-0">
+                                      <div className="truncate text-xs font-bold text-neutral-900 dark:text-white">
+                                        {prod.name}
+                                      </div>
+                                      <div className="text-[10px] text-neutral-400">
+                                        {prod.variants.length} variant
+                                        {selectedCount > 0 &&
+                                          ` • ${selectedCount} đang áp dụng`}
+                                      </div>
                                     </div>
                                   </div>
 
-                                  <div className="flex items-center gap-1.5">
-                                    <div className="w-28">
-                                      <BeSelect
-                                        value={it.discount_type}
-                                        onValueChange={(v) => {
-                                          const nextType = v as PromoDiscountType;
-                                          setDraftItems((prev) =>
-                                            prev.map((row) =>
-                                              row.variant_id === it.variant_id
-                                                ? {
-                                                    ...row,
-                                                    discount_type: nextType,
-                                                    discount_value_digits:
-                                                      nextType === "percentage" &&
-                                                      Number(
-                                                        row.discount_value_digits
-                                                      ) > 100
-                                                        ? "100"
-                                                        : row.discount_value_digits,
-                                                  }
-                                                : row
-                                            )
-                                          );
-                                        }}
-                                        options={[
-                                          { value: "percentage", label: "Giảm %" },
-                                          { value: "fixed", label: "Giảm đ" },
-                                          {
-                                            value: "override_price",
-                                            label: "Đồng giá",
-                                          },
-                                        ]}
-                                      />
-                                    </div>
-                                    <div className="w-24">
-                                      <BeInput
-                                        inputMode="numeric"
-                                        value={
-                                          it.discount_value_digits
-                                            ? it.discount_type === "percentage"
-                                              ? it.discount_value_digits
-                                              : Number(
-                                                  it.discount_value_digits
-                                                ).toLocaleString("vi-VN")
-                                            : ""
-                                        }
-                                        onChange={(val) => {
-                                          let digits = val.replace(/\D/g, "");
-                                          if (
-                                            it.discount_type === "percentage" &&
-                                            Number(digits) > 100
-                                          ) {
-                                            digits = "100";
-                                          }
-                                          setDraftItems((prev) =>
-                                            prev.map((row) =>
-                                              row.variant_id === it.variant_id
-                                                ? {
-                                                    ...row,
-                                                    discount_value_digits: digits,
-                                                  }
-                                                : row
-                                            )
-                                          );
-                                        }}
-                                        rightIcon={
-                                          <span className="text-[10px] font-bold">
-                                            {it.discount_type === "percentage"
-                                              ? "%"
-                                              : "đ"}
-                                          </span>
-                                        }
-                                      />
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setDraftItems((prev) =>
-                                          prev.filter(
-                                            (row) => row.variant_id !== it.variant_id
-                                          )
-                                        )
-                                      }
-                                      title="Gỡ variant"
-                                      className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40"
-                                    >
-                                      <X className="h-3.5 w-3.5" />
-                                    </button>
-                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => selectAllProductVariants(prod)}
+                                    className="shrink-0 rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                                  >
+                                    {allSelected ? "Bỏ chọn hết" : "Chọn tất cả"}
+                                  </button>
                                 </div>
-                              );
-                            })}
-                          </div>
+
+                                {/* Nested Variant Rows with Inline Pricing */}
+                                <div className="divide-y divide-neutral-100 dark:divide-neutral-800/80">
+                                  {prod.variants
+                                    .filter(
+                                      (v) =>
+                                        variantTabFilter === "all" ||
+                                        selectedVariantIds.has(v.id)
+                                    )
+                                    .map((v) => {
+                                      const draft = draftItems.find(
+                                        (it) => it.variant_id === v.id
+                                      );
+                                      const baseNum = Math.max(
+                                        0,
+                                        Math.round(Number(v.default_price || 0))
+                                      );
+                                      const finalPrice = draft
+                                        ? computePromoPrice(
+                                            baseNum,
+                                            draft.discount_type,
+                                            Number(
+                                              draft.discount_value_digits || 0
+                                            )
+                                          )
+                                        : baseNum;
+
+                                      return (
+                                        <div
+                                          key={v.id}
+                                          className={`flex flex-wrap items-center justify-between gap-2.5 px-3.5 py-2.5 transition-colors ${
+                                            draft
+                                              ? "bg-emerald-50/30 dark:bg-emerald-950/15"
+                                              : "hover:bg-neutral-50/80 dark:hover:bg-neutral-800/30"
+                                          }`}
+                                        >
+                                          {/* Left: Checkbox + Variant Name + Base Price */}
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              toggleVariantSelection(prod, v)
+                                            }
+                                            className="flex min-w-[170px] flex-1 items-center gap-2.5 text-left"
+                                          >
+                                            <span
+                                              className={`grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors ${
+                                                draft
+                                                  ? "border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900"
+                                                  : "border-neutral-300 bg-white dark:border-neutral-600 dark:bg-neutral-800"
+                                              }`}
+                                            >
+                                              {draft && (
+                                                <Check className="h-3 w-3 stroke-[3]" />
+                                              )}
+                                            </span>
+                                            <div className="min-w-0">
+                                              <div className="truncate text-xs font-semibold text-neutral-900 dark:text-white">
+                                                {v.variant_name}
+                                              </div>
+                                              <div className="text-[11px] tabular-nums text-neutral-500">
+                                                Giá gốc:{" "}
+                                                <span
+                                                  className={
+                                                    draft ? "line-through" : ""
+                                                  }
+                                                >
+                                                  {baseNum.toLocaleString("vi-VN")}đ
+                                                </span>
+                                                {draft && (
+                                                  <>
+                                                    {" → "}
+                                                    <strong className="text-emerald-600 dark:text-emerald-400">
+                                                      {finalPrice.toLocaleString(
+                                                        "vi-VN"
+                                                      )}
+                                                      đ
+                                                    </strong>
+                                                  </>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </button>
+
+                                          {/* Right: Inline Discount Controls (when selected) */}
+                                          {draft ? (
+                                            <div className="flex items-center gap-1.5">
+                                              <div className="w-28">
+                                                <BeSelect
+                                                  value={draft.discount_type}
+                                                  onValueChange={(val) => {
+                                                    const nextType =
+                                                      val as PromoDiscountType;
+                                                    setDraftItems((prev) =>
+                                                      prev.map((row) =>
+                                                        row.variant_id === v.id
+                                                          ? {
+                                                              ...row,
+                                                              discount_type:
+                                                                nextType,
+                                                              discount_value_digits:
+                                                                nextType ===
+                                                                  "percentage" &&
+                                                                Number(
+                                                                  row.discount_value_digits
+                                                                ) > 100
+                                                                  ? "100"
+                                                                  : row.discount_value_digits,
+                                                            }
+                                                          : row
+                                                      )
+                                                    );
+                                                  }}
+                                                  options={[
+                                                    {
+                                                      value: "percentage",
+                                                      label: "Giảm %",
+                                                    },
+                                                    {
+                                                      value: "fixed",
+                                                      label: "Giảm đ",
+                                                    },
+                                                    {
+                                                      value: "override_price",
+                                                      label: "Đồng giá",
+                                                    },
+                                                  ]}
+                                                />
+                                              </div>
+                                              <div className="w-24">
+                                                <BeInput
+                                                  inputMode="numeric"
+                                                  value={
+                                                    draft.discount_value_digits
+                                                      ? draft.discount_type ===
+                                                        "percentage"
+                                                        ? draft.discount_value_digits
+                                                        : Number(
+                                                            draft.discount_value_digits
+                                                          ).toLocaleString(
+                                                            "vi-VN"
+                                                          )
+                                                      : ""
+                                                  }
+                                                  onChange={(val) => {
+                                                    let digits = val.replace(
+                                                      /\D/g,
+                                                      ""
+                                                    );
+                                                    if (
+                                                      draft.discount_type ===
+                                                        "percentage" &&
+                                                      Number(digits) > 100
+                                                    ) {
+                                                      digits = "100";
+                                                    }
+                                                    setDraftItems((prev) =>
+                                                      prev.map((row) =>
+                                                        row.variant_id === v.id
+                                                          ? {
+                                                              ...row,
+                                                              discount_value_digits:
+                                                                digits,
+                                                            }
+                                                          : row
+                                                      )
+                                                    );
+                                                  }}
+                                                  rightIcon={
+                                                    <span className="text-[10px] font-bold">
+                                                      {draft.discount_type ===
+                                                      "percentage"
+                                                        ? "%"
+                                                        : "đ"}
+                                                    </span>
+                                                  }
+                                                />
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                toggleVariantSelection(prod, v)
+                                              }
+                                              className="rounded-full border border-neutral-200 px-2.5 py-1 text-[11px] font-semibold text-neutral-500 transition-colors hover:border-neutral-300 hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                                            >
+                                              + Áp dụng KM
+                                            </button>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                </div>
+                              </div>
+                            );
+                          })
                         )}
                       </div>
                     </div>
@@ -1160,3 +1241,4 @@ export function PromotionsView({
     </div>
   );
 }
+
