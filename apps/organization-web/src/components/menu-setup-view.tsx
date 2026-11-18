@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   Check,
+  ChevronLeft,
+  ChevronRight,
   Coffee,
   Cookie,
   CupSoda,
@@ -114,6 +116,43 @@ export function MenuSetupView({
 
   // Product Detail & Options Modal
   const [detailProductId, setDetailProductId] = useState<string | null>(null);
+  const categoryStripRef = useRef<HTMLDivElement | null>(null);
+  const [canScrollCatLeft, setCanScrollCatLeft] = useState(false);
+  const [canScrollCatRight, setCanScrollCatRight] = useState(false);
+
+  const updateCategoryScrollState = useCallback(() => {
+    const el = categoryStripRef.current;
+    if (!el) return;
+    setCanScrollCatLeft(el.scrollLeft > 4);
+    setCanScrollCatRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+
+  useEffect(() => {
+    updateCategoryScrollState();
+    window.addEventListener("resize", updateCategoryScrollState);
+    return () => window.removeEventListener("resize", updateCategoryScrollState);
+  }, [updateCategoryScrollState, categories.length, selection.kind, deviceMenuMode]);
+
+  const slideCategories = (direction: "left" | "right") => {
+    const el = categoryStripRef.current;
+    if (!el) return;
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    if (maxScroll <= 0) return;
+
+    if (direction === "right") {
+      if (el.scrollLeft >= maxScroll - 4) {
+        el.scrollTo({ left: 0, behavior: "smooth" });
+      } else {
+        el.scrollBy({ left: 280, behavior: "smooth" });
+      }
+    } else {
+      if (el.scrollLeft <= 4) {
+        el.scrollTo({ left: maxScroll, behavior: "smooth" });
+      } else {
+        el.scrollBy({ left: -280, behavior: "smooth" });
+      }
+    }
+  };
 
   const productLookup = useMemo(() => {
     const map = new Map<string, ProductRecord>();
@@ -421,85 +460,114 @@ export function MenuSetupView({
     activeCatId: string,
     onSelectCat: (catId: string) => void
   ) => {
+    const hasOverflow = canScrollCatLeft || canScrollCatRight;
     return (
-      <div className="flex shrink-0 gap-2.5 overflow-x-auto pb-1">
-        {/* All Menu Card */}
-        <button
-          type="button"
-          onClick={() => onSelectCat("all")}
-          className={`flex w-28 shrink-0 flex-col justify-between rounded-2xl border p-3 text-left transition-all ${
-            activeCatId === "all"
-              ? "border-blue-600 bg-blue-50/70 shadow-sm dark:border-blue-400 dark:bg-blue-950/35"
-              : "border-neutral-200/80 bg-white hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-950/60"
-          }`}
+      <div className="relative flex shrink-0 items-center gap-1.5">
+        {hasOverflow && (
+          <button
+            type="button"
+            onClick={() => slideCategories("left")}
+            title="Trượt sang trái"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-neutral-200 bg-white text-neutral-600 shadow-sm transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        )}
+
+        <div
+          ref={categoryStripRef}
+          onScroll={updateCategoryScrollState}
+          className="flex min-w-0 flex-1 gap-2.5 overflow-x-auto scroll-smooth py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
-          <span
-            className={`grid h-8 w-8 place-items-center rounded-full transition-colors ${
+          {/* All Menu Card (Wide Horizontal Rectangle) */}
+          <button
+            type="button"
+            onClick={() => onSelectCat("all")}
+            className={`flex shrink-0 items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-left transition-all ${
               activeCatId === "all"
-                ? "bg-blue-600 text-white"
-                : "bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300"
+                ? "border-blue-600 bg-blue-50/70 shadow-sm dark:border-blue-400 dark:bg-blue-950/35"
+                : "border-neutral-200/80 bg-white hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-950/60"
             }`}
           >
-            <LayoutGrid className="h-4 w-4" />
-          </span>
-          <div className="mt-3">
-            <div
-              className={`truncate text-xs font-bold ${
+            <span
+              className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors ${
                 activeCatId === "all"
-                  ? "text-blue-700 dark:text-blue-300"
-                  : "text-neutral-900 dark:text-white"
+                  ? "bg-blue-600 text-white"
+                  : "bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300"
               }`}
             >
-              Tất cả Menu
-            </div>
-            <div className="text-[10px] text-neutral-400">
-              {items.length} Món
-            </div>
-          </div>
-        </button>
-
-        {/* Per-Category Cards */}
-        {categories.map((cat) => {
-          const count = items.filter((it) =>
-            it.category_ids.includes(cat.id)
-          ).length;
-          const isActive = activeCatId === cat.id;
-          const IconComp = getCategoryIcon(cat.name);
-          return (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => onSelectCat(cat.id)}
-              className={`flex w-28 shrink-0 flex-col justify-between rounded-2xl border p-3 text-left transition-all ${
-                isActive
-                  ? "border-blue-600 bg-blue-50/70 shadow-sm dark:border-blue-400 dark:bg-blue-950/35"
-                  : "border-neutral-200/80 bg-white hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-950/60"
-              }`}
-            >
-              <span
-                className={`grid h-8 w-8 place-items-center rounded-full transition-colors ${
-                  isActive
-                    ? "bg-blue-600 text-white"
-                    : "bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300"
+              <LayoutGrid className="h-4 w-4" />
+            </span>
+            <div className="whitespace-nowrap">
+              <div
+                className={`text-xs font-bold ${
+                  activeCatId === "all"
+                    ? "text-blue-700 dark:text-blue-300"
+                    : "text-neutral-900 dark:text-white"
                 }`}
               >
-                <IconComp className="h-4 w-4" />
-              </span>
-              <div className="mt-3">
-                <div
-                  className={`truncate text-xs font-bold ${
+                Tất cả Menu
+              </div>
+              <div className="text-[10px] text-neutral-400">
+                {items.length} Món
+              </div>
+            </div>
+          </button>
+
+          {/* Per-Category Wide Rectangular Cards (Full Name, No Ellipsis) */}
+          {categories.map((cat) => {
+            const count = items.filter((it) =>
+              it.category_ids.includes(cat.id)
+            ).length;
+            const isActive = activeCatId === cat.id;
+            const IconComp = getCategoryIcon(cat.name);
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => onSelectCat(cat.id)}
+                className={`flex shrink-0 items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-left transition-all ${
+                  isActive
+                    ? "border-blue-600 bg-blue-50/70 shadow-sm dark:border-blue-400 dark:bg-blue-950/35"
+                    : "border-neutral-200/80 bg-white hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-950/60"
+                }`}
+              >
+                <span
+                  className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors ${
                     isActive
-                      ? "text-blue-700 dark:text-blue-300"
-                      : "text-neutral-900 dark:text-white"
+                      ? "bg-blue-600 text-white"
+                      : "bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300"
                   }`}
                 >
-                  {cat.name}
+                  <IconComp className="h-4 w-4" />
+                </span>
+                <div className="whitespace-nowrap">
+                  <div
+                    className={`text-xs font-bold ${
+                      isActive
+                        ? "text-blue-700 dark:text-blue-300"
+                        : "text-neutral-900 dark:text-white"
+                    }`}
+                  >
+                    {cat.name}
+                  </div>
+                  <div className="text-[10px] text-neutral-400">{count} Món</div>
                 </div>
-                <div className="text-[10px] text-neutral-400">{count} Món</div>
-              </div>
-            </button>
-          );
-        })}
+              </button>
+            );
+          })}
+        </div>
+
+        {hasOverflow && (
+          <button
+            type="button"
+            onClick={() => slideCategories("right")}
+            title="Trượt sang phải"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-neutral-200 bg-white text-neutral-600 shadow-sm transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        )}
       </div>
     );
   };
@@ -588,12 +656,12 @@ export function MenuSetupView({
             {hasOverride ? (
               <div className="flex items-baseline gap-1">
                 <span className="text-xs font-extrabold tabular-nums text-blue-600 dark:text-blue-400">
-                  {Number(item.price_override).toLocaleString("vi-VN")}₫
+                  {Number(item.price_override).toLocaleString("vi-VN")}
                 </span>
               </div>
             ) : (
               <span className="text-xs font-extrabold tabular-nums text-neutral-900 dark:text-white">
-                {baseDisplay.toLocaleString("vi-VN")}₫
+                {baseDisplay.toLocaleString("vi-VN")}
               </span>
             )}
           </div>
