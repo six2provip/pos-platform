@@ -91,6 +91,45 @@ function formatShortDate(iso?: string | null): string {
   });
 }
 
+const VOUCHER_VISUAL_THEMES = [
+  {
+    bg: "from-violet-500 via-purple-500 to-indigo-600",
+    cardBg: "bg-white/15 border-white/25",
+    badgeBg: "bg-rose-600 text-white",
+    accent: "text-amber-300",
+  },
+  {
+    bg: "from-sky-500 via-blue-600 to-indigo-700",
+    cardBg: "bg-white/15 border-white/25",
+    badgeBg: "bg-rose-600 text-white",
+    accent: "text-cyan-200",
+  },
+  {
+    bg: "from-teal-400 via-emerald-500 to-cyan-600",
+    cardBg: "bg-white/15 border-white/25",
+    badgeBg: "bg-rose-600 text-white",
+    accent: "text-emerald-100",
+  },
+  {
+    bg: "from-rose-400 via-pink-500 to-fuchsia-600",
+    cardBg: "bg-white/15 border-white/25",
+    badgeBg: "bg-neutral-900 text-white",
+    accent: "text-pink-100",
+  },
+  {
+    bg: "from-amber-400 via-orange-500 to-rose-500",
+    cardBg: "bg-white/15 border-white/25",
+    badgeBg: "bg-neutral-900 text-white",
+    accent: "text-amber-100",
+  },
+  {
+    bg: "from-slate-800 via-neutral-900 to-zinc-950",
+    cardBg: "bg-white/10 border-white/20",
+    badgeBg: "bg-rose-600 text-white",
+    accent: "text-emerald-400",
+  },
+] as const;
+
 export function DiscountsView({
   stores,
   accessToken,
@@ -405,14 +444,14 @@ export function DiscountsView({
           </div>
         </div>
 
-        {/* List (3 Cards per Row on Desktop) */}
+        {/* List (2 Visual Promo Cards per Row on Desktop) */}
         <div className="min-h-0 flex-1 overflow-y-auto rounded-xl bg-neutral-50/70 p-3 dark:bg-neutral-950/40">
           {loading ? (
-            <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
-              {[1, 2, 3, 4, 5, 6].map((idx) => (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {[1, 2, 3, 4].map((idx) => (
                 <Skeleton
                   key={idx}
-                  className="h-48 w-full rounded-2xl dark:bg-neutral-800"
+                  className="h-36 w-full rounded-2xl dark:bg-neutral-800"
                 />
               ))}
             </div>
@@ -427,8 +466,8 @@ export function DiscountsView({
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
-              {filtered.map((dc) => {
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {filtered.map((dc, idx) => {
                 const badge = getRuntimeBadge(dc);
                 const valNum = Number(dc.value || 0);
                 const minNum = Number(dc.min_order_amount || 0);
@@ -437,6 +476,14 @@ export function DiscountsView({
                   : null;
                 const isRevealed = revealedCodeId === dc.id;
                 const isPercent = dc.discount_type === "percentage";
+                const theme =
+                  VOUCHER_VISUAL_THEMES[idx % VOUCHER_VISUAL_THEMES.length];
+
+                const shortHeroValue = isPercent
+                  ? `-${valNum}%`
+                  : valNum >= 1000
+                    ? `-${Math.round(valNum / 1000)}K`
+                    : `-${valNum}đ`;
 
                 const headline = isPercent
                   ? `Giảm ${valNum}%${
@@ -454,9 +501,9 @@ export function DiscountsView({
                     : "Không giới hạn ngày";
 
                 const usageLabel = dc.usage_limit
-                  ? `Đã dùng ${dc.used_count}/${dc.usage_limit} lượt`
+                  ? `${dc.used_count}/${dc.usage_limit} lượt`
                   : dc.used_count > 0
-                    ? `Đã dùng ${dc.used_count} lượt (∞)`
+                    ? `${dc.used_count} lượt (∞)`
                     : "Không giới hạn lượt";
 
                 return (
@@ -464,124 +511,137 @@ export function DiscountsView({
                     key={dc.id}
                     variant={dc.status === "active" ? "outlined" : "muted"}
                     size="compact"
-                    className="relative justify-between gap-0 overflow-hidden rounded-2xl border-neutral-200/80 bg-white py-0 shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-colors hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700"
+                    className={`group overflow-hidden rounded-2xl border-neutral-200/80 bg-white p-3 shadow-[0_2px_10px_rgba(0,0,0,0.03)] transition-all hover:border-neutral-300 hover:shadow-[0_6px_20px_rgba(0,0,0,0.06)] dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700 ${
+                      dc.status !== "active" ? "opacity-80" : ""
+                    }`}
                   >
-                    <CardContent className="flex flex-1 flex-col gap-3 p-4">
-                      {/* Header Row: Icon + Headline + Status Badge */}
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div
-                            className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${
-                              isPercent
-                                ? "bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400"
-                                : "bg-rose-50 text-rose-500 dark:bg-rose-950/60 dark:text-rose-400"
-                            }`}
+                    <CardContent className="flex flex-col gap-4 px-0 sm:flex-row sm:items-stretch">
+                      {/* Left Visual Voucher Artwork */}
+                      <div
+                        className={`relative flex h-32 w-full shrink-0 flex-col justify-between overflow-hidden rounded-xl bg-gradient-to-br p-3 text-white shadow-inner sm:h-auto sm:min-h-[124px] sm:w-44 ${theme.bg}`}
+                      >
+                        {/* Decorative Background Shapes */}
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute -right-5 -top-5 h-24 w-24 rounded-full bg-white/15 blur-xl"
+                        />
+                        <div
+                          aria-hidden="true"
+                          className={`pointer-events-none absolute -bottom-3 -right-3 h-20 w-28 rotate-[-10deg] rounded-xl border backdrop-blur-sm transition-transform duration-300 group-hover:rotate-[-6deg] group-hover:scale-105 ${theme.cardBg}`}
+                        />
+
+                        {/* Top-Left Circular Brand/Type Badge (like reference image) */}
+                        <div className="relative z-10 flex items-center justify-between">
+                          <span
+                            className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-black shadow-sm ${theme.badgeBg}`}
                           >
-                            {isPercent ? (
-                              <BadgePercent className="h-5 w-5" />
-                            ) : (
-                              <Tag className="h-5 w-5" />
-                            )}
+                            {isPercent ? "%" : "đ"}
+                          </span>
+                          <span className="rounded-md bg-black/25 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white/90 backdrop-blur-sm">
+                            Voucher
+                          </span>
+                        </div>
+
+                        {/* Hero Discount Value */}
+                        <div className="relative z-10 mt-auto">
+                          <div
+                            className={`text-[10px] font-bold uppercase tracking-wider ${theme.accent}`}
+                          >
+                            Ưu đãi POS
                           </div>
-                          <div className="min-w-0">
-                            <h3 className="truncate text-sm font-bold text-neutral-900 dark:text-white">
-                              {headline}
-                            </h3>
-                            <p className="truncate text-xs font-medium text-neutral-600 dark:text-neutral-300">
+                          <div className="text-2xl font-black leading-none tracking-tight text-white drop-shadow-sm">
+                            {shortHeroValue}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right Content & Actions */}
+                      <div className="flex min-w-0 flex-1 flex-col justify-between gap-2.5 py-0.5">
+                        <div>
+                          <div className="flex items-start justify-between gap-2">
+                            <h3 className="line-clamp-1 text-sm font-bold text-neutral-900 dark:text-white">
                               {dc.name}
-                            </p>
+                            </h3>
+                            <span
+                              className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.cls}`}
+                            >
+                              {badge.label}
+                            </span>
+                          </div>
+
+                          <p className="mt-1 line-clamp-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                            {headline}
+                            {minNum > 0
+                              ? ` • Đơn từ ${minNum.toLocaleString("vi-VN")}đ`
+                              : " • Mọi đơn hàng"}
+                          </p>
+
+                          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                            <span className="inline-flex items-center gap-1">
+                              <Calendar className="h-3 w-3 text-neutral-400" />
+                              {dateLabel}
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <Repeat className="h-3 w-3 text-neutral-400" />
+                              {usageLabel}
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <Store className="h-3 w-3 text-neutral-400" />
+                              {dc.store_ids.length === 0
+                                ? "Tất cả chi nhánh"
+                                : `${dc.store_ids.length} chi nhánh`}
+                            </span>
                           </div>
                         </div>
 
-                        <span
-                          className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.cls}`}
-                        >
-                          {badge.label}
-                        </span>
-                      </div>
+                        {/* Bottom Action Row (Shop Now style CTA + Switch + Edit/Delete) */}
+                        <div className="flex items-center justify-between gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRevealedCodeId(dc.id);
+                              void navigator.clipboard?.writeText(dc.code);
+                              notify("info", `Đã sao chép mã ${dc.code}`);
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-50 hover:text-blue-800 dark:text-blue-400 dark:hover:bg-blue-950/50"
+                          >
+                            <TicketPercent className="h-3.5 w-3.5" />
+                            {isRevealed ? (
+                              <span className="inline-flex items-center gap-1 font-mono tracking-wide">
+                                {dc.code}
+                                <Copy className="h-3 w-3" />
+                              </span>
+                            ) : (
+                              <span>Xem &amp; Sao chép mã</span>
+                            )}
+                          </button>
 
-                      {/* Conditions & Meta */}
-                      <div className="space-y-1.5 text-[11px] text-neutral-500 dark:text-neutral-400">
-                        <p className="truncate">
-                          {minNum > 0
-                            ? `Đơn tối thiểu ${minNum.toLocaleString("vi-VN")}đ`
-                            : "Áp dụng mọi đơn hàng"}
-                          {" • "}
-                          {dc.store_ids.length > 0
-                            ? `${dc.store_ids.length} chi nhánh`
-                            : "Tất cả chi nhánh"}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                          <span className="inline-flex items-center gap-1.5">
-                            <Calendar className="h-3.5 w-3.5 text-neutral-400" />
-                            {dateLabel}
-                          </span>
-                          <span className="inline-flex items-center gap-1.5">
-                            <Repeat className="h-3.5 w-3.5 text-neutral-400" />
-                            {usageLabel}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <BeSwitch
+                              checked={dc.status === "active"}
+                              onCheckedChange={() => void handleToggleStatus(dc)}
+                              ariaLabel={`Bật tắt mã ${dc.code}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(dc)}
+                              title="Chỉnh sửa"
+                              className="grid h-7 w-7 place-items-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDelete(dc)}
+                              title="Xóa mã"
+                              className="grid h-7 w-7 place-items-center rounded-lg text-rose-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </CardContent>
-
-                    {/* Horizontal Dashed Ticket Divider with Notches */}
-                    <div className="relative mx-0 border-t border-dashed border-neutral-200 dark:border-neutral-800">
-                      <span
-                        aria-hidden="true"
-                        className="absolute -left-2.5 -top-2.5 h-5 w-5 rounded-full border border-neutral-200/80 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950"
-                      />
-                      <span
-                        aria-hidden="true"
-                        className="absolute -right-2.5 -top-2.5 h-5 w-5 rounded-full border border-neutral-200/80 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950"
-                      />
-                    </div>
-
-                    {/* Ticket Footer Stub: Show Code + Switch + Actions */}
-                    <CardFooter className="justify-between gap-2 bg-neutral-50/40 px-4 py-3 dark:bg-neutral-950/30">
-                      <BeButton
-                        variant="primary"
-                        size="sm"
-                        onClick={() => {
-                          setRevealedCodeId(dc.id);
-                          void navigator.clipboard?.writeText(dc.code);
-                          notify("info", `Đã sao chép mã ${dc.code}`);
-                        }}
-                        className="h-8 min-w-[116px] bg-slate-900 px-3.5 text-xs font-semibold text-white hover:bg-slate-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
-                      >
-                        {isRevealed ? (
-                          <span className="inline-flex items-center gap-1.5 font-mono tracking-wider">
-                            {dc.code}
-                            <Copy className="h-3 w-3 opacity-80" />
-                          </span>
-                        ) : (
-                          "Xem mã"
-                        )}
-                      </BeButton>
-
-                      <div className="flex items-center gap-1.5">
-                        <BeSwitch
-                          checked={dc.status === "active"}
-                          onCheckedChange={() => void handleToggleStatus(dc)}
-                          ariaLabel={`Bật tắt mã ${dc.code}`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(dc)}
-                          title="Chỉnh sửa"
-                          className="grid h-7 w-7 place-items-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleDelete(dc)}
-                          title="Xóa mã"
-                          className="grid h-7 w-7 place-items-center rounded-lg text-rose-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </CardFooter>
                   </Card>
                 );
               })}
