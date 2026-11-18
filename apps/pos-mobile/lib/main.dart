@@ -13,6 +13,7 @@ import 'core/storage/local_pos_db.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   runApp(const PosApkApp());
 }
 
