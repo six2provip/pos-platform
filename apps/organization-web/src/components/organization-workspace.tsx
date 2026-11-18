@@ -1720,6 +1720,8 @@ export default function OrganizationWorkspace({
       name: string;
       serial_number?: string | null;
       status: "active" | "disabled";
+      menu_mode?: "inherit_store" | "custom";
+      allowed_category_ids?: string[];
     }
   ) => {
     if (!accessToken) return;
@@ -3149,8 +3151,27 @@ export default function OrganizationWorkspace({
           <StoresMasterDetailView
             stores={stores}
             devices={devices}
+            categories={categories}
             loadingDevices={devicesLoading}
             selectedStoreId={selectedStoreId}
+            onFetchStoreMenu={async (storeId) => {
+              if (!accessToken) return [];
+              const res = await apiFetch(`/api/v1/stores/${storeId}/menu`);
+              return res?.data?.items || [];
+            }}
+            onSaveStoreMenu={async (storeId, items) => {
+              if (!accessToken) return;
+              try {
+                await apiFetch(`/api/v1/stores/${storeId}/menu`, {
+                  method: "PUT",
+                  body: JSON.stringify({ items }),
+                });
+                notify("success", "Đã lưu thực đơn chi nhánh!");
+              } catch (err: any) {
+                notify("error", err?.message || "Không thể lưu thực đơn chi nhánh");
+                throw err;
+              }
+            }}
             onSelectWorkingStore={(storeId) => {
               setDevicesLoading(true);
               setSelectedStoreId(storeId);

@@ -117,6 +117,8 @@ class UpdateDeviceRequest(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=160)
     serial_number: Optional[str] = Field(default=None, max_length=120)
     status: Optional[str] = Field(default=None, pattern="^(active|disabled)$")
+    menu_mode: Optional[str] = Field(default=None, pattern="^(inherit_store|custom)$")
+    allowed_category_ids: Optional[List[str]] = None
 
 
 class CreateActivationCodeRequest(BaseModel):
@@ -225,6 +227,8 @@ def _serialize_device(device: Device) -> Dict[str, Any]:
         "device_type": device.device_type,
         "status": device.status,
         "platform": device.platform,
+        "menu_mode": getattr(device, "menu_mode", "inherit_store") or "inherit_store",
+        "allowed_category_ids": getattr(device, "allowed_category_ids_json", None) or [],
         "app_version": device.app_version,
         "last_seen_at": device.last_seen_at.isoformat() if device.last_seen_at else None,
         "last_sync_at": device.last_sync_at.isoformat() if device.last_sync_at else None,
@@ -1544,6 +1548,13 @@ def update_device(
 
     if body.name is not None:
         device.name = body.name.strip()
+
+    if body.menu_mode is not None:
+        device.menu_mode = body.menu_mode
+    if "allowed_category_ids" in body.model_fields_set:
+        device.allowed_category_ids_json = [
+            str(cid).strip() for cid in (body.allowed_category_ids or []) if str(cid).strip()
+        ]
 
     if "serial_number" in body.model_fields_set:
         norm_serial = normalize_and_validate_serial(body.serial_number)

@@ -42,6 +42,7 @@ from app.infrastructure.models import (
     ProductImage,
     ProductVariant,
     Store,
+    StoreProductConfig,
     SyncCheckpoint,
 )
 from app.modules.sales.router import (
@@ -226,6 +227,48 @@ def pos_bootstrap(
     for link in prod_cat_links:
         prod_cat_map.setdefault(link.product_id, []).append(link.category_id)
 
+    # Apply Store-level menu configuration (availability & optional price override)
+    store_cfg_rows = (
+        db.query(StoreProductConfig)
+        .filter(
+            StoreProductConfig.organization_id == org.id,
+            StoreProductConfig.store_id == store.id,
+        )
+        .all()
+    )
+    disabled_product_ids = {
+        c.product_id for c in store_cfg_rows if not c.is_available
+    }
+    store_price_overrides = {
+        c.product_id: c.price_override
+        for c in store_cfg_rows
+        if c.price_override is not None
+    }
+
+    products = [p for p in products if p.id not in disabled_product_ids]
+
+    # Apply optional Device-level category filter (defaults to inherit_store)
+    device_menu_mode = "inherit_store"
+    device_allowed_cats: List[str] = []
+    if isinstance(principal, DevicePrincipal):
+        device_menu_mode = getattr(principal.device, "menu_mode", "inherit_store") or "inherit_store"
+        raw_cats = getattr(principal.device, "allowed_category_ids_json", None) or []
+        device_allowed_cats = [str(cid) for cid in raw_cats]
+        if device_menu_mode == "custom":
+            allowed_cat_set = set(device_allowed_cats)
+            categories = [c for c in categories if c.id in allowed_cat_set]
+            products = [
+                p
+                for p in products
+                if any(
+                    cid in allowed_cat_set
+                    for cid in (prod_cat_map.get(p.id) or ([p.category_id] if p.category_id else []))
+                )
+            ]
+
+    allowed_product_ids = {p.id for p in products}
+    variants = [v for v in variants if v.product_id in allowed_product_ids]
+
     prod_images = (
         db.query(ProductImage)
         .filter(ProductImage.organization_id == org.id)
@@ -331,7 +374,9 @@ def pos_bootstrap(
                     "variant_name": v.variant_name,
                     "sku": v.sku,
                     "unit_name": v.unit_name,
-                    "default_price": format_decimal(v.default_price),
+                    "default_price": format_decimal(
+                        store_price_overrides.get(v.product_id, v.default_price)
+                    ),
                     "currency_code": v.currency_code,
                     "status": v.status,
                 }
@@ -354,6 +399,11 @@ def pos_bootstrap(
                 _serialize_cash_session(open_session) if open_session else None
             ),
             "catalog_cursor": initial_cursor,
+            "menu_scope": {
+                "store_id": store.id,
+                "device_menu_mode": device_menu_mode,
+                "allowed_category_ids": device_allowed_cats,
+            },
             "server_time": datetime.now(timezone.utc).isoformat(),
         },
         request_id=request_id,

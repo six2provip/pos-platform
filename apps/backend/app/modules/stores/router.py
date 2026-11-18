@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -28,7 +29,18 @@ from app.core.config import Settings
 from app.core.envelope import PaginationMeta, ok_response
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.deployment.profile import enforce_store_limit
-from app.infrastructure.models import CatalogChangeLog, Device, DeviceToken, Store, StoreSetting
+from app.infrastructure.models import (
+    CatalogChangeLog,
+    Device,
+    DeviceToken,
+    Product,
+    ProductCategory,
+    ProductImage,
+    ProductVariant,
+    Store,
+    StoreProductConfig,
+    StoreSetting,
+)
 from app.modules.audit.service import record_audit_event
 from app.modules.organizations.service import validate_non_secret_settings
 
@@ -450,6 +462,175 @@ def update_store_settings(
             "settings": setting.settings,
             "updated_at": setting.updated_at.isoformat(),
         },
+        request_id=request_id,
+    )
+
+
+class StoreMenuItemConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    product_id: str
+    is_available: bool = True
+    price_override: Optional[Decimal] = Field(default=None, ge=0)
+
+
+class UpdateStoreMenuRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: List[StoreMenuItemConfig]
+
+
+@router.get("/{store_id}/menu")
+def get_store_menu(
+    store_id: str,
+    principal: UserPrincipal = Depends(require_permission("stores.read")),
+    db: Session = Depends(get_db),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    """Return all org products with store-specific availability and price overrides."""
+    store = verify_store_access(db, principal, requested_store_id=store_id)
+    assert store is not None
+    org_id = principal.organization.id
+
+    products = (
+        db.query(Product)
+        .filter(Product.organization_id == org_id, Product.deleted_at.is_(None))
+        .order_by(Product.name.asc())
+        .all()
+    )
+    variants = (
+        db.query(ProductVariant)
+        .filter(ProductVariant.organization_id == org_id, ProductVariant.deleted_at.is_(None))
+        .all()
+    )
+    prod_cats = (
+        db.query(ProductCategory)
+        .filter(ProductCategory.organization_id == org_id)
+        .all()
+    )
+    prod_imgs = (
+        db.query(ProductImage)
+        .filter(ProductImage.organization_id == org_id)
+        .order_by(ProductImage.is_primary.desc(), ProductImage.sort_order.asc())
+        .all()
+    )
+    configs = (
+        db.query(StoreProductConfig)
+        .filter(
+            StoreProductConfig.organization_id == org_id,
+            StoreProductConfig.store_id == store.id,
+        )
+        .all()
+    )
+
+    cfg_map = {c.product_id: c for c in configs}
+    cat_map: Dict[str, List[str]] = {}
+    for link in prod_cats:
+        cat_map.setdefault(link.product_id, []).append(link.category_id)
+    img_map: Dict[str, str] = {}
+    for im in prod_imgs:
+        if im.product_id not in img_map or im.is_primary:
+            img_map[im.product_id] = im.image_url
+
+    var_price_map: Dict[str, List[Decimal]] = {}
+    for v in variants:
+        var_price_map.setdefault(v.product_id, []).append(v.default_price)
+
+    items = []
+    for p in products:
+        cfg = cfg_map.get(p.id)
+        prices = var_price_map.get(p.id, [])
+        base_price = min(prices) if prices else Decimal("0")
+        items.append(
+            {
+                "product_id": p.id,
+                "code": p.code,
+                "name": p.name,
+                "status": p.status,
+                "image_url": img_map.get(p.id),
+                "category_ids": cat_map.get(p.id, []),
+                "base_price": str(base_price),
+                "variant_count": len(prices),
+                "is_available": cfg.is_available if cfg is not None else True,
+                "price_override": (
+                    str(cfg.price_override)
+                    if (cfg is not None and cfg.price_override is not None)
+                    else None
+                ),
+            }
+        )
+
+    return ok_response(
+        {"store_id": store.id, "items": items},
+        request_id=request_id,
+    )
+
+
+@router.put("/{store_id}/menu")
+def update_store_menu(
+    store_id: str,
+    body: UpdateStoreMenuRequest,
+    principal: UserPrincipal = Depends(require_permission("stores.update")),
+    db: Session = Depends(get_db),
+    request_id: str = Depends(get_request_id),
+) -> Dict[str, Any]:
+    """Bulk update store-level product availability and optional price override."""
+    store = verify_store_access(db, principal, requested_store_id=store_id)
+    assert store is not None
+    org_id = principal.organization.id
+
+    existing_rows = (
+        db.query(StoreProductConfig)
+        .filter(
+            StoreProductConfig.organization_id == org_id,
+            StoreProductConfig.store_id == store.id,
+        )
+        .all()
+    )
+    existing_map = {r.product_id: r for r in existing_rows}
+
+    valid_prod_ids = {
+        p.id
+        for p in db.query(Product.id)
+        .filter(Product.organization_id == org_id, Product.deleted_at.is_(None))
+        .all()
+    }
+
+    updated_count = 0
+    for item in body.items:
+        if item.product_id not in valid_prod_ids:
+            continue
+        row = existing_map.get(item.product_id)
+        if row is None:
+            row = StoreProductConfig(
+                organization_id=org_id,
+                store_id=store.id,
+                product_id=item.product_id,
+                is_available=item.is_available,
+                price_override=item.price_override,
+            )
+            db.add(row)
+        else:
+            row.is_available = item.is_available
+            row.price_override = item.price_override
+        updated_count += 1
+
+    db.flush()
+    record_audit_event(
+        db,
+        action="store.menu.updated",
+        entity_type="store",
+        actor_type="user",
+        actor_id=principal.user.id,
+        organization_id=org_id,
+        store_id=store.id,
+        entity_id=store.id,
+        request_id=request_id,
+        metadata={"updated_count": updated_count},
+    )
+    db.commit()
+    return ok_response(
+        {"store_id": store.id, "updated_count": updated_count},
         request_id=request_id,
     )
 

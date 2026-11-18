@@ -52,6 +52,16 @@ def create_app(
                     )
                     conn.execute(
                         text(
+                            "ALTER TABLE devices ADD COLUMN IF NOT EXISTS menu_mode VARCHAR(20) NOT NULL DEFAULT 'inherit_store'"
+                        )
+                    )
+                    conn.execute(
+                        text(
+                            "ALTER TABLE devices ADD COLUMN IF NOT EXISTS allowed_category_ids_json JSONB"
+                        )
+                    )
+                    conn.execute(
+                        text(
                             "CREATE UNIQUE INDEX IF NOT EXISTS ux_devices_serial_number_active "
                             "ON devices (serial_number) "
                             "WHERE serial_number IS NOT NULL AND deleted_at IS NULL"

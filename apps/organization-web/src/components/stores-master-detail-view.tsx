@@ -13,6 +13,7 @@ import {
   Store as StoreIcon,
   Trash2,
   Unplug,
+  UtensilsCrossed,
   X,
 } from "lucide-react";
 import { BeInput } from "./motion/input";
@@ -39,15 +40,36 @@ export interface DeviceRecord {
   device_type: string;
   status: string;
   platform: string;
+  menu_mode?: string;
+  allowed_category_ids?: string[];
   last_seen_at?: string | null;
+}
+
+export interface StoreMenuItem {
+  product_id: string;
+  code: string;
+  name: string;
+  status: string;
+  image_url?: string | null;
+  category_ids: string[];
+  base_price: string;
+  variant_count: number;
+  is_available: boolean;
+  price_override: string | null;
 }
 
 interface StoresMasterDetailViewProps {
   stores: StoreRecord[];
   devices: DeviceRecord[];
+  categories?: { id: string; name: string }[];
   loadingDevices?: boolean;
   selectedStoreId: string;
   onSelectWorkingStore: (storeId: string) => void;
+  onFetchStoreMenu?: (storeId: string) => Promise<StoreMenuItem[]>;
+  onSaveStoreMenu?: (
+    storeId: string,
+    items: { product_id: string; is_available: boolean; price_override: string | null }[]
+  ) => Promise<void>;
   onCreateStore: (payload: {
     name: string;
     address_line?: string | null;
@@ -71,6 +93,8 @@ interface StoresMasterDetailViewProps {
       name: string;
       serial_number?: string | null;
       status: "active" | "disabled";
+      menu_mode?: "inherit_store" | "custom";
+      allowed_category_ids?: string[];
     }
   ) => Promise<void>;
   onToggleDeviceStatus: (
@@ -84,9 +108,12 @@ interface StoresMasterDetailViewProps {
 export function StoresMasterDetailView({
   stores,
   devices,
+  categories = [],
   loadingDevices = false,
   selectedStoreId,
   onSelectWorkingStore,
+  onFetchStoreMenu,
+  onSaveStoreMenu,
   onCreateStore,
   onUpdateStore,
   onDeleteStore,
@@ -124,6 +151,15 @@ export function StoresMasterDetailView({
   // Delete Device Confirmation Modal State
   const [deletingDevice, setDeletingDevice] = useState<DeviceRecord | null>(null);
   const [deletingDeviceLoading, setDeletingDeviceLoading] = useState(false);
+
+  const [storeDetailTab, setStoreDetailTab] = useState<"devices" | "menu">("devices");
+  const [storeMenuItems, setStoreMenuItems] = useState<StoreMenuItem[]>([]);
+  const [storeMenuLoading, setStoreMenuLoading] = useState(false);
+  const [storeMenuSaving, setStoreMenuSaving] = useState(false);
+  const [storeMenuSearch, setStoreMenuSearch] = useState("");
+  const [storeMenuFilter, setStoreMenuFilter] = useState<"all" | "available" | "hidden">("all");
+  const [editDeviceMenuMode, setEditDeviceMenuMode] = useState<"inherit_store" | "custom">("inherit_store");
+  const [editDeviceAllowedCats, setEditDeviceAllowedCats] = useState<string[]>([]);
 
   useEffect(() => {
     if (selectedStoreId && stores.some((s) => s.id === selectedStoreId)) {
@@ -172,6 +208,38 @@ export function StoresMasterDetailView({
       (d) => d.store_id === deletingStore.id && d.status === "active"
     );
   }, [devices, deletingStore]);
+
+  useEffect(() => {
+    if (storeDetailTab !== "menu" || !activeStore || !onFetchStoreMenu) return;
+    let cancelled = false;
+    setStoreMenuLoading(true);
+    onFetchStoreMenu(activeStore.id)
+      .then((items) => {
+        if (!cancelled) setStoreMenuItems(items);
+      })
+      .catch(() => {
+        if (!cancelled) setStoreMenuItems([]);
+      })
+      .finally(() => {
+        if (!cancelled) setStoreMenuLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [storeDetailTab, activeStore?.id, onFetchStoreMenu]);
+
+  const filteredStoreMenu = useMemo(() => {
+    const q = storeMenuSearch.trim().toLowerCase();
+    return storeMenuItems.filter((item) => {
+      if (storeMenuFilter === "available" && !item.is_available) return false;
+      if (storeMenuFilter === "hidden" && item.is_available) return false;
+      if (!q) return true;
+      return (
+        item.name.toLowerCase().includes(q) ||
+        item.code.toLowerCase().includes(q)
+      );
+    });
+  }, [storeMenuItems, storeMenuSearch, storeMenuFilter]);
 
   const handleSelectStore = (st: StoreRecord) => {
     setFocusedStoreId(st.id);
@@ -440,18 +508,199 @@ export function StoresMasterDetailView({
                   </div>
 
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <motion.button
-                      type="button"
-                      whileTap={{ scale: 0.97 }}
-                      onClick={() => onOpenCreateSerialDevice(activeStore)}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Thêm Thiết Bị
-                    </motion.button>
+                    <div className="inline-flex rounded-full border border-neutral-200 bg-neutral-100/80 p-0.5 dark:border-neutral-700 dark:bg-neutral-800">
+                      <button
+                        type="button"
+                        onClick={() => setStoreDetailTab("devices")}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                          storeDetailTab === "devices"
+                            ? "bg-white text-neutral-900 shadow-sm dark:bg-neutral-900 dark:text-white"
+                            : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400"
+                        }`}
+                      >
+                        <Smartphone className="h-3.5 w-3.5" />
+                        Thiết bị ({activeStoreDevices.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStoreDetailTab("menu")}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                          storeDetailTab === "menu"
+                            ? "bg-white text-neutral-900 shadow-sm dark:bg-neutral-900 dark:text-white"
+                            : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400"
+                        }`}
+                      >
+                        <UtensilsCrossed className="h-3.5 w-3.5" />
+                        Thực đơn chi nhánh
+                      </button>
+                    </div>
+                    {storeDetailTab === "devices" ? (
+                      <motion.button
+                        type="button"
+                        whileTap={{ scale: 0.97 }}
+                        onClick={() => onOpenCreateSerialDevice(activeStore)}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Thêm Thiết Bị
+                      </motion.button>
+                    ) : (
+                      <motion.button
+                        type="button"
+                        whileTap={{ scale: 0.97 }}
+                        disabled={storeMenuSaving || storeMenuLoading || !onSaveStoreMenu}
+                        onClick={async () => {
+                          if (!onSaveStoreMenu) return;
+                          setStoreMenuSaving(true);
+                          try {
+                            await onSaveStoreMenu(
+                              activeStore.id,
+                              storeMenuItems.map((it) => ({
+                                product_id: it.product_id,
+                                is_available: it.is_available,
+                                price_override:
+                                  it.price_override !== null &&
+                                  String(it.price_override).trim() !== ""
+                                    ? String(it.price_override).trim()
+                                    : null,
+                              }))
+                            );
+                          } finally {
+                            setStoreMenuSaving(false);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        {storeMenuSaving ? "Đang lưu..." : "Lưu Thực Đơn"}
+                      </motion.button>
+                    )}
                   </div>
                 </div>
 
+                {storeDetailTab === "menu" ? (
+                  <>
+                    <div className="mt-4 flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-1.5">
+                        {(
+                          [
+                            { id: "all", label: `Tất cả (${storeMenuItems.length})` },
+                            {
+                              id: "available",
+                              label: `Đang bán (${storeMenuItems.filter((i) => i.is_available).length})`,
+                            },
+                            {
+                              id: "hidden",
+                              label: `Đang ẩn (${storeMenuItems.filter((i) => !i.is_available).length})`,
+                            },
+                          ] as const
+                        ).map((f) => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setStoreMenuFilter(f.id)}
+                            className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
+                              storeMenuFilter === f.id
+                                ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
+                                : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300"
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-700 dark:bg-neutral-800">
+                        <Search className="h-3.5 w-3.5 text-neutral-400" />
+                        <input
+                          type="text"
+                          value={storeMenuSearch}
+                          onChange={(e) => setStoreMenuSearch(e.target.value)}
+                          placeholder="Tìm món hoặc mã SP..."
+                          className="w-44 bg-transparent text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
+                      {storeMenuLoading ? (
+                        <div className="space-y-2">
+                          {[1, 2, 3, 4].map((idx) => (
+                            <Skeleton
+                              key={idx}
+                              className="h-16 w-full rounded-2xl dark:bg-neutral-800"
+                            />
+                          ))}
+                        </div>
+                      ) : filteredStoreMenu.length === 0 ? (
+                        <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-neutral-50/50 p-8 text-center text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950/40">
+                          Không có sản phẩm nào phù hợp.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {filteredStoreMenu.map((item) => (
+                            <div
+                              key={item.product_id}
+                              className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 transition-colors ${
+                                item.is_available
+                                  ? "border-neutral-200/80 bg-white dark:border-neutral-800 dark:bg-neutral-950/60"
+                                  : "border-neutral-200/60 bg-neutral-100/70 opacity-70 dark:border-neutral-800 dark:bg-neutral-900/40"
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-xs font-bold text-neutral-900 dark:text-white">
+                                  {item.name}
+                                </div>
+                                <div className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                                  {item.code} • Giá gốc:{" "}
+                                  {Number(item.base_price || 0).toLocaleString("vi-VN")}₫
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <div className="w-36">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={item.price_override ?? ""}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setStoreMenuItems((prev) =>
+                                        prev.map((x) =>
+                                          x.product_id === item.product_id
+                                            ? {
+                                                ...x,
+                                                price_override:
+                                                  val === "" ? null : val,
+                                              }
+                                            : x
+                                        )
+                                      );
+                                    }}
+                                    placeholder="Giá riêng (mặc định)"
+                                    className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-2.5 py-1.5 text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                                  />
+                                </div>
+                                <BeSwitch
+                                  checked={item.is_available}
+                                  onCheckedChange={(checked) => {
+                                    setStoreMenuItems((prev) =>
+                                      prev.map((x) =>
+                                        x.product_id === item.product_id
+                                          ? { ...x, is_available: checked }
+                                          : x
+                                      )
+                                    );
+                                  }}
+                                  ariaLabel={`Bật tắt ${item.name} tại chi nhánh`}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
                 {/* Devices Toolbar */}
                 <div className="mt-4 flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-2">
@@ -541,7 +790,12 @@ export function StoresMasterDetailView({
                                     <div className="truncate text-xs font-bold text-neutral-900 dark:text-white">
                                       {d.name}
                                     </div>
-                                    {d.serial_number && (
+                                    {d.menu_mode === "custom" && (
+                                    <span className="mt-1 inline-block rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+                                      Lọc {(d.allowed_category_ids || []).length} danh mục
+                                    </span>
+                                  )}
+                                  {d.serial_number && (
                                       <p className="mt-0.5 truncate font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
                                         S/N: {d.serial_number}
                                       </p>
@@ -575,6 +829,10 @@ export function StoresMasterDetailView({
                                     setEditDeviceName(d.name);
                                     setEditDeviceSerial(d.serial_number || "");
                                     setEditDeviceActive(d.status === "active");
+                                    setEditDeviceMenuMode(
+                                      d.menu_mode === "custom" ? "custom" : "inherit_store"
+                                    );
+                                    setEditDeviceAllowedCats(d.allowed_category_ids || []);
                                   }}
                                   className="grid h-7 w-7 place-items-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-200/70 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
                                 >
@@ -625,6 +883,8 @@ export function StoresMasterDetailView({
                   </AnimatePresence>
                   )}
                 </div>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -742,6 +1002,9 @@ export function StoresMasterDetailView({
                         ? editDeviceSerial.trim().toUpperCase()
                         : null,
                       status: editDeviceActive ? "active" : "disabled",
+                      menu_mode: editDeviceMenuMode,
+                      allowed_category_ids:
+                        editDeviceMenuMode === "custom" ? editDeviceAllowedCats : [],
                     });
                     setEditingDevice(null);
                   } finally {
@@ -801,6 +1064,65 @@ export function StoresMasterDetailView({
                       onCheckedChange={setEditDeviceActive}
                       ariaLabel="Trạng thái kết nối thiết bị"
                     />
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-neutral-200/80 bg-neutral-50/70 p-3.5 dark:border-neutral-800 dark:bg-neutral-900">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-semibold text-neutral-900 dark:text-white">
+                          Thực đơn hiển thị trên máy
+                        </div>
+                        <div className="text-[11px] text-neutral-400">
+                          Mặc định kế thừa toàn bộ thực đơn của chi nhánh.
+                        </div>
+                      </div>
+                      <select
+                        value={editDeviceMenuMode}
+                        onChange={(e) =>
+                          setEditDeviceMenuMode(
+                            e.target.value === "custom" ? "custom" : "inherit_store"
+                          )
+                        }
+                        className="rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                      >
+                        <option value="inherit_store">Kế thừa Chi nhánh</option>
+                        <option value="custom">Lọc theo danh mục</option>
+                      </select>
+                    </div>
+                    {editDeviceMenuMode === "custom" && (
+                      <div className="max-h-36 overflow-y-auto pt-1">
+                        {categories.length === 0 ? (
+                          <div className="text-[11px] text-neutral-400">
+                            Chưa có danh mục nào để lọc.
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {categories.map((cat) => {
+                              const selected = editDeviceAllowedCats.includes(cat.id);
+                              return (
+                                <button
+                                  key={cat.id}
+                                  type="button"
+                                  onClick={() =>
+                                    setEditDeviceAllowedCats((prev) =>
+                                      selected
+                                        ? prev.filter((id) => id !== cat.id)
+                                        : [...prev, cat.id]
+                                    )
+                                  }
+                                  className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                                    selected
+                                      ? "border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900"
+                                      : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                                  }`}
+                                >
+                                  {cat.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 

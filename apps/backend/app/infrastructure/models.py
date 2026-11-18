@@ -436,6 +436,12 @@ class Device(Base):
     platform: Mapped[str] = mapped_column(
         String(30), nullable=False, default="android"
     )
+    menu_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="inherit_store"
+    )
+    allowed_category_ids_json: Mapped[Optional[list[str]]] = mapped_column(
+        JSON, nullable=True
+    )
     app_version: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -467,6 +473,40 @@ class Device(Base):
             name="ck_devices_status",
         ),
         Index("ix_devices_org_store_status", "organization_id", "store_id", "status"),
+    )
+
+
+class StoreProductConfig(Base):
+    __tablename__ = "store_product_configs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    organization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    store_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    product_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    is_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    price_override: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "store_id"],
+            ["stores.organization_id", "stores.id"],
+            name="fk_store_product_cfg_store_same_org",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "store_id",
+            "product_id",
+            name="uq_store_product_configs_org_store_prod",
+        ),
+        Index("ix_store_product_configs_store", "organization_id", "store_id"),
     )
 
 
