@@ -43,6 +43,7 @@ import {
   Smartphone,
   Sparkles,
   Store as StoreIcon,
+  UtensilsCrossed,
   Trash2,
   Users,
   Wifi,
@@ -68,6 +69,7 @@ import { ThemeSegmentedToggle, ThemeToggle } from "@/components/motion/theme-tog
 import { BeInput } from "@/components/motion/input";
 import { BeSelect } from "@/components/motion/select";
 import { StoresMasterDetailView } from "@/components/stores-master-detail-view";
+import { MenuSetupView } from "@/components/menu-setup-view";
 import {
   CatalogCategoriesView,
   type CategoryRecord,
@@ -186,6 +188,7 @@ type NavTab =
   | "categories"
   | "products"
   | "options"
+  | "menu_setup"
   | "inventory"
   | "stores"
   | "devices"
@@ -198,6 +201,7 @@ const TAB_PATHS: Record<NavTab, string> = {
   categories: "/categories",
   products: "/products",
   options: "/options",
+  menu_setup: "/menu-setup",
   inventory: "/inventory",
   stores: "/stores",
   devices: "/stores",
@@ -212,6 +216,7 @@ function getTabFromPathname(pathname: string): NavTab | null {
   if (clean === "categories") return "categories";
   if (clean === "products" || clean === "catalog") return "products";
   if (clean === "options" || clean === "modifiers") return "options";
+  if (clean === "menu-setup") return "menu_setup";
   if (clean === "inventory" || clean === "stock") return "inventory";
   if (
     clean === "stores" ||
@@ -299,7 +304,8 @@ export default function OrganizationWorkspace({
     if (
       activeTab === "categories" ||
       activeTab === "products" ||
-      activeTab === "options"
+      activeTab === "options" ||
+      activeTab === "menu_setup"
     ) {
       setCatalogMenuOpen(true);
     }
@@ -2270,7 +2276,8 @@ export default function OrganizationWorkspace({
                 const isCatalogActive =
                   activeTab === "categories" ||
                   activeTab === "products" ||
-                  activeTab === "options";
+                  activeTab === "options" ||
+                  activeTab === "menu_setup";
                 return (
                   <button
                     type="button"
@@ -2338,6 +2345,13 @@ export default function OrganizationWorkspace({
                             optionGroups.length > 0
                               ? `${optionGroups.length}`
                               : undefined,
+                        },
+                        {
+                          id: "menu_setup",
+                          label: "Thiết lập Menu",
+                          icon: UtensilsCrossed,
+                          path: "/menu-setup",
+                          badge: undefined,
                         },
                       ].map((sub) => {
                         const SubIcon = sub.icon;
@@ -3081,6 +3095,17 @@ export default function OrganizationWorkspace({
             accessToken={accessToken}
             apiFetch={apiFetch}
             onRefresh={() => refreshWorkspaceData(accessToken || undefined)}
+            notify={notify}
+          />
+        )}
+
+        {activeTab === "menu_setup" && (
+          <MenuSetupView
+            stores={stores}
+            categories={categories}
+            selectedStoreId={selectedStoreId}
+            accessToken={accessToken}
+            apiFetch={apiFetch}
             notify={notify}
           />
         )}
