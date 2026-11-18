@@ -15,6 +15,7 @@ import {
   UtensilsCrossed,
   X,
 } from "lucide-react";
+import { Card, CardContent } from "./motion/card";
 import { BeSwitch } from "./motion/switch";
 import { Skeleton } from "./ui/skeleton";
 import type {
@@ -583,77 +584,84 @@ export function MenuSetupView({
     };
 
     return (
-      <div
+      <Card
         key={item.product_id}
+        interactive
+        variant={item.is_available ? "outlined" : "muted"}
+        size="compact"
         onClick={openDetail}
-        className={`group flex aspect-square cursor-pointer flex-col overflow-hidden rounded-2xl border p-2.5 transition-all hover:shadow-md ${
+        className={`group aspect-square cursor-pointer gap-0 overflow-hidden rounded-2xl p-2.5 transition-shadow hover:shadow-md ${
           item.is_available
             ? "border-neutral-200/80 bg-white hover:border-blue-300 dark:border-neutral-800 dark:bg-neutral-950/80 dark:hover:border-neutral-700"
-            : "border-neutral-200/60 bg-neutral-100/80 opacity-70 dark:border-neutral-800 dark:bg-neutral-900/40"
+            : "border-neutral-200/60 bg-neutral-100/80 opacity-75 dark:border-neutral-800 dark:bg-neutral-900/40"
         }`}
       >
-        {/* Soft Rounded Image Frame with Categories (Top-Left), Switch (Top-Right), Price (Bottom-Right) */}
-        <div className="relative min-h-0 flex-1 w-full overflow-hidden rounded-xl bg-[#F7F8FA] dark:bg-neutral-800/80">
-          {imgUrl ? (
-            <img
-              src={imgUrl}
-              alt={item.name}
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-neutral-300 dark:text-neutral-600">
-              <UtensilsCrossed className="h-8 w-8" />
+        <CardContent className="flex min-h-0 flex-1 flex-col px-0">
+          {/* Soft Rounded Image Frame with Switch (Top-Right), Status (Bottom-Left), Price (Bottom-Right) */}
+          <div className="relative min-h-0 w-full flex-1 overflow-hidden rounded-xl bg-[#F7F8FA] dark:bg-neutral-800/80">
+            {imgUrl ? (
+              <img
+                src={imgUrl}
+                alt={item.name}
+                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-neutral-300 dark:text-neutral-600">
+                <UtensilsCrossed className="h-8 w-8" />
+              </div>
+            )}
+
+            {/* Quick Toggle Switch in Top-Right */}
+            <div
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="absolute right-2 top-2 z-10 rounded-full bg-white/90 p-0.5 shadow-sm backdrop-blur dark:bg-neutral-900/90"
+            >
+              <BeSwitch
+                checked={item.is_available}
+                onCheckedChange={(checked) =>
+                  toggleItemAvailability(item.product_id, checked)
+                }
+                ariaLabel={`Bật tắt ${item.name}`}
+              />
             </div>
-          )}
 
-          {/* Quick Toggle Switch in Top-Right */}
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="absolute right-2 top-2 rounded-full bg-white/90 p-0.5 shadow-sm backdrop-blur dark:bg-neutral-900/90"
-          >
-            <BeSwitch
-              checked={item.is_available}
-              onCheckedChange={(checked) =>
-                toggleItemAvailability(item.product_id, checked)
-              }
-              ariaLabel={`Bật tắt ${item.name}`}
-            />
-          </div>
+            {/* Hidden Status in Bottom-Left */}
+            {(!item.is_available ||
+              (isDeviceMode && item.store_is_available === false)) && (
+              <span
+                className={`absolute bottom-2 left-2 rounded-md px-1.5 py-0.5 text-[9px] font-bold text-white shadow-sm ${
+                  isDeviceMode && item.store_is_available === false
+                    ? "bg-amber-500/95"
+                    : "bg-neutral-900/80"
+                }`}
+              >
+                {isDeviceMode && item.store_is_available === false
+                  ? "Ẩn ở Chi nhánh"
+                  : "Đang ẩn"}
+              </span>
+            )}
 
-          {/* Hidden Status in Bottom-Left */}
-          {(!item.is_available || (isDeviceMode && item.store_is_available === false)) && (
+            {/* Price Badge in Bottom-Right */}
             <span
-              className={`absolute bottom-2 left-2 rounded-md px-1.5 py-0.5 text-[9px] font-bold text-white shadow-sm ${
-                isDeviceMode && item.store_is_available === false
-                  ? "bg-amber-500/95"
-                  : "bg-neutral-900/80"
+              className={`absolute bottom-2 right-2 rounded-lg px-2 py-0.5 text-[11px] font-extrabold tabular-nums shadow-sm backdrop-blur-sm ${
+                hasOverride
+                  ? "bg-blue-600/95 text-white"
+                  : "bg-white/95 text-neutral-900 dark:bg-neutral-900/90 dark:text-white"
               }`}
             >
-              {isDeviceMode && item.store_is_available === false
-                ? "Ẩn ở Chi nhánh"
-                : "Đang ẩn"}
+              {effectivePrice.toLocaleString("vi-VN")}
             </span>
-          )}
+          </div>
 
-          {/* Price Badge in Bottom-Right */}
-          <span
-            className={`absolute bottom-2 right-2 rounded-lg px-2 py-0.5 text-[11px] font-extrabold tabular-nums shadow-sm backdrop-blur-sm ${
-              hasOverride
-                ? "bg-blue-600/95 text-white"
-                : "bg-white/95 text-neutral-900 dark:bg-neutral-900/90 dark:text-white"
-            }`}
-          >
-            {effectivePrice.toLocaleString("vi-VN")}
-          </span>
-        </div>
-
-        {/* Full-Width 2-Line Product Name */}
-        <div className="mt-2 shrink-0 px-0.5">
-          <h3 className="line-clamp-2 min-h-[2rem] text-xs font-bold leading-snug text-neutral-900 dark:text-white">
-            {item.name}
-          </h3>
-        </div>
-      </div>
+          {/* Full-Width 2-Line Product Name */}
+          <div className="mt-2 shrink-0 px-0.5">
+            <h3 className="line-clamp-2 min-h-[2rem] text-xs font-bold leading-snug text-neutral-900 dark:text-white">
+              {item.name}
+            </h3>
+          </div>
+        </CardContent>
+      </Card>
     );
   };
 
