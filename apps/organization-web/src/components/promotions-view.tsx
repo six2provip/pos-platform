@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   Calendar,
   Check,
+  ChevronDown,
   Layers,
   Pencil,
   Plus,
@@ -154,6 +155,9 @@ export function PromotionsView({
   // Variant Picker & Bulk Apply
   const [variantQuery, setVariantQuery] = useState("");
   const [variantTabFilter, setVariantTabFilter] = useState<"all" | "selected">("all");
+  const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [bulkType, setBulkType] = useState<PromoDiscountType>("percentage");
   const [bulkDigits, setBulkDigits] = useState("20");
 
@@ -193,6 +197,7 @@ export function PromotionsView({
     setDraftItems([]);
     setVariantQuery("");
     setVariantTabFilter("all");
+    setExpandedProductIds(new Set());
     setBulkType("percentage");
     setBulkDigits("20");
     setModalOpen(true);
@@ -222,6 +227,9 @@ export function PromotionsView({
     );
     setVariantQuery("");
     setVariantTabFilter("all");
+    setExpandedProductIds(
+      new Set((pr.items || []).map((it) => it.product_id))
+    );
     setModalOpen(true);
   };
 
@@ -872,26 +880,51 @@ export function PromotionsView({
                           </span>
                         </div>
 
-                        <BeTabs
-                          value={variantTabFilter}
-                          onValueChange={(v) =>
-                            setVariantTabFilter(v as "all" | "selected")
-                          }
-                          variant="pill"
-                        >
-                          <BeTabsList>
-                            <BeTabsTrigger value="all">
-                              Tất cả ({products.filter((p) => (p.variants || []).length > 0).length})
-                            </BeTabsTrigger>
-                            <BeTabsTrigger value="selected">
-                              Đã chọn ({draftItems.length})
-                            </BeTabsTrigger>
-                          </BeTabsList>
-                        </BeTabs>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allIds = filteredCatalogProducts.map(
+                                (p) => p.id
+                              );
+                              const allOpen =
+                                allIds.length > 0 &&
+                                allIds.every((id) => expandedProductIds.has(id));
+                              setExpandedProductIds(
+                                allOpen ? new Set() : new Set(allIds)
+                              );
+                            }}
+                            className="rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-neutral-600 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                          >
+                            {filteredCatalogProducts.length > 0 &&
+                            filteredCatalogProducts.every((p) =>
+                              expandedProductIds.has(p.id)
+                            )
+                              ? "Thu gọn"
+                              : "Mở tất cả"}
+                          </button>
+
+                          <BeTabs
+                            value={variantTabFilter}
+                            onValueChange={(v) =>
+                              setVariantTabFilter(v as "all" | "selected")
+                            }
+                            variant="pill"
+                          >
+                            <BeTabsList>
+                              <BeTabsTrigger value="all">
+                                Tất cả ({products.filter((p) => (p.variants || []).length > 0).length})
+                              </BeTabsTrigger>
+                              <BeTabsTrigger value="selected">
+                                Đã chọn ({draftItems.length})
+                              </BeTabsTrigger>
+                            </BeTabsList>
+                          </BeTabs>
+                        </div>
                       </div>
 
-                      {/* Search + Bulk Apply Bar */}
-                      <div className="flex flex-col gap-2.5 pb-3 sm:flex-row sm:items-center">
+                      {/* Search + Bulk Apply Bar (no outer border wrapper) */}
+                      <div className="flex flex-col gap-2 pb-3 sm:flex-row sm:items-center">
                         <div className="flex-1">
                           <BeInput
                             value={variantQuery}
@@ -900,7 +933,7 @@ export function PromotionsView({
                             leftIcon={<Search className="h-3.5 w-3.5" />}
                           />
                         </div>
-                        <div className="flex items-center gap-1.5 rounded-xl border border-neutral-200 bg-white p-1 dark:border-neutral-700 dark:bg-neutral-900">
+                        <div className="flex items-center gap-1.5">
                           <div className="w-28">
                             <BeSelect
                               value={bulkType}
@@ -968,15 +1001,38 @@ export function PromotionsView({
                             const allSelected =
                               prod.variants.length > 0 &&
                               selectedCount === prod.variants.length;
+                            const isExpanded =
+                              expandedProductIds.has(prod.id) ||
+                              Boolean(variantQuery.trim()) ||
+                              variantTabFilter === "selected";
 
                             return (
                               <div
                                 key={prod.id}
                                 className="overflow-hidden rounded-2xl border border-neutral-200/80 bg-white dark:border-neutral-800 dark:bg-neutral-900"
                               >
-                                {/* Product Header Row */}
-                                <div className="flex items-center justify-between gap-3 border-b border-neutral-100 bg-neutral-50/70 px-3.5 py-2.5 dark:border-neutral-800 dark:bg-neutral-950/50">
+                                {/* Product Header Row (Clickable Accordion) */}
+                                <div
+                                  onClick={() =>
+                                    setExpandedProductIds((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(prod.id)) next.delete(prod.id);
+                                      else next.add(prod.id);
+                                      return next;
+                                    })
+                                  }
+                                  className={`flex cursor-pointer items-center justify-between gap-3 bg-neutral-50/70 px-3.5 py-2.5 transition-colors hover:bg-neutral-100/70 dark:bg-neutral-950/50 dark:hover:bg-neutral-800/60 ${
+                                    isExpanded
+                                      ? "border-b border-neutral-100 dark:border-neutral-800"
+                                      : ""
+                                  }`}
+                                >
                                   <div className="flex min-w-0 items-center gap-2.5">
+                                    <ChevronDown
+                                      className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform duration-200 ${
+                                        isExpanded ? "rotate-180" : ""
+                                      }`}
+                                    />
                                     <div className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-lg border border-neutral-200/70 bg-white dark:border-neutral-700 dark:bg-neutral-800">
                                       {prod.image_url ? (
                                         <img
@@ -994,15 +1050,27 @@ export function PromotionsView({
                                       </div>
                                       <div className="text-[10px] text-neutral-400">
                                         {prod.variants.length} variant
-                                        {selectedCount > 0 &&
-                                          ` • ${selectedCount} đang áp dụng`}
+                                        {selectedCount > 0 && (
+                                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                            {" • "}
+                                            {selectedCount} đang áp dụng
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
                                   </div>
 
                                   <button
                                     type="button"
-                                    onClick={() => selectAllProductVariants(prod)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (!allSelected) {
+                                        setExpandedProductIds((prev) =>
+                                          new Set(prev).add(prod.id)
+                                        );
+                                      }
+                                      selectAllProductVariants(prod);
+                                    }}
                                     className="shrink-0 rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
                                   >
                                     {allSelected ? "Bỏ chọn hết" : "Chọn tất cả"}
@@ -1010,6 +1078,7 @@ export function PromotionsView({
                                 </div>
 
                                 {/* Nested Variant Rows with Inline Pricing */}
+                                {isExpanded && (
                                 <div className="divide-y divide-neutral-100 dark:divide-neutral-800/80">
                                   {prod.variants
                                     .filter(
@@ -1201,6 +1270,7 @@ export function PromotionsView({
                                       );
                                     })}
                                 </div>
+                                )}
                               </div>
                             );
                           })
