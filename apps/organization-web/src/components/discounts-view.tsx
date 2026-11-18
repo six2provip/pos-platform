@@ -1199,10 +1199,40 @@ export function DiscountsView({
                           </DateRangePicker>
                         </div>
                       </div>
+
+                      {/* Section 4: Store Scope via BeMultiSelect */}
+                      <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                            4. Phạm vi chi nhánh
+                          </span>
+                          {selectedStoreIds.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedStoreIds([])}
+                              className="text-[11px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                            >
+                              Áp dụng tất cả
+                            </button>
+                          )}
+                        </div>
+                        <BeMultiSelect
+                          options={storeOptions}
+                          values={selectedStoreIds}
+                          onChange={setSelectedStoreIds}
+                          placeholder="Tất cả chi nhánh (hoặc chọn riêng...)"
+                          emptyText="Không tìm thấy chi nhánh phù hợp."
+                          helperText={
+                            selectedStoreIds.length === 0
+                              ? "Để trống để áp dụng cho toàn bộ hệ thống."
+                              : `Đang giới hạn tại ${selectedStoreIds.length} chi nhánh đã chọn.`
+                          }
+                        />
+                      </div>
                     </div>
 
-                    {/* RIGHT COLUMN (5 cols): Live Coupon Pass Preview (Matching Outer Card), Store Scope, Status */}
-                    <div className="flex flex-col gap-4 lg:col-span-5">
+                    {/* RIGHT COLUMN (5 cols): Live Coupon Pass Preview + Active Switch at bottom */}
+                    <div className="flex flex-col justify-between gap-4 lg:col-span-5">
                       <CouponPassCard
                         compact
                         code={code.trim() || "MÃ_GIẢM_GIÁ"}
@@ -1254,37 +1284,7 @@ export function DiscountsView({
                         themeIndex={editing ? selectedThemeIndex : 0}
                       />
 
-                      {/* Store Scope via BeMultiSelect */}
-                      <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
-                        <div className="mb-2 flex items-center justify-between">
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
-                            4. Phạm vi chi nhánh
-                          </span>
-                          {selectedStoreIds.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => setSelectedStoreIds([])}
-                              className="text-[11px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
-                            >
-                              Áp dụng tất cả
-                            </button>
-                          )}
-                        </div>
-                        <BeMultiSelect
-                          options={storeOptions}
-                          values={selectedStoreIds}
-                          onChange={setSelectedStoreIds}
-                          placeholder="Tất cả chi nhánh (hoặc chọn riêng...)"
-                          emptyText="Không tìm thấy chi nhánh phù hợp."
-                          helperText={
-                            selectedStoreIds.length === 0
-                              ? "Để trống để áp dụng cho toàn bộ hệ thống."
-                              : `Đang giới hạn tại ${selectedStoreIds.length} chi nhánh đã chọn.`
-                          }
-                        />
-                      </div>
-
-                      {/* Active Switch */}
+                      {/* Active Switch at bottom-right */}
                       <div className="flex items-center justify-between rounded-2xl border border-neutral-200/80 bg-neutral-50/50 px-4 py-3.5 dark:border-neutral-800 dark:bg-neutral-900/50">
                         <div>
                           <div className="text-xs font-bold text-neutral-900 dark:text-white">
