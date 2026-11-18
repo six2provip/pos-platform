@@ -1374,6 +1374,67 @@ class OrderDiscount(Base):
     )
 
 
+class DiscountCode(Base):
+    __tablename__ = "discount_codes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    organization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    code: Mapped[str] = mapped_column(String(60), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    discount_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="percentage"
+    )
+    value: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    max_discount_amount: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    min_order_amount: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4), nullable=False, default=Decimal("0.0000")
+    )
+    usage_limit: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    used_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    starts_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    ends_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    store_ids_json: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id"],
+            ["organizations.id"],
+            name="fk_discount_codes_org",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "code",
+            name="uq_discount_codes_org_code",
+        ),
+        CheckConstraint(
+            "discount_type IN ('percentage', 'fixed')",
+            name="ck_discount_codes_type",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'inactive')",
+            name="ck_discount_codes_status",
+        ),
+        Index("ix_discount_codes_org_status", "organization_id", "status"),
+    )
+
+
 class OrderTaxLine(Base):
     __tablename__ = "order_tax_lines"
 

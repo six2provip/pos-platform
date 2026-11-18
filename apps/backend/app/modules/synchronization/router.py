@@ -36,6 +36,7 @@ from app.infrastructure.models import (
     Device,
     DeviceEvent,
     DeviceProductConfig,
+    DiscountCode,
     PaymentMethod,
     Product,
     ProductBarcode,
@@ -413,6 +414,31 @@ def pos_bootstrap(
             "cash_drawers": [
                 {"id": d.id, "code": d.code, "name": d.name, "status": d.status}
                 for d in drawers
+            ],
+            "discount_codes": [
+                {
+                    "id": dc.id,
+                    "code": dc.code,
+                    "name": dc.name,
+                    "discount_type": dc.discount_type,
+                    "value": format_decimal(dc.value),
+                    "max_discount_amount": (
+                        format_decimal(dc.max_discount_amount)
+                        if dc.max_discount_amount is not None
+                        else None
+                    ),
+                    "min_order_amount": format_decimal(dc.min_order_amount),
+                    "usage_limit": dc.usage_limit,
+                    "used_count": dc.used_count,
+                }
+                for dc in db.query(DiscountCode)
+                .filter(
+                    DiscountCode.organization_id == org.id,
+                    DiscountCode.status == "active",
+                    DiscountCode.deleted_at.is_(None),
+                )
+                .all()
+                if not (dc.store_ids_json or []) or store.id in (dc.store_ids_json or [])
             ],
             "current_cash_session": (
                 _serialize_cash_session(open_session) if open_session else None

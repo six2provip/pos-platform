@@ -43,6 +43,7 @@ import {
   Smartphone,
   Sparkles,
   Store as StoreIcon,
+  TicketPercent,
   UtensilsCrossed,
   Trash2,
   Users,
@@ -70,6 +71,7 @@ import { BeInput } from "@/components/motion/input";
 import { BeSelect } from "@/components/motion/select";
 import { StoresMasterDetailView } from "@/components/stores-master-detail-view";
 import { MenuSetupView } from "@/components/menu-setup-view";
+import { DiscountsView } from "@/components/discounts-view";
 import {
   CatalogCategoriesView,
   type CategoryRecord,
@@ -189,6 +191,7 @@ type NavTab =
   | "products"
   | "options"
   | "menu_setup"
+  | "discounts"
   | "inventory"
   | "stores"
   | "devices"
@@ -202,6 +205,7 @@ const TAB_PATHS: Record<NavTab, string> = {
   products: "/products",
   options: "/options",
   menu_setup: "/menu-setup",
+  discounts: "/discounts",
   inventory: "/inventory",
   stores: "/stores",
   devices: "/stores",
@@ -217,6 +221,7 @@ function getTabFromPathname(pathname: string): NavTab | null {
   if (clean === "products" || clean === "catalog") return "products";
   if (clean === "options" || clean === "modifiers") return "options";
   if (clean === "menu-setup") return "menu_setup";
+  if (clean === "discounts" || clean === "vouchers") return "discounts";
   if (clean === "inventory" || clean === "stock") return "inventory";
   if (
     clean === "stores" ||
@@ -2369,6 +2374,7 @@ export default function OrganizationWorkspace({
 
             {[
               { id: "inventory", label: "Tồn kho & Sổ cái", icon: Boxes, path: "/inventory" },
+              { id: "discounts", label: "Mã giảm giá", icon: TicketPercent, path: "/discounts" },
               {
                 id: "stores",
                 label: "Chi nhánh & Thiết bị",
@@ -3061,6 +3067,15 @@ export default function OrganizationWorkspace({
             products={products as unknown as ProductRecord[]}
             optionGroups={optionGroups}
             selectedStoreId={selectedStoreId}
+            accessToken={accessToken}
+            apiFetch={apiFetch}
+            notify={notify}
+          />
+        )}
+
+        {activeTab === "discounts" && (
+          <DiscountsView
+            stores={stores}
             accessToken={accessToken}
             apiFetch={apiFetch}
             notify={notify}

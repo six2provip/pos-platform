@@ -1,0 +1,768 @@
+"use client";
+
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import {
+  Check,
+  Copy,
+  Pencil,
+  Plus,
+  Search,
+  TicketPercent,
+  Trash2,
+  X,
+} from "lucide-react";
+import { BeInput } from "./motion/input";
+import { BeSwitch } from "./motion/switch";
+import { Skeleton } from "./ui/skeleton";
+import type { StoreRecord } from "./stores-master-detail-view";
+
+export interface DiscountCodeRecord {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  discount_type: "percentage" | "fixed";
+  value: string;
+  max_discount_amount?: string | null;
+  min_order_amount: string;
+  usage_limit?: number | null;
+  used_count: number;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  store_ids: string[];
+  status: "active" | "inactive";
+  created_at: string;
+}
+
+interface DiscountsViewProps {
+  stores: StoreRecord[];
+  accessToken: string | null;
+  apiFetch: (path: string, options?: RequestInit) => Promise<any>;
+  notify: (type: "success" | "error" | "info", text: string) => void;
+}
+
+function toDatetimeLocalValue(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
+}
+
+export function DiscountsView({
+  stores,
+  accessToken,
+  apiFetch,
+  notify,
+}: DiscountsViewProps) {
+  const [discounts, setDiscounts] = useState<DiscountCodeRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+
+  // Modal State
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<DiscountCodeRecord | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [discountType, setDiscountType] = useState<"percentage" | "fixed">("percentage");
+  const [valueDigits, setValueDigits] = useState("10");
+  const [maxDiscountDigits, setMaxDiscountDigits] = useState("");
+  const [minOrderDigits, setMinOrderDigits] = useState("0");
+  const [usageLimitDigits, setUsageLimitDigits] = useState("");
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
+  const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
+  const [isActive, setIsActive] = useState(true);
+
+  const loadDiscounts = useCallback(async () => {
+    if (!accessToken) return;
+    setLoading(true);
+    try {
+      const res = await apiFetch("/api/v1/discounts");
+      const list = Array.isArray(res)
+        ? (res as DiscountCodeRecord[])
+        : Array.isArray(res?.data)
+          ? (res.data as DiscountCodeRecord[])
+          : [];
+      setDiscounts(list);
+    } catch {
+      setDiscounts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken, apiFetch]);
+
+  useEffect(() => {
+    void loadDiscounts();
+  }, [loadDiscounts]);
+
+  const openCreateModal = () => {
+    setEditing(null);
+    setCode("");
+    setName("");
+    setDescription("");
+    setDiscountType("percentage");
+    setValueDigits("10");
+    setMaxDiscountDigits("");
+    setMinOrderDigits("0");
+    setUsageLimitDigits("");
+    setStartsAt("");
+    setEndsAt("");
+    setSelectedStoreIds([]);
+    setIsActive(true);
+    setModalOpen(true);
+  };
+
+  const openEditModal = (dc: DiscountCodeRecord) => {
+    setEditing(dc);
+    setCode(dc.code);
+    setName(dc.name);
+    setDescription(dc.description || "");
+    setDiscountType(dc.discount_type === "fixed" ? "fixed" : "percentage");
+    setValueDigits(String(Math.max(0, Math.round(Number(dc.value || 0)))));
+    setMaxDiscountDigits(
+      dc.max_discount_amount
+        ? String(Math.max(0, Math.round(Number(dc.max_discount_amount))))
+        : ""
+    );
+    setMinOrderDigits(
+      String(Math.max(0, Math.round(Number(dc.min_order_amount || 0))))
+    );
+    setUsageLimitDigits(dc.usage_limit ? String(dc.usage_limit) : "");
+    setStartsAt(toDatetimeLocalValue(dc.starts_at));
+    setEndsAt(toDatetimeLocalValue(dc.ends_at));
+    setSelectedStoreIds(dc.store_ids || []);
+    setIsActive(dc.status === "active");
+    setModalOpen(true);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!code.trim() || !name.trim()) {
+      notify("error", "Vui lòng nhập đầy đủ Mã giảm giá và Tên chương trình.");
+      return;
+    }
+    const numVal = Number(valueDigits || 0);
+    if (numVal <= 0) {
+      notify("error", "Mức giảm phải lớn hơn 0.");
+      return;
+    }
+    if (discountType === "percentage" && numVal > 100) {
+      notify("error", "Mức giảm theo phần trăm không được vượt quá 100%.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        ...(editing ? {} : { code: code.trim().toUpperCase() }),
+        name: name.trim(),
+        description: description.trim() || null,
+        discount_type: discountType,
+        value: String(numVal),
+        max_discount_amount:
+          discountType === "percentage" && maxDiscountDigits.trim()
+            ? maxDiscountDigits.trim()
+            : null,
+        min_order_amount: minOrderDigits.trim() || "0",
+        usage_limit: usageLimitDigits.trim() ? Number(usageLimitDigits) : null,
+        starts_at: startsAt ? new Date(startsAt).toISOString() : null,
+        ends_at: endsAt ? new Date(endsAt).toISOString() : null,
+        store_ids: selectedStoreIds,
+        status: isActive ? "active" : "inactive",
+      };
+
+      if (editing) {
+        await apiFetch(`/api/v1/discounts/${editing.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+        notify("success", `Đã cập nhật mã "${editing.code}"!`);
+      } else {
+        await apiFetch("/api/v1/discounts", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        notify("success", `Đã tạo mã giảm giá "${code.trim().toUpperCase()}"!`);
+      }
+      setModalOpen(false);
+      await loadDiscounts();
+    } catch (err: any) {
+      notify("error", err?.message || "Không thể lưu mã giảm giá");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleStatus = async (dc: DiscountCodeRecord) => {
+    const nextStatus = dc.status === "active" ? "inactive" : "active";
+    try {
+      await apiFetch(`/api/v1/discounts/${dc.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      notify(
+        "success",
+        nextStatus === "active"
+          ? `Đã bật mã "${dc.code}"`
+          : `Đã tạm dừng mã "${dc.code}"`
+      );
+      await loadDiscounts();
+    } catch (err: any) {
+      notify("error", err?.message || "Không thể cập nhật trạng thái");
+    }
+  };
+
+  const handleDelete = async (dc: DiscountCodeRecord) => {
+    try {
+      await apiFetch(`/api/v1/discounts/${dc.id}`, { method: "DELETE" });
+      notify("success", `Đã xóa mã "${dc.code}"`);
+      await loadDiscounts();
+    } catch (err: any) {
+      notify("error", err?.message || "Không thể xóa mã giảm giá");
+    }
+  };
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return discounts.filter((d) => {
+      if (statusFilter !== "all" && d.status !== statusFilter) return false;
+      if (!q) return true;
+      return (
+        d.code.toLowerCase().includes(q) || d.name.toLowerCase().includes(q)
+      );
+    });
+  }, [discounts, search, statusFilter]);
+
+  const getRuntimeBadge = (dc: DiscountCodeRecord) => {
+    const now = Date.now();
+    if (dc.status !== "active") {
+      return {
+        label: "Tạm dừng",
+        cls: "bg-neutral-100 text-neutral-600 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:border-neutral-700",
+      };
+    }
+    if (dc.ends_at && new Date(dc.ends_at).getTime() < now) {
+      return {
+        label: "Hết hạn",
+        cls: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900",
+      };
+    }
+    if (dc.usage_limit !== null && dc.usage_limit !== undefined && dc.used_count >= dc.usage_limit) {
+      return {
+        label: "Hết lượt",
+        cls: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900",
+      };
+    }
+    return {
+      label: "Đang chạy",
+      cls: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900",
+    };
+  };
+
+  return (
+    <div className="flex h-full flex-1 min-h-0 flex-col gap-3 overflow-hidden">
+      {/* Header */}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-bold tracking-tight text-neutral-900 dark:text-white">
+            Quản lý Mã giảm giá
+          </h1>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            Tạo mã khuyến mãi theo phần trăm hoặc số tiền cố định, giới hạn lượt dùng, chi nhánh và thời gian áp dụng trên POS.
+          </p>
+        </div>
+
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.97 }}
+          onClick={openCreateModal}
+          className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 dark:bg-white dark:text-neutral-900"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Tạo Mã Giảm Giá
+        </motion.button>
+      </div>
+
+      {/* Main Card */}
+      <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+        {/* Toolbar */}
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 pb-4">
+          <div className="flex items-center gap-1.5">
+            {(
+              [
+                { id: "all", label: `Tất cả (${discounts.length})` },
+                {
+                  id: "active",
+                  label: `Đang bật (${discounts.filter((d) => d.status === "active").length})`,
+                },
+                {
+                  id: "inactive",
+                  label: `Tạm dừng (${discounts.filter((d) => d.status === "inactive").length})`,
+                },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setStatusFilter(tab.id)}
+                className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                  statusFilter === tab.id
+                    ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-700 dark:bg-neutral-800">
+            <Search className="h-3.5 w-3.5 text-neutral-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Tìm mã hoặc tên chương trình..."
+              className="w-52 bg-transparent text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-white"
+            />
+          </div>
+        </div>
+
+        {/* List */}
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          {loading ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {[1, 2, 3, 4].map((idx) => (
+                <Skeleton
+                  key={idx}
+                  className="h-32 w-full rounded-2xl dark:bg-neutral-800"
+                />
+              ))}
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="flex h-full min-h-[240px] flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-neutral-50/50 p-10 text-center dark:border-neutral-800 dark:bg-neutral-950/30">
+              <TicketPercent className="mb-2.5 h-8 w-8 text-neutral-400" />
+              <div className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+                Chưa có mã giảm giá nào
+              </div>
+              <p className="mt-1 max-w-sm text-xs text-neutral-500">
+                Bấm &ldquo;+ Tạo Mã Giảm Giá&rdquo; ở góc trên để tạo mã khuyến mãi cho thu ngân và Kiosk áp dụng.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {filtered.map((dc) => {
+                const badge = getRuntimeBadge(dc);
+                const valNum = Number(dc.value || 0);
+                const minNum = Number(dc.min_order_amount || 0);
+                const maxNum = dc.max_discount_amount
+                  ? Number(dc.max_discount_amount)
+                  : null;
+                return (
+                  <div
+                    key={dc.id}
+                    className="flex flex-col justify-between gap-3 rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4 transition-colors hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950/50"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 font-mono text-xs font-extrabold text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white">
+                            {dc.code}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void navigator.clipboard?.writeText(dc.code);
+                                notify("info", `Đã sao chép mã ${dc.code}`);
+                              }}
+                              title="Sao chép mã"
+                              className="text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+                            >
+                              <Copy className="h-3 w-3" />
+                            </button>
+                          </span>
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.cls}`}
+                          >
+                            {badge.label}
+                          </span>
+                        </div>
+
+                        <h3 className="mt-2 truncate text-xs font-bold text-neutral-900 dark:text-white">
+                          {dc.name}
+                        </h3>
+                        <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                          {dc.discount_type === "percentage"
+                            ? `Giảm ${valNum}%${
+                                maxNum
+                                  ? ` (tối đa ${maxNum.toLocaleString("vi-VN")})`
+                                  : ""
+                              }`
+                            : `Giảm ${valNum.toLocaleString("vi-VN")}`}
+                          {minNum > 0
+                            ? ` • Đơn tối thiểu ${minNum.toLocaleString("vi-VN")}`
+                            : " • Mọi đơn hàng"}
+                        </p>
+                      </div>
+
+                      <BeSwitch
+                        checked={dc.status === "active"}
+                        onCheckedChange={() => void handleToggleStatus(dc)}
+                        ariaLabel={`Bật tắt mã ${dc.code}`}
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-200/70 pt-2.5 text-[11px] text-neutral-500 dark:border-neutral-800">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>
+                          Đã dùng:{" "}
+                          <strong className="text-neutral-900 dark:text-white">
+                            {dc.used_count}
+                            {dc.usage_limit ? `/${dc.usage_limit}` : " (∞)"}
+                          </strong>
+                        </span>
+                        <span>•</span>
+                        <span>
+                          {dc.store_ids.length === 0
+                            ? "Tất cả chi nhánh"
+                            : `${dc.store_ids.length} chi nhánh`}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(dc)}
+                          title="Chỉnh sửa"
+                          className="grid h-7 w-7 place-items-center rounded-lg text-neutral-500 hover:bg-neutral-200/70 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(dc)}
+                          title="Xóa mã"
+                          className="grid h-7 w-7 place-items-center rounded-lg text-rose-500 hover:bg-rose-100/70 hover:text-rose-600 dark:hover:bg-rose-950/40"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* MODAL: CREATE / EDIT DISCOUNT CODE */}
+      <AnimatePresence>
+        {modalOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setModalOpen(false)}
+              className="fixed inset-0 z-[80] bg-black/30 [backdrop-filter:blur(8px)]"
+            />
+            <div className="pointer-events-none fixed inset-4 z-[81] flex items-center justify-center">
+              <motion.form
+                onSubmit={handleSave}
+                initial={{ opacity: 0, y: 18, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.97 }}
+                transition={{ type: "spring", stiffness: 420, damping: 36 }}
+                className="pointer-events-auto flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-neutral-200/80 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950"
+              >
+                <div className="flex items-center justify-between border-b border-neutral-200/80 px-6 py-4 dark:border-neutral-800">
+                  <div>
+                    <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                      {editing
+                        ? `Chỉnh sửa mã: ${editing.code}`
+                        : "Tạo Mã Giảm Giá Mới"}
+                    </h3>
+                    <p className="text-[11px] text-neutral-400">
+                      Thiết lập điều kiện áp dụng, mức giảm và phạm vi chi nhánh.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setModalOpen(false)}
+                    className="grid h-8 w-8 place-items-center rounded-full text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <BeInput
+                      label="Mã giảm giá *"
+                      disabled={Boolean(editing)}
+                      value={code}
+                      onChange={(v) => setCode(v.toUpperCase().replace(/\s+/g, ""))}
+                      placeholder="VD: KHAITRUONG20"
+                      success={code.trim().length >= 2}
+                    />
+                    <BeInput
+                      label="Tên chương trình *"
+                      value={name}
+                      onChange={setName}
+                      placeholder="VD: Giảm 20% mừng khai trương"
+                      success={Boolean(name.trim())}
+                    />
+                  </div>
+
+                  {/* Type & Value */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <div>
+                      <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                        Loại giảm giá
+                      </label>
+                      <select
+                        value={discountType}
+                        onChange={(e) =>
+                          setDiscountType(
+                            e.target.value === "fixed" ? "fixed" : "percentage"
+                          )
+                        }
+                        className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-xs font-semibold text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                      >
+                        <option value="percentage">Theo phần trăm (%)</option>
+                        <option value="fixed">Số tiền cố định</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                        {discountType === "percentage" ? "Mức giảm (%) *" : "Số tiền giảm *"}
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={
+                          valueDigits
+                            ? discountType === "fixed"
+                              ? Number(valueDigits).toLocaleString("vi-VN")
+                              : valueDigits
+                            : ""
+                        }
+                        onChange={(e) => {
+                          let digits = e.target.value.replace(/\D/g, "");
+                          if (discountType === "percentage" && Number(digits) > 100) {
+                            digits = "100";
+                          }
+                          setValueDigits(digits);
+                        }}
+                        placeholder={discountType === "percentage" ? "VD: 20" : "VD: 50.000"}
+                        className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-xs font-semibold tabular-nums text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                      />
+                    </div>
+
+                    {discountType === "percentage" ? (
+                      <div>
+                        <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                          Giảm tối đa (tùy chọn)
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={
+                            maxDiscountDigits
+                              ? Number(maxDiscountDigits).toLocaleString("vi-VN")
+                              : ""
+                          }
+                          onChange={(e) =>
+                            setMaxDiscountDigits(e.target.value.replace(/\D/g, ""))
+                          }
+                          placeholder="Không giới hạn"
+                          className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-xs font-semibold tabular-nums text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                          Đơn tối thiểu
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={
+                            minOrderDigits
+                              ? Number(minOrderDigits).toLocaleString("vi-VN")
+                              : ""
+                          }
+                          onChange={(e) =>
+                            setMinOrderDigits(e.target.value.replace(/\D/g, ""))
+                          }
+                          placeholder="0"
+                          className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-xs font-semibold tabular-nums text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Min Order (when percentage) + Usage Limit */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    {discountType === "percentage" && (
+                      <div>
+                        <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                          Đơn hàng tối thiểu
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={
+                            minOrderDigits
+                              ? Number(minOrderDigits).toLocaleString("vi-VN")
+                              : ""
+                          }
+                          onChange={(e) =>
+                            setMinOrderDigits(e.target.value.replace(/\D/g, ""))
+                          }
+                          placeholder="0"
+                          className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-xs font-semibold tabular-nums text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                        />
+                      </div>
+                    )}
+                    <div>
+                      <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                        Giới hạn tổng lượt dùng (để trống = không giới hạn)
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={usageLimitDigits}
+                        onChange={(e) =>
+                          setUsageLimitDigits(e.target.value.replace(/\D/g, ""))
+                        }
+                        placeholder="VD: 100"
+                        className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-xs font-semibold tabular-nums text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Schedule */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                        Bắt đầu từ (tùy chọn)
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={startsAt}
+                        onChange={(e) => setStartsAt(e.target.value)}
+                        className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2 text-xs text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block px-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                        Kết thúc lúc (tùy chọn)
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={endsAt}
+                        onChange={(e) => setEndsAt(e.target.value)}
+                        className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2 text-xs text-neutral-900 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Store Scope */}
+                  <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-xs font-bold text-neutral-900 dark:text-white">
+                        Chi nhánh áp dụng (
+                        {selectedStoreIds.length === 0
+                          ? "Tất cả chi nhánh"
+                          : `${selectedStoreIds.length} chi nhánh`}
+                        )
+                      </span>
+                      {selectedStoreIds.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedStoreIds([])}
+                          className="text-[11px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                        >
+                          Áp dụng tất cả
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {stores.map((st) => {
+                        const checked = selectedStoreIds.includes(st.id);
+                        return (
+                          <button
+                            key={st.id}
+                            type="button"
+                            onClick={() =>
+                              setSelectedStoreIds((prev) =>
+                                checked
+                                  ? prev.filter((id) => id !== st.id)
+                                  : [...prev, st.id]
+                              )
+                            }
+                            className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${
+                              checked
+                                ? "border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900"
+                                : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                            }`}
+                          >
+                            {st.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-2xl border border-neutral-200/80 bg-neutral-50/70 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900">
+                    <div>
+                      <div className="text-xs font-bold text-neutral-900 dark:text-white">
+                        Kích hoạt mã giảm giá
+                      </div>
+                      <div className="text-[11px] text-neutral-400">
+                        Cho phép thu ngân &amp; Kiosk áp dụng mã này ngay
+                      </div>
+                    </div>
+                    <BeSwitch
+                      checked={isActive}
+                      onCheckedChange={setIsActive}
+                      ariaLabel="Kích hoạt mã giảm giá"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 border-t border-neutral-200/80 px-6 py-3.5 dark:border-neutral-800">
+                  <button
+                    type="button"
+                    onClick={() => setModalOpen(false)}
+                    className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving || !code.trim() || !name.trim()}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    {saving ? "Đang lưu..." : editing ? "Cập Nhật" : "Tạo Mã"}
+                  </button>
+                </div>
+              </motion.form>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

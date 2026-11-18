@@ -190,6 +190,7 @@ class CreateOrderRequest(BaseModel):
     currency_code: str = Field(default="VND", min_length=3, max_length=3)
     customer: Optional[CustomerSnapshotInput] = None
     items: List[OrderItemInput] = Field(..., min_length=1)
+    discount_code: Optional[str] = Field(default=None, max_length=60)
     discounts: List[OrderDiscountInput] = Field(default_factory=list)
     payments: List[OrderPaymentInput] = Field(default_factory=list)
     note: Optional[str] = None
@@ -643,6 +644,30 @@ def create_order_tx(
         tax_acc = to_decimal(tax_acc + line_tax)
 
     order_level_discount_acc = Decimal("0.0000")
+    if body.discount_code and body.discount_code.strip():
+        from app.modules.discounts.router import validate_and_compute_discount
+
+        dc, dc_amt = validate_and_compute_discount(
+            db,
+            organization_id=org_id,
+            code=body.discount_code,
+            store_id=store.id,
+            subtotal=subtotal_acc,
+        )
+        order_level_discount_acc = to_decimal(order_level_discount_acc + dc_amt)
+        dc.used_count = (dc.used_count or 0) + 1
+        db.add(
+            OrderDiscount(
+                organization_id=org_id,
+                order_id=order.id,
+                discount_type=dc.discount_type,
+                description=f"Mã giảm giá: {dc.code} ({dc.name})",
+                rate=to_decimal(dc.value) if dc.discount_type == "percentage" else None,
+                amount=dc_amt,
+                approved_by=effective_cashier_id,
+            )
+        )
+
     for disc_in in body.discounts:
         disc_amt = to_decimal(disc_in.amount, "amount")
         order_level_discount_acc = to_decimal(order_level_discount_acc + disc_amt)

@@ -21,6 +21,7 @@ from app.core.envelope import ok_response
 from app.deployment.profile import resolve_organization_entitlements
 from app.modules.authentication.router import router as auth_router
 from app.modules.devices.router import router as devices_router
+from app.modules.discounts.router import router as discounts_router
 from app.modules.employees.router import router as employees_router
 from app.modules.inventory.router import router as inventory_router
 from app.modules.organizations.router import router as organizations_router
@@ -41,6 +42,7 @@ api_v1_router.include_router(devices_router)
 api_v1_router.include_router(products_router)
 api_v1_router.include_router(inventory_router)
 api_v1_router.include_router(sales_router)
+api_v1_router.include_router(discounts_router)
 api_v1_router.include_router(sync_router)
 
 
