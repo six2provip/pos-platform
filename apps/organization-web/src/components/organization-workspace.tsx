@@ -69,6 +69,10 @@ import { SixDigitPinInput } from "@/components/ui/six-digit-pin-input";
 import { ThemeSegmentedToggle, ThemeToggle } from "@/components/motion/theme-toggle";
 import { BeInput } from "@/components/motion/input";
 import { BeSelect } from "@/components/motion/select";
+import {
+  AnimatedToastStack,
+  useAnimatedToastStack,
+} from "@/components/motion/animated-toast-stack";
 import { StoresMasterDetailView } from "@/components/stores-master-detail-view";
 import { MenuSetupView } from "@/components/menu-setup-view";
 import { DiscountsView } from "@/components/discounts-view";
@@ -357,10 +361,11 @@ export default function OrganizationWorkspace({
   const [kioskSerial, setKioskSerial] = useState("");
   const [kioskType, setKioskType] = useState("android_kiosk");
   const [loading, setLoading] = useState(false);
-  const [banner, setBanner] = useState<{
-    type: "success" | "error" | "info";
-    text: string;
-  } | null>(null);
+  const { toasts, showToast, dismissToast, clearToasts } =
+    useAnimatedToastStack({
+      defaultDuration: 3800,
+      limit: 4,
+    });
 
   // Core Business Data
   const [capabilities, setCapabilities] = useState<Record<string, any> | null>(
@@ -439,9 +444,12 @@ export default function OrganizationWorkspace({
 
   const notify = useCallback(
     (type: "success" | "error" | "info", text: string) => {
-      setBanner({ type, text });
+      showToast({
+        status: type,
+        title: text,
+      });
     },
-    []
+    [showToast]
   );
 
   const accessTokenRef = useRef<string | null>(accessToken);
@@ -931,7 +939,7 @@ export default function OrganizationWorkspace({
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setBanner(null);
+    clearToasts();
     try {
       const data = await apiFetch(
         "/api/v1/auth/login",
@@ -1009,7 +1017,7 @@ export default function OrganizationWorkspace({
   const handleProvisionOrg = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setBanner(null);
+    clearToasts();
     try {
       const reqStatus = provisionAsPending ? "pending_approval" : "active";
       await apiFetch(
@@ -1966,18 +1974,13 @@ export default function OrganizationWorkspace({
               </button>
             </div>
 
-            {banner && (
-              <div
-                className={`mb-4 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs ${
-                  banner.type === "error"
-                    ? "border-rose-200 bg-rose-50 text-rose-700"
-                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
-                }`}
-              >
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>{banner.text}</span>
-              </div>
-            )}
+            <AnimatedToastStack
+              toasts={toasts}
+              onDismiss={dismissToast}
+              position="top-right"
+              placement="fixed"
+              maxVisible={4}
+            />
 
             {authMode === "login" ? (
               <form onSubmit={handleLogin} className="space-y-4">
@@ -2461,30 +2464,14 @@ export default function OrganizationWorkspace({
       {/* ================================================================== */}
       <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
         <main className="flex flex-1 flex-col min-h-0 overflow-y-auto px-7 py-4">
-        {/* Global Notification Bar */}
-        {banner && (
-          <div className="mb-3 shrink-0 flex items-center justify-between rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-xs text-neutral-800 shadow-sm">
-            <div className="flex items-center gap-2">
-              <CheckCircle2
-                className={`h-4 w-4 shrink-0 ${
-                  banner.type === "error"
-                    ? "text-rose-600"
-                    : banner.type === "info"
-                      ? "text-amber-600"
-                      : "text-emerald-600"
-                }`}
-              />
-              <span className="font-medium">{banner.text}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setBanner(null)}
-              className="text-neutral-400 hover:text-neutral-900"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
+        {/* Global Animated Toast Stack */}
+        <AnimatedToastStack
+          toasts={toasts}
+          onDismiss={dismissToast}
+          position="top-right"
+          placement="fixed"
+          maxVisible={4}
+        />
 
         {/* ================================================================ */}
         {/* TAB SKELETON WIREFRAME (LOAD TRƯỚC KHUNG PHÁC THẢO LAYOUT)        */}
