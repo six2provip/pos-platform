@@ -555,11 +555,11 @@ export function MenuSetupView({
   const renderProductCard = (item: MenuCardItem, isDeviceMode: boolean) => {
     const prod = productLookup.get(item.product_id);
     const imgUrl = item.image_url || prod?.image_url || null;
-    const firstCatId = item.category_ids[0];
-    const catMeta = firstCatId ? categoryLookup.get(firstCatId) : undefined;
-    const catPillCls = catMeta
-      ? PASTEL_PILL_STYLES[catMeta.idx % PASTEL_PILL_STYLES.length]
-      : PASTEL_PILL_STYLES[0];
+    const itemCategories = item.category_ids
+      .map((cid) => categoryLookup.get(cid))
+      .filter((c): c is { id: string; name: string; idx: number } => Boolean(c));
+    const visibleCats = itemCategories.slice(0, 2);
+    const extraCatCount = Math.max(0, itemCategories.length - visibleCats.length);
 
     const baseDisplay = Number(
       isDeviceMode
@@ -568,6 +568,7 @@ export function MenuSetupView({
     );
     const hasOverride =
       item.price_override !== null && String(item.price_override).trim() !== "";
+    const effectivePrice = hasOverride ? Number(item.price_override) : baseDisplay;
 
     return (
       <div
@@ -579,7 +580,7 @@ export function MenuSetupView({
             : "border-neutral-200/60 bg-neutral-100/80 opacity-70 dark:border-neutral-800 dark:bg-neutral-900/40"
         }`}
       >
-        {/* Soft Rounded Image Frame (Reference Style) */}
+        {/* Soft Rounded Image Frame with Categories (Top-Left), Switch (Top-Right), Price (Bottom-Right) */}
         <div className="relative min-h-0 flex-1 w-full overflow-hidden rounded-xl bg-[#F7F8FA] dark:bg-neutral-800/80">
           {imgUrl ? (
             <img
@@ -590,6 +591,27 @@ export function MenuSetupView({
           ) : (
             <div className="flex h-full w-full items-center justify-center text-neutral-300 dark:text-neutral-600">
               <UtensilsCrossed className="h-8 w-8" />
+            </div>
+          )}
+
+          {/* Categories Overlay in Top-Left (supports multi-category) */}
+          {visibleCats.length > 0 && (
+            <div className="absolute left-2 top-2 flex max-w-[calc(100%-64px)] flex-wrap gap-1">
+              {visibleCats.map((cat) => (
+                <span
+                  key={cat.id}
+                  className={`max-w-[120px] truncate rounded-md border px-1.5 py-0.5 text-[9px] font-semibold shadow-sm backdrop-blur-sm ${
+                    PASTEL_PILL_STYLES[cat.idx % PASTEL_PILL_STYLES.length]
+                  }`}
+                >
+                  {cat.name}
+                </span>
+              ))}
+              {extraCatCount > 0 && (
+                <span className="rounded-md border border-neutral-200/80 bg-white/90 px-1.5 py-0.5 text-[9px] font-bold text-neutral-700 shadow-sm backdrop-blur-sm dark:border-neutral-700 dark:bg-neutral-900/90 dark:text-neutral-200">
+                  +{extraCatCount}
+                </span>
+              )}
             </div>
           )}
 
@@ -607,44 +629,38 @@ export function MenuSetupView({
             />
           </div>
 
-          {!item.is_available && (
-            <span className="absolute left-2 top-2 rounded-full bg-neutral-900/80 px-2 py-0.5 text-[9px] font-bold text-white">
-              Đang ẩn
+          {/* Hidden Status in Bottom-Left */}
+          {(!item.is_available || (isDeviceMode && item.store_is_available === false)) && (
+            <span
+              className={`absolute bottom-2 left-2 rounded-md px-1.5 py-0.5 text-[9px] font-bold text-white shadow-sm ${
+                isDeviceMode && item.store_is_available === false
+                  ? "bg-amber-500/95"
+                  : "bg-neutral-900/80"
+              }`}
+            >
+              {isDeviceMode && item.store_is_available === false
+                ? "Ẩn ở Chi nhánh"
+                : "Đang ẩn"}
             </span>
           )}
 
-          {isDeviceMode && item.store_is_available === false && (
-            <span className="absolute bottom-2 left-2 rounded bg-amber-500/95 px-1.5 py-0.5 text-[9px] font-bold text-white shadow-sm">
-              Ẩn ở Chi nhánh
-            </span>
-          )}
+          {/* Price Badge in Bottom-Right */}
+          <span
+            className={`absolute bottom-2 right-2 rounded-lg px-2 py-0.5 text-[11px] font-extrabold tabular-nums shadow-sm backdrop-blur-sm ${
+              hasOverride
+                ? "bg-blue-600/95 text-white"
+                : "bg-white/95 text-neutral-900 dark:bg-neutral-900/90 dark:text-white"
+            }`}
+          >
+            {effectivePrice.toLocaleString("vi-VN")}
+          </span>
         </div>
 
-        {/* Clean Minimal Footer: Name + Pastel Category Pill + Price */}
-        <div className="mt-2.5 flex shrink-0 flex-col gap-1.5 px-0.5">
-          <h3 className="truncate text-xs font-bold text-neutral-900 dark:text-white">
+        {/* Full-Width 2-Line Product Name Footer */}
+        <div className="mt-2 shrink-0 px-0.5">
+          <h3 className="line-clamp-2 min-h-[2rem] text-xs font-bold leading-snug text-neutral-900 dark:text-white">
             {item.name}
           </h3>
-
-          <div className="flex items-center justify-between gap-2">
-            <span
-              className={`max-w-[55%] truncate rounded-md border px-2 py-0.5 text-[10px] font-semibold ${catPillCls}`}
-            >
-              {catMeta?.name || "Sản phẩm"}
-            </span>
-
-            {hasOverride ? (
-              <div className="flex items-baseline gap-1">
-                <span className="text-xs font-extrabold tabular-nums text-blue-600 dark:text-blue-400">
-                  {Number(item.price_override).toLocaleString("vi-VN")}
-                </span>
-              </div>
-            ) : (
-              <span className="text-xs font-extrabold tabular-nums text-neutral-900 dark:text-white">
-                {baseDisplay.toLocaleString("vi-VN")}
-              </span>
-            )}
-          </div>
         </div>
       </div>
     );
