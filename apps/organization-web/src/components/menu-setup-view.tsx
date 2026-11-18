@@ -15,7 +15,6 @@ import {
   UtensilsCrossed,
   X,
 } from "lucide-react";
-import { OverflowActions, type OverflowActionItem } from "./motion/overflow-actions";
 import { BeSwitch } from "./motion/switch";
 import { Skeleton } from "./ui/skeleton";
 import type {
@@ -1081,7 +1080,7 @@ export function MenuSetupView({
                   </div>
 
                   {/* 4-Column Square Product Cards */}
-                  <div className="mt-3 min-h-0 flex-1 overflow-y-auto pb-20 pr-1">
+                  <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
                     {deviceMenuLoading ? (
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
                         {[1, 2, 3, 4, 5, 6, 7, 8].map((idx) => (
@@ -1160,7 +1159,7 @@ export function MenuSetupView({
               </div>
 
               {/* 4-Column Square Product Cards */}
-              <div className="mt-3 min-h-0 flex-1 overflow-y-auto pb-20 pr-1">
+              <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
                 {menuLoading ? (
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
                     {[1, 2, 3, 4, 5, 6, 7, 8].map((idx) => (
@@ -1225,7 +1224,7 @@ export function MenuSetupView({
                     </button>
                   </div>
 
-                  <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pb-16 pr-1">
+                  <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                     <AnimatePresence initial={false}>
                       {pendingChanges.map((chg) => (
                         <motion.div
@@ -1301,6 +1300,40 @@ export function MenuSetupView({
                         </motion.div>
                       ))}
                     </AnimatePresence>
+                  </div>
+
+                  {/* Save Action Button inside Change Preview Panel */}
+                  <div className="mt-3 shrink-0 border-t border-neutral-200/70 pt-3 dark:border-neutral-800">
+                    {(() => {
+                      const isDeviceTarget =
+                        selection.kind === "device" && Boolean(activeDevice);
+                      const isBusy = isDeviceTarget
+                        ? deviceSaving
+                        : menuSaving || menuLoading;
+                      return (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => {
+                            if (isDeviceTarget) {
+                              void handleSaveDeviceFilter();
+                            } else {
+                              void handleSaveStoreMenu();
+                            }
+                          }}
+                          className="inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-neutral-900 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          {isDeviceTarget
+                            ? deviceSaving
+                              ? "Đang lưu..."
+                              : "Lưu Cấu Hình Máy"
+                            : menuSaving
+                              ? "Đang lưu..."
+                              : "Lưu Thực Đơn"}
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
               </motion.aside>
@@ -1520,7 +1553,7 @@ export function MenuSetupView({
                 {/* Modal Footer */}
                 <div className="flex items-center justify-between border-t border-neutral-200/80 px-5 py-3.5 dark:border-neutral-800">
                   <span className="text-[11px] text-neutral-400">
-                    Thay đổi được lưu khi bấm nút Lưu ở thanh nổi phía dưới.
+                    Thay đổi được lưu khi bấm Lưu ở khung Xem trước thay đổi.
                   </span>
                   <button
                     type="button"
@@ -1668,61 +1701,6 @@ export function MenuSetupView({
           </>
         )}
       </AnimatePresence>
-
-      {/* Floating beUI OverflowActions Bar (matching CatalogProductsView) */}
-      {(activeStore || activeDevice) && (() => {
-        const isDeviceTarget = selection.kind === "device" && Boolean(activeDevice);
-        const isBusy = isDeviceTarget ? deviceSaving : menuSaving || menuLoading;
-        const primaryActions: OverflowActionItem[] = [
-          {
-            id: "save-menu",
-            label: isDeviceTarget
-              ? deviceSaving
-                ? "Đang lưu..."
-                : "Lưu Cấu Hình Máy"
-              : menuSaving
-                ? "Đang lưu..."
-                : "Lưu Thực Đơn",
-            icon: <Check className="h-4 w-4" />,
-            variant: "primary",
-            disabled: isBusy,
-            onClick: () => {
-              if (isDeviceTarget) {
-                void handleSaveDeviceFilter();
-              } else {
-                void handleSaveStoreMenu();
-              }
-            },
-          },
-        ];
-
-        const overflowActions: OverflowActionItem[] = [
-          {
-            id: "reset-filters",
-            label: "Đặt lại bộ lọc",
-            icon: <RotateCcw className="h-4 w-4" />,
-            onClick: () => {
-              setSelectedCategoryFilter("all");
-              setDeviceCategoryFilter("all");
-              setMenuSearch("");
-              setDeviceMenuSearch("");
-              setMenuFilter("all");
-              setDeviceMenuFilter("all");
-              setPriceFilter("all");
-            },
-          },
-        ];
-
-        return (
-          <div className="pointer-events-none fixed inset-x-0 bottom-5 z-40 flex justify-center md:pl-[244px]">
-            <OverflowActions
-              className="pointer-events-auto"
-              primaryActions={primaryActions}
-              overflowActions={overflowActions}
-            />
-          </div>
-        );
-      })()}
     </div>
   );
 }
